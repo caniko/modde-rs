@@ -7,27 +7,25 @@ when:
 - event: push
 - event: pull_request
 steps:
-- name: cargo-fmt
-  image: rust:1.93-bookworm
+- name: nix-config
+  image: ghcr.io/cachix/devenv:latest
   commands:
-  - cargo fmt --all -- --check
+  - nix --version
+  - export NIX_CONFIG="experimental-features = nix-command flakes"
   environment:
     CARGO_HOME: /tmp/.cargo
-- name: cargo-test
-  image: rust:1.93-bookworm
+    NIX_CONFIG: experimental-features = nix-command flakes
+- name: nix-check
+  image: ghcr.io/cachix/devenv:latest
   commands:
-  - cargo test -p modde-sources
+  - nix develop -c nix flake check
   environment:
     CARGO_HOME: /tmp/.cargo
-- name: cargo-clippy
-  image: rust:1.93-bookworm
+    NIX_CONFIG: experimental-features = nix-command flakes
+- name: project-check
+  image: ghcr.io/cachix/devenv:latest
   commands:
-  - cargo clippy --all-targets -- --deny warnings
+  - nix develop -c cargo run -p modde-xtask -- check
   environment:
     CARGO_HOME: /tmp/.cargo
-- name: cargo-package
-  image: rust:1.93-bookworm
-  commands:
-  - cargo package --allow-dirty --list -p modde-sources
-  environment:
-    CARGO_HOME: /tmp/.cargo
+    NIX_CONFIG: experimental-features = nix-command flakes
