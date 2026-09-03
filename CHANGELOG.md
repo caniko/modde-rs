@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Build**: Renamed the shared Harbor flake and xtask sources to `harbor-rs`
+  while retaining compatibility aliases for downstream inputs.
+- **CI**: Updated Crow jobs to run the project Nix and xtask checks used by the
+  development environment.
 - **Release**: Centralized Debian/Ubuntu APT and Scoop publication in Simit's
   release-stack templates, with `caniko/apt-modde` Pages and
   `caniko/scoop-modde` as the configured downstream repositories.
