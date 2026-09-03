@@ -545,11 +545,11 @@ tree, then builds from the verified tag commit before creating the Codeberg rele
 uploading every file under `release/`.
 
 **xtask is a thin per-project binary over a shared library.** Reusable build-tooling logic
-lives in `harbor-xtask` (in rs-harbor); modde ships a thin `modde-xtask` binary, invoked as
+lives in `harbor-xtask` (in harbor-rs); modde ships a thin `modde-xtask` binary, invoked as
 `cargo xtask`, that wires the project-specific bindings — the RPM spec path (`dist/rpm/modde.spec`),
 the COPR vendor tarball, the docs bindings, the Nix package names
 (`modde` / `site` / `modde-windows` / `appimage-*` / `flatpak-manifest`), and
-`cargo xtask gui`. The shared rs-harbor CLI deliberately does **not** grow top-level
+`cargo xtask gui`. The shared harbor-rs CLI deliberately does **not** grow top-level
 `release` / `copr` / `docs` subcommands, because that would couple it to downstream project
 layouts. The RPM spec `Version:` rewrite happens in CI against the tagged tree, not
 committed back to trunk.
@@ -562,7 +562,7 @@ coverage gate (`cargo xtask coverage --ci`); cross-compilation (Windows, aarch64
 macOS aarch64 via osxcross); the Rust-generated website and mdBook docs outputs; and the
 self-hosted `atlas` runner. Running those checks would flag all of that intentional
 customization as drift. This is revisited only if simit becomes configurable enough to
-express those jobs, or rs-harbor publishes a helper that preserves them.
+express those jobs, or harbor-rs publishes a helper that preserves them.
 
 **Home-Manager `tools` contract.** The `programs.modde.profiles.<name>.tools` option is
 `attrsOf toolSubmodule` with `enable`, free-form `settings`, a reserved `release`, and

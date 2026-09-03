@@ -21,7 +21,7 @@ nix develop
 
 # Project-local cargo alias: `cargo xtask ...` runs `crates/modde-xtask`.
 # It depends on the flake-pinned `harbor-xtask` git crate, so a fresh
-# checkout may fetch rs-harbor.
+# checkout may fetch harbor-rs.
 
 # Build
 cargo build --workspace
@@ -160,7 +160,7 @@ table below; there is no separate COPR release document in this repository.
 - COPR prereleases publish to `caniko/rs-modde-testing`; create that COPR project before the first RC tag.
 - Keep the `## [Unreleased]` heading in `CHANGELOG.md` exactly as-is so simit can update it.
 - rs-modde does not run `simit init-ci --check` or `simit init-flake --check`.
-- Those checks would treat this repo's bespoke `atlas` workflows and rs-harbor-driven flake as drift.
+- Those checks would treat this repo's bespoke `atlas` workflows and harbor-rs-driven flake as drift.
 - The rationale, revisit conditions, and other non-obvious choices live in the [Architecture reference](https://modde.tartanoglu.com/docs/reference/architecture.html) (see its "Release, packaging, and tooling decisions" section).
 
 ### Distribution channels

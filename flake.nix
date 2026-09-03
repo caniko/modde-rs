@@ -2,13 +2,16 @@
   description = "modde — cross-platform game mod manager";
 
   inputs = {
-    rs-harbor.url = "git+https://github.com/caniko/rs-harbor.git?ref=trunk&rev=05cc4f162b55fa904b687db1821e2463fa813e50";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=05cc4f162b55fa904b687db1821e2463fa813e50";
+    rs-harbor.follows = "harbor-rs";
 
-    rs-harbor-macos-sdk-pin.url = "git+https://github.com/caniko/rs-harbor-macos-sdk-pin.git";
+    harbor-macos-sdk-pin.url = "git+https://github.com/caniko/harbor-macos-sdk-pin.git";
 
-    nixpkgs.follows = "rs-harbor/nixpkgs";
-    rust-overlay.follows = "rs-harbor/rust-overlay";
-    crane.follows = "rs-harbor/crane";
+    rs-harbor-macos-sdk-pin.follows = "harbor-macos-sdk-pin";
+
+    nixpkgs.follows = "harbor-rs/nixpkgs";
+    rust-overlay.follows = "harbor-rs/rust-overlay";
+    crane.follows = "harbor-rs/crane";
     flake-utils.url = "github:numtide/flake-utils";
 
     nix-appimage = {
@@ -17,11 +20,11 @@
     };
 
     simit = {
-      url = "git+https://codeberg.org/caniko/simit?ref=refs/tags/0.17.10";
-      inputs.rs-harbor.follows = "rs-harbor";
-      inputs.nixpkgs.follows = "rs-harbor/nixpkgs";
-      inputs.rust-overlay.follows = "rs-harbor/rust-overlay";
-      inputs.crane.follows = "rs-harbor/crane";
+      url = "git+https://github.com/caniko/simit?ref=refs/tags/0.17.10";
+      inputs.rs-harbor.follows = "harbor-rs";
+      inputs.nixpkgs.follows = "harbor-rs/nixpkgs";
+      inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
+      inputs.crane.follows = "harbor-rs/crane";
       inputs.flake-utils.url = "github:numtide/flake-utils";
     };
 
@@ -49,7 +52,7 @@
     nix-manager-core = {
       url = "git+https://codeberg.org/caniko/nix-manager-core.git?ref=trunk";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.rs-harbor.follows = "rs-harbor";
+      inputs.rs-harbor.follows = "harbor-rs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.crane.follows = "crane";
     };
@@ -58,8 +61,8 @@
   outputs = {
     self,
     nixpkgs,
-    rs-harbor,
-    rs-harbor-macos-sdk-pin,
+    harbor-rs,
+    harbor-macos-sdk-pin,
     simit,
     plinth,
     visual-rubric,
@@ -70,9 +73,9 @@
     ...
   }: let
     mkOutputs = {
-      macosSdkStorePath ? rs-harbor-macos-sdk-pin.storePath,
-      macosSdkOutputHash ? rs-harbor-macos-sdk-pin.outputHash,
-      osxSdkVersion ? rs-harbor-macos-sdk-pin.sdkVersion,
+      macosSdkStorePath ? harbor-macos-sdk-pin.storePath,
+      macosSdkOutputHash ? harbor-macos-sdk-pin.outputHash,
+      osxSdkVersion ? harbor-macos-sdk-pin.sdkVersion,
     }:
       flake-utils.lib.eachDefaultSystem (system: let
         pkgs = import nixpkgs {
@@ -85,7 +88,7 @@
         };
         lib = nixpkgs.lib;
 
-        toolchain = rs-harbor.lib.mkToolchain {inherit pkgs; toolchainProfile = "nightly";};
+        toolchain = harbor-rs.lib.mkToolchain {inherit pkgs; toolchainProfile = "nightly";};
         inherit (toolchain) craneLib;
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
@@ -142,12 +145,12 @@
           doCheck = false;
           meta.mainProgram = "copr-cli";
         };
-        cross = rs-harbor.lib.mkCross ({
+        cross = harbor-rs.lib.mkCross ({
             inherit pkgs system osxSdkVersion;
           }
           // lib.optionalAttrs (macosSdkStorePath != null) {
             inherit macosSdkStorePath;
-            # Pass the FOD outputHash so rs-harbor can reconstruct a
+            # Pass the FOD outputHash so harbor-rs can reconstruct a
             # context-carrying SDK reference; this makes the pinned SDK a real
             # build input that the sandbox bind-mounts (otherwise osxcross-clang
             # cannot find the SDK inside the sandboxed darwin cross build).
@@ -365,7 +368,7 @@
         aarch64LinuxTargetSuffix =
           lib.strings.replaceStrings ["-"] ["_"] aarch64LinuxTarget;
         pkgsAarch64Linux = pkgs.pkgsCross.aarch64-multiplatform;
-        toolchainAarch64 = rs-harbor.lib.mkToolchain {pkgs = pkgsAarch64Linux; toolchainProfile = "nightly";};
+        toolchainAarch64 = harbor-rs.lib.mkToolchain {pkgs = pkgsAarch64Linux; toolchainProfile = "nightly";};
         craneLibAarch64 = toolchainAarch64.craneLib;
         darwinSigtool = pkgs.darwin.sigtool;
         # Ad-hoc sign the cross-built Mach-O binaries. sigtool's `codesign`
@@ -499,7 +502,7 @@
             inherit modde modde-manager modde-oracle docs website site;
             copr-cli = coprCli;
             default = modde;
-            rs-harbor = rs-harbor.packages.${system}.rs-harbor;
+            harbor-rs = harbor-rs.packages.${system}.harbor-rs;
 
             flatpak-cargo-generator = let
               flatpakCargoGeneratorPy = pkgs.fetchurl {
@@ -577,7 +580,7 @@
               versionField = moddeVersion;
               baseUrl = "https://codeberg.org/caniko/rs-modde/releases/download";
               archiveUrl = arch: os: "${baseUrl}/${versionField}/modde-${versionField}-${arch}-${os}.tar.gz";
-              formula = rs-harbor.lib.mkHomebrewFormula {
+              formula = harbor-rs.lib.mkHomebrewFormula {
                 inherit pkgs;
                 name = "modde";
                 version = versionField;
@@ -607,12 +610,12 @@
               formula.formulaPath;
           }
           // lib.optionalAttrs pkgs.stdenv.isLinux {
-            appimage-cli = rs-harbor.lib.mkAppImage {
+            appimage-cli = harbor-rs.lib.mkAppImage {
               inherit system nix-appimage;
               program = "${modde}/bin/modde";
               pname = "modde";
             };
-            appimage-ui = rs-harbor.lib.mkAppImage {
+            appimage-ui = harbor-rs.lib.mkAppImage {
               inherit system nix-appimage;
               program = "${modde}/bin/modde-ui";
               pname = "modde-ui";
@@ -1579,7 +1582,7 @@
         };
 
         devShells =
-          (rs-harbor.lib.mkDevShells {
+          (harbor-rs.lib.mkDevShells {
             inherit pkgs cross;
             inherit (toolchain) craneLib;
             pkgConfigDeps = buildInputs;
@@ -1919,18 +1922,18 @@
           in "${script}/bin/local-release-deploy";
         };
 
-        # Release artifact signing/verification via the rs-harbor binding.
+        # Release artifact signing/verification via the harbor-rs binding.
         # `minisign -S/-V` over target/modde-release/root-artifacts/release/SHA256SUMS.txt against keys/minisign.pub —
         # the same operation scripts/smoke/smoke-signatures.sh and the
         # simit-generated release.yml perform, exposed as reusable apps.
         #   MINISIGN_SECRET_KEY=… MINISIGN_PASSWORD=… nix run .#sign-release
         #   nix run .#verify-release
-        apps.sign-release = rs-harbor.lib.mkMinisignSign {
+        apps.sign-release = harbor-rs.lib.mkMinisignSign {
           inherit pkgs;
           files = ["target/modde-release/root-artifacts/release/SHA256SUMS.txt"];
         };
 
-        apps.verify-release = rs-harbor.lib.mkMinisignVerify {
+        apps.verify-release = harbor-rs.lib.mkMinisignVerify {
           inherit pkgs;
           files = ["target/modde-release/root-artifacts/release/SHA256SUMS.txt"];
           publicKeyFile = "keys/minisign.pub";
