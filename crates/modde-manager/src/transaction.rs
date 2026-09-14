@@ -15,7 +15,20 @@ pub struct Prepared {
 }
 
 fn source(path: &Path, skip_git: bool) -> Result<Image> {
-    let parent = Anchor::open(path.parent().context("source needs a parent")?)?;
+    let parent = match Anchor::open(path.parent().context("source needs a parent")?) {
+        Ok(parent) => parent,
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            bail!("blocked: missing source {}", path.display());
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("invalid source parent: {}", path.display()));
+        }
+    };
     let image = parent.read(
         Path::new(path.file_name().context("source needs a name")?),
         skip_git,
@@ -131,10 +144,7 @@ impl Prepared {
     }
 
     fn apply_inner(&self, instance: &Instance, fail_after: Option<(usize, bool)>) -> Result<()> {
-        self.root
-            .file
-            .try_lock()
-            .context("another manager mutation holds this instance")?;
+        let _lease = self.root.lock()?;
         self.revalidate()?;
         assert_stopped(instance)?;
         if self.operations.is_empty() {
@@ -492,12 +502,8 @@ pub fn snapshot(config: &Config, live: &Path, destination: &Path) -> Result<()> 
     let mut locks = Vec::new();
     for instance in config.instances.values() {
         let anchor = Anchor::open(&instance.root)?;
-        anchor
-            .file
-            .try_lock()
-            .context("instance mutation is busy")?;
+        locks.push(anchor.lock()?);
         assert_stopped(instance)?;
-        locks.push(anchor);
     }
     let mut accounts = BTreeMap::new();
     for account in ["CANIKO", "DEJANICA"] {
@@ -699,10 +705,7 @@ pub fn import(config: &Config) -> Result<()> {
     }
     for (name, instance, payloads) in imports {
         let installation = Anchor::open(&instance.root)?;
-        installation
-            .file
-            .try_lock()
-            .context("instance mutation is busy")?;
+        let _lease = installation.lock()?;
         assert_stopped(instance)?;
         let state = state_dir(instance);
         let system = Anchor::open(Path::new("/"))?;
@@ -895,7 +898,13 @@ mod tests {
             version: 1,
             instances: BTreeMap::from([("test".into(), instance.clone())]),
         };
-        assert!(prepare("test", &instance).is_err());
+        assert!(
+            prepare("test", &instance)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("blocked: missing source")
+        );
         import(&config).unwrap();
         instance.addons[0].branch = "other".into();
         assert!(prepare("test", &instance).is_err());
@@ -1114,7 +1123,7 @@ mod tests {
     fn instance_lock_and_no_clobber_rename_are_enforced() {
         let (dir, instance) = fixture();
         let holder = Anchor::open(&instance.root).unwrap();
-        holder.file.try_lock().unwrap();
+        let _lease = holder.lock().unwrap();
         assert!(
             prepare("test", &instance)
                 .unwrap()

@@ -446,11 +446,8 @@ fn apply_instance(name: &str, instance: &Instance, prune: bool) -> Result<()> {
 
 fn update_all(config: &Config) -> Result<()> {
     for (name, instance) in &config.instances {
-        let lease = files::Anchor::open(&instance.root)?;
-        lease
-            .file
-            .try_lock()
-            .context("another manager mutation holds this instance")?;
+        let root = files::Anchor::open(&instance.root)?;
+        let _lease = root.lock()?;
         validate_instance(name, instance)?;
         let mut lock = read_lock(instance)?;
         for addon in &instance.addons {

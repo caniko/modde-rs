@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Manager**: Explicitly release mutation leases even when forked children retain
+  descriptors, and identify missing source-parent prerequisites in diagnostics.
 - **Manager**: Plan and apply compare prepared content and preserve unchanged files.
   Safe migration commits require Linux; pruning is refused. Existing addon locks
   without content verification require an explicit import or update. Online update

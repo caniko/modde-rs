@@ -17,6 +17,15 @@ pub struct Anchor {
     original: PathBuf,
 }
 
+pub struct Lease(File);
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        // Release explicitly: a child between fork and exec may still hold a duplicate.
+        let _ = self.0.unlock();
+    }
+}
+
 pub fn relative(path: &Path) -> Result<()> {
     if path.as_os_str().is_empty()
         || path.components().count() > 128
@@ -38,6 +47,14 @@ fn directory(path: &Path) -> Result<File> {
 }
 
 impl Anchor {
+    pub fn lock(&self) -> Result<Lease> {
+        self.revalidate()?;
+        // A separate open description also prevents reentrant locking of one Anchor.
+        let file = directory(&self.path().join("."))?;
+        file.try_lock()
+            .context("another manager mutation holds this instance")?;
+        Ok(Lease(file))
+    }
     pub fn open(path: &Path) -> Result<Self> {
         if !cfg!(target_os = "linux") {
             bail!("safe manager filesystem operations currently require Linux");
@@ -247,4 +264,22 @@ pub fn write_image(path: &Path, image: &Image) -> Result<()> {
         Image::Missing => bail!("cannot stage missing payload"),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lease_release_is_not_delayed_by_inherited_descriptors() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Anchor::open(dir.path()).unwrap();
+        let lease = root.lock().unwrap();
+        assert!(root.lock().is_err());
+        let inherited = lease.0.try_clone().unwrap();
+        drop(lease);
+        let next = root.lock().unwrap();
+        drop(inherited);
+        drop(next);
+    }
 }
