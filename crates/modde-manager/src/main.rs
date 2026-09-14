@@ -17,6 +17,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod files;
+mod transaction;
+
 #[derive(Parser)]
 #[command(name = "modde-manager", about = "Declarative post-setup game manager")]
 struct Cli {
@@ -41,10 +44,20 @@ enum CommandKind {
         prune: bool,
     },
     Update,
+    /// Import reviewed exact local commits without fetching or advancing branches.
+    Import,
+    /// Create a private verified snapshot of the two approved account namespaces.
+    Snapshot {
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long)]
+        destination: PathBuf,
+    },
     Capture,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Config {
     #[serde(default = "default_config_version")]
     version: u32,
@@ -57,6 +70,7 @@ fn default_config_version() -> u32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Instance {
     root: PathBuf,
     #[serde(default = "default_client_kind")]
@@ -74,6 +88,8 @@ struct Instance {
     #[serde(default)]
     saved_variables: Vec<SavedVariables>,
     #[serde(default)]
+    seed_trees: Vec<SeedTree>,
+    #[serde(default)]
     lock_file: Option<PathBuf>,
     #[serde(default)]
     state_dir: Option<PathBuf>,
@@ -84,6 +100,7 @@ fn default_client_kind() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AddonRepo {
     id: String,
     #[serde(default = "default_branch")]
@@ -95,6 +112,17 @@ struct AddonRepo {
     repository: Option<String>,
     #[serde(default)]
     directories: Vec<AddonDirectory>,
+    #[serde(default)]
+    local_source: Option<PathBuf>,
+    #[serde(default)]
+    revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SeedTree {
+    source: PathBuf,
+    destination: PathBuf,
 }
 
 fn default_branch() -> String {
@@ -102,12 +130,14 @@ fn default_branch() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AddonDirectory {
     source: String,
     target: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ConfigFile {
     path: PathBuf,
     #[serde(default)]
@@ -115,6 +145,7 @@ struct ConfigFile {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CharacterProfile {
     name: String,
     account: String,
@@ -123,6 +154,7 @@ struct CharacterProfile {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SavedVariables {
     path: PathBuf,
     #[serde(default = "default_seed_mode")]
@@ -141,18 +173,22 @@ struct LockFile {
     repositories: BTreeMap<String, LockedRepository>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct ManagedState {
-    #[serde(default)]
-    addon_targets: BTreeSet<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LockedRepository {
     branch: String,
     revision: String,
+    #[serde(default)]
+    repository: Option<String>,
+    #[serde(default)]
+    imported_from: Option<PathBuf>,
+    #[serde(default)]
+    committed_at: Option<u64>,
+    #[serde(default)]
+    content_sha256: Option<String>,
 }
 
+// The pinned nix-manager-core supplies atomic writes, but predates its reconcile API.
+// Retain the manager's existing JSON types until that upstream API is published/pinned.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum ChangeKind {
@@ -186,6 +222,11 @@ fn main() -> Result<()> {
         CommandKind::Plan { json } => plan_all(&config, json),
         CommandKind::Apply { prune } => apply_all(&config, prune),
         CommandKind::Update => update_all(&config),
+        CommandKind::Import => transaction::import(&config),
+        CommandKind::Snapshot {
+            source,
+            destination,
+        } => transaction::snapshot(&config, &source, &destination),
         CommandKind::Capture => capture_all(&config),
     }
 }
@@ -224,9 +265,13 @@ fn check_all(config: &Config, json: bool) -> Result<()> {
 }
 
 fn check_instance(name: &str, instance: &Instance) -> Result<()> {
-    if instance.client != "wow-wotlk" {
+    transaction::prepare(name, instance).map(|_| ())
+}
+
+fn validate_instance(name: &str, instance: &Instance) -> Result<()> {
+    if !matches!(instance.client.as_str(), "wow-wotlk" | "wow-classic") {
         bail!(
-            "{name}: unsupported client '{}'; supported: wow-wotlk",
+            "{name}: unsupported client '{}'; supported: wow-wotlk, wow-classic",
             instance.client
         );
     }
@@ -243,19 +288,67 @@ fn check_instance(name: &str, instance: &Instance) -> Result<()> {
             addons_root.display()
         );
     }
-    assert_stopped(instance)?;
-    for process in &instance.processes {
-        if process.trim().is_empty() {
-            bail!("{name}: empty process name");
-        }
+    if !addons_root
+        .canonicalize()?
+        .starts_with(instance.root.canonicalize()?)
+    {
+        bail!("addon root escapes client root");
     }
+    assert_stopped(instance)?;
+    let mut ids = BTreeSet::new();
+    let mut targets = BTreeSet::new();
     for addon in &instance.addons {
+        if addon.branch.is_empty()
+            || addon.branch.starts_with('-')
+            || addon.branch.chars().any(char::is_control)
+        {
+            bail!("unsafe addon branch");
+        }
+        let reference = format!("refs/heads/{}", addon.branch);
+        if !Command::new("git")
+            .args(["check-ref-format", &reference])
+            .output()?
+            .status
+            .success()
+        {
+            bail!("invalid addon branch");
+        }
+        if addon.id.is_empty()
+            || !addon
+                .id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))
+        {
+            bail!("unsafe addon id: {}", addon.id);
+        }
+        if !ids.insert(&addon.id) {
+            bail!("duplicate addon id: {}", addon.id);
+        }
+        if instance.client == "wow-classic"
+            && addon
+                .repository
+                .as_ref()
+                .is_none_or(|url| url.trim().is_empty())
+        {
+            bail!(
+                "{name}: Classic addon {} requires an explicit repository",
+                addon.id
+            );
+        }
         for directory in &addon.directories {
-            let target = addons_root.join(&directory.target);
-            if !target.is_dir() {
-                bail!("{name}: missing addon {}", target.display());
+            safe_addon_target(&addons_root, &directory.target)?;
+            if !targets.insert(&directory.target) {
+                bail!("duplicate addon target: {}", directory.target);
             }
-            validate_toc_tree(&target, instance.interface.unwrap_or(30300))?;
+            if Path::new(&directory.source).is_absolute()
+                || directory.source.contains(['\\', ':'])
+                || directory
+                    .source
+                    .split('/')
+                    .any(|part| part == ".." || part.is_empty())
+            {
+                bail!("unsafe addon source: {}", directory.source);
+            }
         }
     }
     for profile in &instance.profiles {
@@ -265,6 +358,15 @@ fn check_instance(name: &str, instance: &Instance) -> Result<()> {
             || profile.character.is_empty()
         {
             bail!("{name}: profile fields must not be empty");
+        }
+        for component in [&profile.account, &profile.realm, &profile.character] {
+            if component == "."
+                || component == ".."
+                || component.contains(['/', '\\', ':'])
+                || component.chars().any(char::is_control)
+            {
+                bail!("unsafe character profile component");
+            }
         }
         let saved = instance
             .root
@@ -297,7 +399,7 @@ fn check_instance(name: &str, instance: &Instance) -> Result<()> {
 fn plan_all(config: &Config, json: bool) -> Result<()> {
     let mut plan = Plan::default();
     for (name, instance) in &config.instances {
-        check_instance(name, instance)?;
+        validate_instance(name, instance)?;
         plan_instance(name, instance, &mut plan)?;
     }
     if json {
@@ -313,137 +415,43 @@ fn plan_all(config: &Config, json: bool) -> Result<()> {
 }
 
 fn plan_instance(name: &str, instance: &Instance, plan: &mut Plan) -> Result<()> {
-    let lock = read_lock(instance)?;
-    for addon in &instance.addons {
-        let key = addon.id.clone();
-        if !lock.repositories.contains_key(&key) {
-            plan.changes.push(Change {
-                resource: format!("{name}/source/{key}"),
-                kind: ChangeKind::Create,
-                summary: "source lock is missing; run update".into(),
-            });
-        }
-        for directory in &addon.directories {
-            let target = instance
-                .root
-                .join("Interface/AddOns")
-                .join(&directory.target);
-            if !target.is_dir() {
-                plan.changes.push(Change {
-                    resource: format!("{name}/addon/{}", directory.target),
-                    kind: ChangeKind::Create,
-                    summary: format!("deploy {}", directory.source),
-                });
-            }
-        }
-    }
-    for file in &instance.config {
-        if !instance.root.join(&file.path).is_file() {
-            plan.changes.push(Change {
-                resource: format!("{name}/config/{}", file.path.display()),
-                kind: ChangeKind::Create,
-                summary: "create sparse WoW config".into(),
-            });
-        } else if config_needs_reconcile(&instance.root.join(&file.path), &file.settings)? {
-            plan.changes.push(Change {
-                resource: format!("{name}/config/{}", file.path.display()),
-                kind: ChangeKind::Update,
-                summary: format!("reconcile {} managed setting(s)", file.settings.len()),
-            });
-        }
-    }
-    for saved in &instance.saved_variables {
-        if saved.mode == "replace"
-            || (saved.mode == "seed" && !instance.root.join(&saved.path).exists())
-        {
-            plan.changes.push(Change {
-                resource: format!("{name}/saved/{}", saved.path.display()),
-                kind: if saved.mode == "replace" {
-                    ChangeKind::Update
-                } else {
-                    ChangeKind::Create
-                },
-                summary: format!("{} SavedVariables", saved.mode),
-            });
-        }
-    }
+    let prepared = transaction::prepare(name, instance)?;
+    plan.changes.extend(prepared.plan(name).changes);
     Ok(())
 }
 
 fn apply_all(config: &Config, prune: bool) -> Result<()> {
-    for (name, instance) in &config.instances {
-        check_instance(name, instance)?;
-        apply_instance(name, instance, prune)?;
+    if prune {
+        bail!("pruning is not supported by the safe migration pipeline");
+    }
+    let prepared = config
+        .instances
+        .iter()
+        .map(|(name, instance)| Ok((instance, transaction::prepare(name, instance)?)))
+        .collect::<Result<Vec<_>>>()?;
+    for (instance, prepared) in prepared {
+        prepared.apply(instance)?;
     }
     println!("modde-manager: apply complete");
     Ok(())
 }
 
+#[cfg(test)]
 fn apply_instance(name: &str, instance: &Instance, prune: bool) -> Result<()> {
-    let lock = read_lock(instance)?;
-    let addons_root = instance.root.join("Interface/AddOns");
-    let desired_targets: BTreeSet<String> = instance
-        .addons
-        .iter()
-        .flat_map(|addon| {
-            addon
-                .directories
-                .iter()
-                .map(|directory| directory.target.clone())
-        })
-        .collect();
     if prune {
-        let state = read_managed_state(instance)?;
-        for target in state.addon_targets.difference(&desired_targets) {
-            let path = safe_addon_target(&addons_root, target)?;
-            if path.is_dir() {
-                fs::remove_dir_all(&path)
-                    .with_context(|| format!("prune managed addon {}", path.display()))?;
-            }
-        }
+        bail!("pruning is not supported by the safe migration pipeline");
     }
-    for addon in &instance.addons {
-        let locked = lock.repositories.get(&addon.id).ok_or_else(|| {
-            anyhow::anyhow!("{name}: no lock for {}; run `update` first", addon.id)
-        })?;
-        let checkout = checkout_path(instance, &addon.id);
-        if !checkout.is_dir() {
-            bail!(
-                "{name}: missing checkout for {} at {}; run `update` first",
-                addon.id,
-                checkout.display()
-            );
-        }
-        verify_checkout_revision(&checkout, &locked.revision)?;
-        for directory in &addon.directories {
-            let source = checkout.join(&directory.source);
-            let target = addons_root.join(&directory.target);
-            if target.exists() {
-                fs::remove_dir_all(&target)?;
-            }
-            copy_tree(&source, &target).with_context(|| {
-                format!("deploy {} from {}", directory.target, source.display())
-            })?;
-        }
-    }
-    for file in &instance.config {
-        reconcile_config_file(&instance.root.join(&file.path), &file.settings)?;
-    }
-    for saved in &instance.saved_variables {
-        reconcile_saved_variables(&instance.root.join(&saved.path), saved)?;
-    }
-    write_managed_state(
-        instance,
-        &ManagedState {
-            addon_targets: desired_targets,
-        },
-    )?;
-    Ok(())
+    transaction::prepare(name, instance)?.apply(instance)
 }
 
 fn update_all(config: &Config) -> Result<()> {
     for (name, instance) in &config.instances {
-        assert_stopped(instance)?;
+        let lease = files::Anchor::open(&instance.root)?;
+        lease
+            .file
+            .try_lock()
+            .context("another manager mutation holds this instance")?;
+        validate_instance(name, instance)?;
         let mut lock = read_lock(instance)?;
         for addon in &instance.addons {
             let checkout = ensure_checkout(
@@ -458,6 +466,12 @@ fn update_all(config: &Config) -> Result<()> {
                 LockedRepository {
                     branch: addon.branch.clone(),
                     revision,
+                    repository: Some(addon.repository.clone().unwrap_or_else(|| {
+                        format!("https://github.com/Ascension-Addons/{}.git", addon.id)
+                    })),
+                    imported_from: None,
+                    committed_at: None,
+                    content_sha256: Some(transaction::checkout_digest(&checkout)?),
                 },
             );
             println!("{name}: {} updated", addon.id);
@@ -487,40 +501,43 @@ fn capture_all(config: &Config) -> Result<()> {
 
 fn assert_stopped(instance: &Instance) -> Result<()> {
     for process in &instance.processes {
-        let status = Command::new("pgrep").args(["-f", process]).status();
-        if status.is_ok_and(|status| status.success()) {
+        if process.trim().is_empty() {
+            bail!("empty process pattern");
+        }
+        let status = Command::new("pgrep")
+            .args(["-f", "--", process])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .context("check game processes")?;
+        if status.success() {
             bail!(
                 "game process '{}' is running; stop it before reconciling",
                 process
             );
         }
+        if status.code() != Some(1) {
+            bail!("pgrep failed while checking game processes: {status}");
+        }
     }
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_toc_tree(tree: &Path, expected_interface: u32) -> Result<()> {
-    let tocs: Vec<_> = fs::read_dir(tree)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "toc"))
+    let name = tree
+        .file_name()
+        .context("addon directory has no name")?
+        .to_string_lossy();
+    let toc = tree.join(format!("{name}.toc"));
+    let body = fs::read_to_string(&toc).with_context(|| format!("read {}", toc.display()))?;
+    let interfaces: Vec<_> = body
+        .lines()
+        .filter_map(|line| line.strip_prefix("## Interface:"))
+        .map(|value| value.trim().parse::<u32>())
         .collect();
-    if tocs.is_empty() {
-        bail!("no TOC file found in {}", tree.display());
-    }
-    for toc in tocs {
-        let body = fs::read_to_string(&toc).with_context(|| format!("read {}", toc.display()))?;
-        let interfaces: Vec<u32> = body
-            .lines()
-            .filter_map(|line| line.strip_prefix("## Interface:"))
-            .filter_map(|value| value.trim().split_whitespace().next())
-            .filter_map(|value| value.parse().ok())
-            .collect();
-        if interfaces
-            .iter()
-            .any(|interface| *interface != expected_interface)
-        {
-            bail!("unsupported Interface in {}", toc.display());
-        }
+    if interfaces.len() != 1 || interfaces[0].as_ref().ok() != Some(&expected_interface) {
+        bail!("unsupported Interface in {}", toc.display());
     }
     Ok(())
 }
@@ -529,10 +546,16 @@ fn read_lock(instance: &Instance) -> Result<LockFile> {
     let Some(path) = &instance.lock_file else {
         return Ok(LockFile::default());
     };
-    if !path.exists() {
-        return Ok(LockFile::default());
+    let root = files::Anchor::open(Path::new("/"))?;
+    match root.read(
+        path.strip_prefix("/")
+            .context("lock_file must be absolute")?,
+        false,
+    )? {
+        files::Image::Missing => Ok(LockFile::default()),
+        files::Image::File(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        _ => bail!("lock_file must be a regular file"),
     }
-    Ok(serde_json::from_slice(&fs::read(path)?)?)
 }
 
 fn write_lock(instance: &Instance, lock: &LockFile) -> Result<()> {
@@ -550,32 +573,18 @@ fn state_dir(instance: &Instance) -> PathBuf {
         .unwrap_or_else(|| instance.root.join(".modde-manager"))
 }
 
-fn managed_state_path(instance: &Instance) -> PathBuf {
-    state_dir(instance).join("managed.json")
-}
-
-fn read_managed_state(instance: &Instance) -> Result<ManagedState> {
-    let path = managed_state_path(instance);
-    if !path.exists() {
-        return Ok(ManagedState::default());
-    }
-    Ok(serde_json::from_slice(&fs::read(path)?)?)
-}
-
-fn write_managed_state(instance: &Instance, state: &ManagedState) -> Result<()> {
-    let path = managed_state_path(instance);
-    atomic_write_0600(&path, serde_json::to_string_pretty(state)?.as_bytes())
-}
-
 fn safe_addon_target(root: &Path, target: &str) -> Result<PathBuf> {
-    if Path::new(target).is_absolute()
-        || target
-            .split('/')
-            .any(|part| part == ".." || part.is_empty())
-    {
+    if target.is_empty() || target == "." || target == ".." || target.contains(['/', '\\', ':']) {
         bail!("unsafe managed addon target: {target}");
     }
-    Ok(root.join(target))
+    let path = root.join(target);
+    if path
+        .symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        bail!("managed addon target is a symlink: {}", path.display());
+    }
+    Ok(path)
 }
 
 fn checkout_path(instance: &Instance, id: &str) -> PathBuf {
@@ -668,7 +677,11 @@ fn git_output(path: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
+#[cfg(test)]
 fn copy_tree(source: &Path, target: &Path) -> Result<()> {
+    if source.symlink_metadata()?.file_type().is_symlink() {
+        bail!("addon source contains a symlink: {}", source.display());
+    }
     if !source.is_dir() {
         bail!("addon source does not exist: {}", source.display());
     }
@@ -677,76 +690,103 @@ fn copy_tree(source: &Path, target: &Path) -> Result<()> {
         let entry = entry?;
         let from = entry.path();
         let to = target.join(entry.file_name());
+        if entry.file_name() == ".git" {
+            continue;
+        }
+        if entry.file_type()?.is_symlink() {
+            bail!("addon source contains a symlink: {}", from.display());
+        }
         if from.is_dir() {
             copy_tree(&from, &to)?;
-        } else {
+        } else if entry.file_type()?.is_file() {
             fs::copy(&from, &to).with_context(|| format!("copy {}", from.display()))?;
+        } else {
+            bail!("unsupported addon file type: {}", from.display());
         }
     }
     Ok(())
 }
 
+#[cfg(test)]
 fn reconcile_config_file(path: &Path, settings: &BTreeMap<String, Value>) -> Result<()> {
-    if settings.is_empty() {
-        return Ok(());
+    if let Some(rendered) = prepare_config_file(path, settings)? {
+        atomic_write_0600(path, rendered.as_bytes())?;
     }
-    let original = fs::read_to_string(path).unwrap_or_default();
-    let mut lines: Vec<String> = original.lines().map(str::to_owned).collect();
-    let mut seen = BTreeSet::new();
-    for line in &mut lines {
-        let key = line
-            .strip_prefix("SET ")
-            .and_then(|rest| rest.split_whitespace().next())
-            .map(str::to_owned);
-        let Some(key) = key else {
-            continue;
-        };
-        if let Some(value) = settings.get(&key) {
-            *line = format!("SET {key} {}", wow_value(value)?);
-            seen.insert(key);
-        }
-    }
-    for (key, value) in settings {
-        if !seen.contains(key) {
-            lines.push(format!("SET {key} {}", wow_value(value)?));
-        }
-    }
-    let mut rendered = lines.join("\n");
-    rendered.push('\n');
-    atomic_write_0600(path, rendered.as_bytes())
+    Ok(())
 }
 
-fn config_needs_reconcile(path: &Path, settings: &BTreeMap<String, Value>) -> Result<bool> {
+#[cfg(test)]
+fn prepare_config_file(path: &Path, settings: &BTreeMap<String, Value>) -> Result<Option<String>> {
     if settings.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
-    let body = fs::read_to_string(path).unwrap_or_default();
-    let mut current = BTreeMap::new();
-    for line in body.lines() {
-        let Some(rest) = line.strip_prefix("SET ") else {
-            continue;
-        };
-        let mut fields = rest.splitn(2, char::is_whitespace);
-        let Some(key) = fields.next() else {
-            continue;
-        };
-        let Some(value) = fields.next() else {
-            continue;
-        };
-        current.insert(key, value.trim());
+    let original = match fs::read_to_string(path) {
+        Ok(body) => body,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error).with_context(|| format!("read {}", path.display())),
+    };
+    let rendered = render_config(&original, settings)?;
+    Ok((rendered != original).then_some(rendered))
+}
+
+fn render_config(original: &str, settings: &BTreeMap<String, Value>) -> Result<String> {
+    if settings.is_empty() {
+        return Ok(original.to_owned());
     }
+    let mut desired = BTreeMap::new();
     for (key, value) in settings {
-        let desired = wow_value(value)?;
-        if current.get(key.as_str()).copied() != Some(desired.as_str()) {
-            return Ok(true);
+        if !key.bytes().next().is_some_and(|c| c.is_ascii_alphabetic())
+            || !key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        {
+            bail!("invalid WoW setting key: {key:?}");
+        }
+        desired.insert(key.as_str(), wow_value(value)?);
+    }
+    let mut rendered = String::new();
+    let mut seen = BTreeSet::new();
+    for line in original.split_inclusive('\n') {
+        let mut fields = line.split_whitespace();
+        let key = fields
+            .next()
+            .filter(|command| *command == "SET")
+            .and_then(|_| fields.next());
+        if let Some(key) = key.filter(|key| desired.contains_key(key)) {
+            if seen.insert(key) {
+                rendered.push_str(&format!("SET {key} {}", desired[key]));
+                if line.ends_with("\r\n") {
+                    rendered.push_str("\r\n");
+                } else if line.ends_with('\n') {
+                    rendered.push('\n');
+                }
+            }
+        } else {
+            rendered.push_str(line);
         }
     }
-    Ok(false)
+    for (key, value) in desired {
+        if !seen.contains(key) {
+            if !rendered.is_empty() && !rendered.ends_with('\n') {
+                rendered.push('\n');
+            }
+            rendered.push_str(&format!("SET {key} {value}\n"));
+        }
+    }
+    Ok(rendered)
+}
+
+#[cfg(test)]
+fn config_needs_reconcile(path: &Path, settings: &BTreeMap<String, Value>) -> Result<bool> {
+    Ok(prepare_config_file(path, settings)?.is_some())
 }
 
 fn wow_value(value: &Value) -> Result<String> {
     Ok(match value {
-        Value::String(value) => format!("\"{}\"", value.replace('"', "\\\"")),
+        Value::String(value) => {
+            if value.chars().any(char::is_control) {
+                bail!("WoW setting strings must not contain control characters");
+            }
+            format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+        }
         Value::Bool(value) => {
             if *value {
                 "\"1\"".into()
@@ -759,28 +799,157 @@ fn wow_value(value: &Value) -> Result<String> {
     })
 }
 
-fn reconcile_saved_variables(path: &Path, saved: &SavedVariables) -> Result<()> {
-    if saved.mode == "seed" && path.exists() {
-        return Ok(());
-    }
-    let source = saved
-        .source
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("{} requires a source", path.display()))?;
-    let bytes =
-        fs::read(source).with_context(|| format!("read seed source {}", source.display()))?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    if saved.mode == "replace" || !path.exists() {
-        atomic_write_0600(path, &bytes)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preflight_rejects_final_entry_before_any_write() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Interface/AddOns")).unwrap();
+        let instance: Instance = serde_json::from_value(serde_json::json!({
+            "root": dir.path(), "client": "wow-classic",
+            "config": [
+                {"path": "WTF/Config.wtf", "settings": {"autoSelfCast": true}},
+                {"path": "WTF/other.wtf", "settings": {"invalid key": true}}
+            ]
+        }))
+        .unwrap();
+        assert!(apply_instance("test", &instance, false).is_err());
+        assert!(!dir.path().join("WTF").exists());
+        assert!(!dir.path().join(".modde-manager").exists());
+        let mut valid = instance.clone();
+        valid.config.pop();
+        for client in ["wow-classic", "wow-wotlk"] {
+            valid.client = client.into();
+            check_instance("test", &valid).unwrap();
+            let mut plan = Plan::default();
+            plan_instance("test", &valid, &mut plan).unwrap();
+            assert_eq!(plan.changes.len(), 1);
+            assert!(!dir.path().join("WTF").exists());
+        }
+        valid.config.push(valid.config[0].clone());
+        assert!(transaction::prepare("test", &valid).is_err());
+        for path in ["../outside", "/absolute", "WTF/../outside", "WTF\\outside"] {
+            assert!(files::relative(Path::new(path)).is_err());
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path().join("absent"), dir.path().join("WTF")).unwrap();
+            assert!(
+                files::Anchor::open(dir.path())
+                    .unwrap()
+                    .read(Path::new("WTF/Config.wtf"), false)
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn sparse_renderer_preserves_unmanaged_bytes_and_relinquishes_keys() {
+        let settings = BTreeMap::from([("autoSelfCast".into(), Value::Bool(true))]);
+        let original = "# comment\r\nSET autoSelfCast \"0\"\r\nSET volume \"0.3\"\r\nSET autoSelfCast \"1\"\n# no final newline";
+        let expected =
+            "# comment\r\nSET autoSelfCast \"1\"\r\nSET volume \"0.3\"\r\n# no final newline";
+        assert_eq!(render_config(original, &settings).unwrap(), expected);
+        assert_eq!(render_config(expected, &settings).unwrap(), expected);
+        assert_eq!(render_config(expected, &BTreeMap::new()).unwrap(), expected);
+        let settings = BTreeMap::from([
+            ("z".into(), Value::Number(42.into())),
+            ("a".into(), Value::String("a\\b\"c".into())),
+        ]);
+        assert_eq!(
+            render_config("# keep", &settings).unwrap(),
+            "# keep\nSET a \"a\\\\b\\\"c\"\nSET z \"42\"\n"
+        );
+        for key in ["", "1key", "bad key", "bad\nkey", "bad\"key"] {
+            assert!(render_config("", &BTreeMap::from([(key.into(), Value::Bool(true))])).is_err());
+        }
+        for value in [
+            Value::Null,
+            serde_json::json!([]),
+            serde_json::json!({}),
+            Value::String("bad\nline".into()),
+            Value::String("bad\0value".into()),
+        ] {
+            assert!(render_config("", &BTreeMap::from([("valid".into(), value)])).is_err());
+        }
+    }
+
+    #[test]
+    fn sparse_preparation_is_read_only_and_second_apply_does_not_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing/Config.wtf");
+        let empty = BTreeMap::new();
+        assert!(!config_needs_reconcile(&path, &empty).unwrap());
+        reconcile_config_file(&path, &empty).unwrap();
+        assert!(!path.parent().unwrap().exists());
+        let settings = BTreeMap::from([("autoSelfCast".into(), Value::Bool(true))]);
+        assert!(config_needs_reconcile(&path, &settings).unwrap());
+        assert!(!path.parent().unwrap().exists());
+        reconcile_config_file(&path, &settings).unwrap();
+        let metadata = fs::metadata(&path).unwrap();
+        assert!(!config_needs_reconcile(&path, &settings).unwrap());
+        reconcile_config_file(&path, &settings).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().modified().unwrap(),
+            metadata.modified().unwrap()
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            assert_eq!(fs::metadata(&path).unwrap().ino(), metadata.ino());
+        }
+        fs::write(&path, [0xff]).unwrap();
+        assert!(config_needs_reconcile(&path, &settings).is_err());
+        assert!(reconcile_config_file(&path, &settings).is_err());
+        assert_eq!(fs::read(&path).unwrap(), [0xff]);
+        assert!(config_needs_reconcile(dir.path(), &settings).is_err());
+    }
+
+    #[test]
+    fn classic_first_install_and_variant_tocs() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Interface/AddOns")).unwrap();
+        let instance: Instance = serde_json::from_value(serde_json::json!({
+            "root": dir.path(), "client": "wow-classic",
+            "addons": [{"id": "Example", "repository": "https://example.org/addon.git",
+                "directories": [{"source": ".", "target": "Example"}]}]
+        }))
+        .unwrap();
+        validate_instance("test", &instance).unwrap();
+        let mut plan = Plan::default();
+        assert!(plan_instance("test", &instance, &mut plan).is_err());
+        assert!(plan.changes.is_empty());
+        assert!(check_instance("test", &instance).is_err());
+        let addon = dir.path().join("Interface/AddOns/Example");
+        fs::create_dir(&addon).unwrap();
+        fs::write(addon.join("Example.toc"), "## Interface: 11200\n").unwrap();
+        fs::write(addon.join("Example-tbc.toc"), "## Interface: 20400\n").unwrap();
+        validate_toc_tree(&addon, 11200).unwrap();
+        fs::write(addon.join("Example.toc"), "## Interface: invalid\n").unwrap();
+        assert!(validate_toc_tree(&addon, 11200).is_err());
+    }
+
+    #[test]
+    fn copy_rejects_symlinks_and_skips_git() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        fs::create_dir_all(source.join(".git")).unwrap();
+        fs::write(source.join("addon.lua"), "original").unwrap();
+        let target = dir.path().join("target");
+        copy_tree(&source, &target).unwrap();
+        assert!(!target.join(".git").exists());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/", source.join("escape")).unwrap();
+            assert!(copy_tree(&source, &dir.path().join("staging")).is_err());
+            assert_eq!(
+                fs::read_to_string(target.join("addon.lua")).unwrap(),
+                "original"
+            );
+        }
+    }
 
     #[test]
     fn sparse_config_reconciliation_is_idempotent() {

@@ -231,6 +231,80 @@ Module](#home-manager-module) below):
 inputs.modde.url = "codeberg:caniko/rs-modde";
 ```
 
+## Declarative WoW Manager
+
+`modde-manager --config client.json check|plan|import|update|snapshot|apply` runs separately
+from Home Manager activation. Client kinds are `wow-wotlk` (default interface
+30300) and `wow-classic` (the original 1.12 client, default interface 11200,
+not modern Blizzard Classic). Classic addon declarations require explicit
+repository URLs. Each addon target must be one directory name; source paths
+may be relative subdirectories of its checkout.
+
+`check`, `plan`, and `apply` share immutable prepared content. Missing destination
+files are valid; unavailable sources, missing/stale content locks, invalid TOCs,
+symlinks, type conflicts and overlapping destinations fail before installation
+mutation. Plans neither fetch nor write. Addon directories are compared by
+content, not existence, and alternate-client TOCs are ignored. Old locks without
+content verification require an explicit import or update; apply never advances
+branches or rewrites locks.
+
+The safe apply pipeline currently targets Linux (`/proc/self/fd`, no-follow
+directory handles, kernel no-clobber rename and instance directory locking).
+It stages all changed payloads, rechecks sources/destinations/process guards,
+and retains `.modde-transaction-*` directories containing payloads, backups and a
+`journal.json`. Failed rollback preserves recovery evidence and refuses to erase
+concurrent user changes. Recovery paths printed to the operator are real paths,
+not process-local descriptor aliases. This is not a crash-atomic multi-file or
+multi-instance transaction. Quiescence is required; advisory locks cannot stop
+non-cooperating writers or provide isolation from hostile continuous namespace
+renames. Pruning is explicitly refused by this migration pipeline.
+
+Three distinct file contracts:
+
+- `config = [{path, settings}]`: continuously reconcile only declared global
+  keys, preserving other lines. Removing a key relinquishes ownership without
+  deleting its value. Empty maps do nothing.
+- `saved_variables = [{path, source, mode}]`: `seed` never overwrites existing
+  files; `replace` changes only differing bytes.
+- `seed_trees = [{source, destination}]`: merge missing regular files recursively
+  with atomic no-clobber installation. `source` is an absolute runtime path;
+  `destination` is instance-relative. Existing files win, and deleted files may
+  be seeded again. No replace mode exists for trees.
+
+Offline `import` requires every addon to declare `local_source`, exact `revision`,
+and its reviewed `repository` identity. It checks commit-tree bytes against the
+whole local payload, including untracked/ignored differences, without executing
+filters, hooks, Lua or addon scripts. Imported content is stored separately under
+manager state; locks record source path, repository, revision, original commit
+timestamp and content digest. Imports refuse to replace differing existing source
+storage. A historical import is **not** approval under online `update`'s unchanged
+365-day freshness rule. Import may leave newly installed source storage if a later
+state/lock write fails; the previous lock is not deliberately advanced until all
+payloads are installed. Retry only after inspecting state.
+
+After restorable backups and explicit operator authorization, the account-only
+snapshot operation is:
+
+```text
+modde-manager --config client.json snapshot --source /absolute/turtle-root --destination /private/existing-parent/new-snapshot
+```
+
+It copies only `WTF/Account/CANIKO` and `WTF/Account/DEJANICA` into `Account/`,
+verifies bytes and unchanged sources, writes a private per-file digest manifest,
+and refuses an existing snapshot destination. Reference those two immutable
+snapshot account paths in seed declarations, never the live Turtle account tree.
+Keep the snapshot while declarations refer to it. Full installation backups and
+their restoration rehearsal are separate prerequisites, not performed by this
+account-only command. In Nix, use runtime strings, never path coercion/readFile
+for private account content. `lib.managerSchemaVersion = 2` identifies this API;
+the configuration file's compatible version remains 1.
+
+For Turtle-to-OctoWoW migration, keep stock Blizzard addons and the destination
+realm settings. Do not copy `WTF/Config.wtf` wholesale or remap account/character
+SavedVariables without checking destination identities. Interface compatibility
+does not establish server-specific addon compatibility. The manager does not
+install HD patches, configure Wine, or launch the client.
+
 ## Privacy
 
 ### Telemetry

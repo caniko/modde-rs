@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Manager**: Add Classic/OctoWoW reconciliation, verified offline addon import,
+  private account snapshots, seed-only account-tree merging, and recovery journals.
+
 ### Changed
 
+- **Manager**: Plan and apply compare prepared content and preserve unchanged files.
+  Safe migration commits require Linux; pruning is refused. Existing addon locks
+  without content verification require an explicit import or update. Online update
+  retains its 365-day freshness requirement.
 - **Build**: Renamed the shared Harbor flake and xtask sources to `harbor-rs`
   while retaining compatibility aliases for downstream inputs.
 - **CI**: Updated Crow jobs to run the project Nix and xtask checks used by the

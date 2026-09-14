@@ -2,7 +2,7 @@
   description = "modde — cross-platform game mod manager";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=fac8049316846e0ef1c1e6acd92aed7a337b333a";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=891cf7c2827e61ed4b07e3caef6efe0543b0d5d0";
     rs-harbor.follows = "harbor-rs";
 
     harbor-macos-sdk-pin.url = "git+https://github.com/caniko/harbor-macos-sdk-pin.git";
@@ -1566,6 +1566,12 @@
             grep -q "does not support release pinning" assertions.json
             touch "$out"
           '';
+          manager = craneLib.cargoTest (managerPackageArgs
+            // {
+              cargoArtifacts = managerCargoArtifacts;
+              doCheck = true;
+              nativeBuildInputs = managerPackageArgs.nativeBuildInputs ++ [pkgs.procps pkgs.git];
+            });
           hm-module-tools-bad-profile = mkHmModuleFailureCheck {
             name = "bad-profile";
             expected = "singular enum";
@@ -1941,6 +1947,7 @@
       });
   in
     {
+      lib.managerSchemaVersion = 2;
       lib.mkManager = {
         pkgs,
         package,
