@@ -11,6 +11,7 @@
 # Local environment and Nix build outputs
 .direnv/
 .flatpak-builder/
+/.nix-results/
 result*
 *-result
 
