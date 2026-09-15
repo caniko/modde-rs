@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::transaction::overlap;
-use files::{Anchor, Image, Lease, fd_path};
+use files::{Anchor, Image, Lease, fd_path, relative};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -184,6 +184,11 @@ pub struct LauncherState {
     pub prefix: Option<PathBuf>,
     #[serde(default)]
     pub tweaks: BTreeMap<String, bool>,
+    /// Installed launcher executable (under the launcher prefix). When
+    /// present the Lutris entry launches it; otherwise the installer
+    /// (first-run path before the launcher exists).
+    #[serde(default)]
+    pub executable: Option<PathBuf>,
     /// Lutris entry for the launcher itself (usually the installer first,
     /// re-pointed after installation). Same adapter as game entries.
     #[serde(default)]
@@ -248,18 +253,21 @@ fn launcher_spec(
     entry: &LutrisEntry,
     runner: &Runner,
     wiring: &Wiring,
+    executable: Option<&PathBuf>,
 ) -> Result<EntrySpec> {
-    let dir = installer
-        .path
+    // Installed launcher wins when declared; the installer is the
+    // first-run path before the launcher exists.
+    let exe = executable.map(PathBuf::as_path).unwrap_or(&installer.path);
+    let dir = exe
         .parent()
-        .context("installer needs a parent directory")?
+        .context("launcher executable needs a parent directory")?
         .display()
         .to_string();
     Ok(EntrySpec {
         slug: entry.slug.clone(),
         name: entry.name.clone(),
         game_slug: entry.game_slug.clone(),
-        exe: installer.path.display().to_string(),
+        exe: exe.display().to_string(),
         dir,
         prefix: Some(prefix.display().to_string()),
         runner_version: runner.version.clone(),
@@ -1338,7 +1346,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                 if found {
                     String::new()
                 } else {
-                    "enable the HD set in the launcher, then re-check".into()
+                    "HD patch absent; the installed launcher shows no HD mod entry — add a verified set, then re-check".into()
                 },
             ));
         }
@@ -1348,7 +1356,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                     "hd-patch-A",
                     ItemState::Missing,
                     "no patch-A at all".into(),
-                    "enable the HD set in the launcher".into(),
+                    "HD patch-A absent; the installed launcher shows no HD mod entry — add a verified set, then re-check".into(),
                 )),
                 Some(rel) => {
                     let Some((mut file, meta)) = pinned_file(&instance.root, &rel)? else {
@@ -1665,24 +1673,48 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                 path: PathBuf::new(),
                 version: String::new(),
             };
-            let spec = launcher_spec(installer, prefix, entry, &dummy, &wiring)?;
-            let recorded =
-                read_recorded(instance).map(|record| record.map(|record| record.version));
-            match lutris_yml_path(dirs, &entry.slug) {
-                Some(path) => items.push(check_entry_yml(
-                    &path,
-                    "launcher-entry",
-                    "run: onboard register-launcher",
-                    &spec,
-                    recorded,
-                )),
-                None => items.push(item(
-                    "launcher-entry",
-                    ItemState::Missing,
-                    format!("no {}.yml in Lutris config dirs", entry.slug),
-                    "run: onboard register-launcher".into(),
-                )),
+            let spec = match launcher_spec(
+                installer,
+                prefix,
+                entry,
+                &dummy,
+                &wiring,
+                launcher.executable.as_ref(),
+            ) {
+                Ok(spec) => Some(spec),
+                Err(e) => {
+                    items.push(item(
+                        "launcher-entry",
+                        ItemState::Unverifiable,
+                        format!("{e:#}"),
+                        "fix the launcher declaration".into(),
+                    ));
+                    None
+                }
+            };
+            if let Some(spec) = &spec {
+                let recorded =
+                    read_recorded(instance).map(|record| record.map(|record| record.version));
+                match lutris_yml_path(dirs, &entry.slug) {
+                    Some(path) => items.push(check_entry_yml(
+                        &path,
+                        "launcher-entry",
+                        "run: onboard register-launcher",
+                        spec,
+                        recorded,
+                    )),
+                    None => items.push(item(
+                        "launcher-entry",
+                        ItemState::Missing,
+                        format!("no {}.yml in Lutris config dirs", entry.slug),
+                        "run: onboard register-launcher".into(),
+                    )),
+                }
             }
+            // The launcher's stored client folder must equal the declared
+            // client root (register-launcher owns it; apply never touches
+            // launcher state).
+            items.push(launcher_client_dir_item(instance, &wiring, prefix));
         }
     }
 
@@ -2304,13 +2336,15 @@ pub fn prepare(
     // Client/HD prerequisites are external maintenance (launcher updates,
     // client install): anything apply does not own must already verify, or
     // no mutation happens at all. Same observations status/plan report.
-    // The launcher entry is owned by register-launcher, never by apply.
+    // The launcher entry and its stored client folder are owned by
+    // register-launcher, never by apply.
     let blockers: Vec<_> = status(name, instance, dirs)?
         .into_iter()
         .filter(|item| {
             item.state != ItemState::Verified
                 && !is_ownable(&item.name)
                 && item.name != "launcher-entry"
+                && item.name != "launcher-client-dir"
         })
         .collect();
     if !blockers.is_empty() {
@@ -2516,8 +2550,301 @@ pub fn apply(
     Ok(())
 }
 
-/// Register the launcher itself as a Lutris entry (usually the installer
-/// first): its own sibling prefix plus one yml row, through the same
+/// Locate the OctoLauncher `settings.json` inside a launcher prefix: exactly
+/// one `drive_c/users/*/AppData/Roaming/octo-launcher/settings.json` must
+/// exist. Zero means the launcher never ran (external step, never
+/// fabricated); more than one is ambiguous and fails closed. Reads are
+/// no-follow throughout, so symlinks fail instead of escaping the prefix.
+fn find_launcher_settings(prefix: &Path) -> Result<Option<PathBuf>> {
+    let anchor = Anchor::open(prefix)?;
+    // Top-level listing only (never a recursive walk: profiles hold
+    // shell-folder symlinks like Desktop -> $HOME, and following the
+    // `steamuser -> can` alias would count one profile twice).
+    let users_dir = fd_path(&anchor.file).join("drive_c/users");
+    let mut users = Vec::new();
+    match fs::symlink_metadata(&users_dir) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            bail!("launcher profile root is a symlink: {}", users_dir.display())
+        }
+        Ok(meta) if !meta.is_dir() => {
+            bail!("launcher prefix has a file where drive_c/users belongs")
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).context(format!("inspect {}", users_dir.display())),
+        Ok(_) => {}
+    }
+    match fs::read_dir(&users_dir) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = entry?;
+                let name = entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| anyhow::anyhow!("non-UTF8 profile name"))?;
+                relative(Path::new(&name))?;
+                if entry.file_type()?.is_dir() {
+                    users.push(name);
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).context(format!("list {}", users_dir.display())),
+    }
+    let mut found = Vec::new();
+    for user in &users {
+        let rel = Path::new("drive_c/users")
+            .join(user)
+            .join("AppData/Roaming/octo-launcher/settings.json");
+        match anchor.read(&rel, false)? {
+            Image::Missing => {}
+            Image::Directory(_) => {
+                bail!("launcher settings is a directory: {}", rel.display())
+            }
+            Image::File(_) => found.push(prefix.join(rel)),
+        }
+    }
+    if found.len() > 1 {
+        bail!(
+            "ambiguous launcher settings ({} candidates); keep exactly one user profile",
+            found.len()
+        );
+    }
+    Ok(found.into_iter().next())
+}
+
+/// Map a Linux client root to the Wine path the launcher stores: only the
+/// default `z: -> /` mapping is accepted, verified from the prefix itself.
+/// Any custom drive mapping fails closed rather than guessing letters.
+fn wine_client_dir(prefix: &Path, root: &Path) -> Result<String> {
+    if !root.is_absolute() {
+        bail!("client root must be absolute: {}", root.display());
+    }
+    let drive = fs::read_link(prefix.join("dosdevices/z:")).context(
+        "launcher prefix has no z: drive mapping; cannot derive the launcher client path",
+    )?;
+    if drive != Path::new("/") {
+        bail!(
+            "launcher prefix maps z: to {}, not /; cannot derive the launcher client path",
+            drive.display()
+        );
+    }
+    Ok(format!(
+        "Z:{}",
+        root.display().to_string().replace('/', "\\")
+    ))
+}
+
+/// Read the two client-directory keys the launcher persists. Anything else
+/// in the file (sync hashes, window state, mods) is opaque and untouched.
+fn read_launcher_client_dirs(body: &str) -> Result<(Option<String>, Option<String>)> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(body).context("launcher settings is not JSON")?;
+    let map = parsed
+        .as_object()
+        .context("launcher settings is not a JSON object")?;
+    let get = |key: &str| -> Result<Option<String>> {
+        match map.get(key) {
+            None => Ok(None),
+            Some(serde_json::Value::String(value)) => Ok(Some(value.clone())),
+            Some(_) => bail!("launcher settings key '{key}' is not a string"),
+        }
+    };
+    Ok((get("clientDir")?, get("activeClientDir")?))
+}
+
+/// Splice new values into the two client-directory string literals,
+/// preserving every other byte. A full JSON rewrite would reorder keys and
+/// reformat launcher-owned state; this touches only the two literals.
+fn set_launcher_client_dirs(body: &str, want: &str) -> Result<(String, bool)> {
+    let mut out = body.to_owned();
+    let mut changed = false;
+    for key in ["clientDir", "activeClientDir"] {
+        let Some(span) = json_string_span(&out, key)? else {
+            bail!("launcher settings has no '{key}'; set the client folder in the launcher once")
+        };
+        // The span covers the inner literal; the serialized replacement
+        // carries its own quotes, so splice the inner text only.
+        let replacement = serde_json::to_string(want)?;
+        let inner = replacement
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .context("serialized client path is not a JSON string")?;
+        if &out[span.clone()] != inner {
+            out.replace_range(span, inner);
+            changed = true;
+        }
+    }
+    Ok((out, changed))
+}
+
+/// Byte span of the string value for a top-level JSON key: finds `"key"`,
+/// skips whitespace and the colon, then scans the string literal honoring
+/// escapes. Fails closed on anything unexpected instead of guessing.
+fn json_string_span(body: &str, key: &str) -> Result<Option<std::ops::Range<usize>>> {
+    let token = format!("\"{key}\"");
+    let Some(key_at) = body.find(&token) else {
+        return Ok(None);
+    };
+    let mut pos = key_at + token.len();
+    let bytes = body.as_bytes();
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    if bytes.get(pos) != Some(&b':') {
+        bail!("launcher settings key '{key}' is malformed");
+    }
+    pos += 1;
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    if bytes.get(pos) != Some(&b'"') {
+        bail!("launcher settings key '{key}' is not a string");
+    }
+    pos += 1;
+    let start = pos;
+    while pos < bytes.len() {
+        match bytes[pos] {
+            b'\\' => pos += 2,
+            b'"' => return Ok(Some(start..pos)),
+            _ => pos += 1,
+        }
+    }
+    bail!("launcher settings key '{key}' has an unterminated string")
+}
+
+/// Reconcile the launcher's stored client folder with the declared client
+/// root. Returns (settings path, changed), or None when there are no
+/// settings to reconcile (the launcher writes them on first run; status
+/// tracks that absence separately). Never creates settings, never touches
+/// sync hashes or anything else in the file; the previous content is
+/// retained under a unique backup on change.
+fn reconcile_launcher_client_dir(
+    instance: &Instance,
+    prefix: &Path,
+) -> Result<Option<(PathBuf, bool)>> {
+    let Some(path) = find_launcher_settings(prefix)? else {
+        return Ok(None);
+    };
+    let current = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+    let body =
+        String::from_utf8(current.clone()).context("launcher settings is not UTF-8")?;
+    let (client_dir, active_dir) = read_launcher_client_dirs(&body)?;
+    let want = wine_client_dir(prefix, &instance.root)?;
+    if client_dir.as_deref() == Some(want.as_str())
+        && active_dir.as_deref() == Some(want.as_str())
+    {
+        return Ok(Some((path, false)));
+    }
+    let (updated, changed) = set_launcher_client_dirs(&body, &want)?;
+    if !changed {
+        return Ok(Some((path, false)));
+    }
+    let backup = backup_name(&path, "launcher-settings");
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&backup)?;
+        use std::io::Write;
+        file.write_all(&current)?;
+        file.sync_all()?;
+    }
+    atomic_write_0600(&path, updated.as_bytes())?;
+    Ok(Some((path, true)))
+}
+
+/// Read-only observation of the launcher's stored client folder against the
+/// declared client root. Never writes; register-launcher owns the fix.
+fn launcher_client_dir_item(instance: &Instance, wiring: &Wiring, prefix: &Path) -> StatusItem {
+    match validated_prefix(prefix, &instance.root, wiring) {
+        Err(e) => item(
+            "launcher-client-dir",
+            ItemState::Unverifiable,
+            format!("{e:#}"),
+            "fix the launcher prefix declaration".into(),
+        ),
+        Ok(None) => item(
+            "launcher-client-dir",
+            ItemState::Missing,
+            "launcher prefix absent".into(),
+            "run: onboard register-launcher".into(),
+        ),
+        Ok(Some(_)) => match find_launcher_settings(prefix) {
+            Err(e) => item(
+                "launcher-client-dir",
+                ItemState::Unverifiable,
+                format!("{e:#}"),
+                "keep exactly one launcher user profile".into(),
+            ),
+            Ok(None) => item(
+                "launcher-client-dir",
+                ItemState::Missing,
+                "launcher settings absent".into(),
+                "run the launcher once, then run: onboard register-launcher".into(),
+            ),
+            Ok(Some(path)) => {
+                let body = match fs::read_to_string(&path) {
+                    Ok(body) => body,
+                    Err(e) => {
+                        return item(
+                            "launcher-client-dir",
+                            ItemState::Unverifiable,
+                            format!("{e}"),
+                            "inspect the launcher settings permissions".into(),
+                        );
+                    }
+                };
+                let want = match wine_client_dir(prefix, &instance.root) {
+                    Ok(want) => want,
+                    Err(e) => {
+                        return item(
+                            "launcher-client-dir",
+                            ItemState::Unverifiable,
+                            format!("{e:#}"),
+                            "restore the default z: drive mapping".into(),
+                        );
+                    }
+                };
+                match read_launcher_client_dirs(&body) {
+                    Err(e) => item(
+                        "launcher-client-dir",
+                        ItemState::Mismatched,
+                        format!("{e:#}"),
+                        "set the client folder in the launcher once, then re-run registration"
+                            .into(),
+                    ),
+                    Ok((client_dir, active_dir))
+                        if client_dir.as_deref() == Some(want.as_str())
+                            && active_dir.as_deref() == Some(want.as_str()) =>
+                    {
+                        item(
+                            "launcher-client-dir",
+                            ItemState::Verified,
+                            path.display().to_string(),
+                            String::new(),
+                        )
+                    }
+                    Ok((client_dir, _)) => item(
+                        "launcher-client-dir",
+                        ItemState::Mismatched,
+                        format!(
+                            "clientDir is {}, want {want}",
+                            client_dir.as_deref().unwrap_or("<absent>")
+                        ),
+                        "run: onboard register-launcher".into(),
+                    ),
+                }
+            }
+        },
+    }
+}
+
+/// Register the launcher itself as a Lutris entry (the installer first,
+/// the installed executable once declared): its own sibling prefix, one
+/// yml row, and the launcher's stored client folder (reconciled to the
+/// declared client root, nothing else in its settings), through the same
 /// plan/execute adapter as game entries. Single call; never launches
 /// anything — the operator runs the installer from Lutris afterwards.
 pub fn register_launcher(
@@ -2574,6 +2901,40 @@ pub fn register_launcher(
             }
         }
     }
+    // Installed launcher executable: same single-descriptor discipline as
+    // the installer, and it must live under the launcher prefix (never an
+    // arbitrary host executable Lutris would then run).
+    if let Some(executable) = &launcher.executable {
+        if !executable.is_absolute() {
+            bail!("launcher executable path must be absolute");
+        }
+        if !executable.starts_with(&prefix) {
+            bail!(
+                "launcher executable must live under the launcher prefix: {}",
+                executable.display()
+            );
+        }
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let file = match fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(executable)
+            {
+                Ok(file) => file,
+                Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
+                    bail!("launcher executable is a symlink: {}", executable.display())
+                }
+                Err(e) => return Err(e).context("launcher executable unreadable"),
+            };
+            if !file.metadata()?.is_file() {
+                bail!(
+                    "launcher executable is not a file: {}",
+                    executable.display()
+                );
+            }
+        }
+    }
     validate_slug(&entry.slug)?;
     if lutris_running()? {
         bail!("lutris is running; close it completely before registering");
@@ -2584,7 +2945,14 @@ pub fn register_launcher(
     // Path validation first (no writes): a bad prefix never gets created
     // on the way to an ownership refusal.
     validated_prefix(&prefix, &instance.root, &wiring)?;
-    let spec = launcher_spec(&installer, &prefix, &entry, &runner, &wiring)?;
+    let spec = launcher_spec(
+        &installer,
+        &prefix,
+        &entry,
+        &runner,
+        &wiring,
+        launcher.executable.as_ref(),
+    )?;
     // Same lock-before-inspection discipline as game registration: the
     // ownership check inside plan_entry runs under the data-dir lock.
     let (_, site_data) =
@@ -2599,9 +2967,15 @@ pub fn register_launcher(
     let entry_plan = plan_entry(dirs, &entry, &spec, adopt)?;
 
     let mut mutated = false;
-    match validated_prefix(&prefix, &instance.root, &wiring)? {
-        Some(arch) => println!("{name}: launcher prefix already present ({arch})"),
-        None => match create_prefix(&prefix, &runner, &wiring) {
+    // A prefix created by this run cannot hold launcher settings yet (the
+    // launcher writes them on first run): reconciliation only applies to a
+    // pre-existing prefix, and fails closed there when settings are absent.
+    let prior = validated_prefix(&prefix, &instance.root, &wiring)?;
+    // Verification below only covers settings when reconciliation ran
+    // (pre-existing prefix); a fresh prefix cannot hold settings yet.
+    let mut settings_reconciled = false;
+    if prior.is_none() {
+        match create_prefix(&prefix, &runner, &wiring) {
             Ok(arch) => {
                 mutated = true;
                 println!("{name}: launcher prefix created ({arch})");
@@ -2614,7 +2988,41 @@ pub fn register_launcher(
                 );
                 return Err(error);
             }
-        },
+        }
+        println!("{name}: launcher client folder pending (run the launcher once)");
+    } else {
+        println!(
+            "{name}: launcher prefix already present ({})",
+            prior.as_deref().unwrap_or("unknown arch")
+        );
+        // The launcher's stored client folder follows the declared client
+        // root. Absent settings mean the launcher never ran: status tracks
+        // that, so registration proceeds with the entry. The launcher must
+        // be stopped (assert_stopped above): it rewrites its settings on
+        // exit and would clobber this edit.
+        match reconcile_launcher_client_dir(instance, &prefix) {
+            Ok(None) => println!("{name}: launcher client folder pending (run the launcher once)"),
+            Ok(Some((path, changed))) => {
+                mutated |= changed;
+                settings_reconciled = true;
+                println!(
+                    "{name}: launcher client folder {}",
+                    if changed {
+                        path.display().to_string()
+                    } else {
+                        "unchanged".into()
+                    }
+                );
+            }
+            Err(error) => {
+                journal_event(
+                    instance,
+                    name,
+                    serde_json::json!({"op": "register-launcher-failed", "step": "launcher-settings", "error": format!("{error:#}")}),
+                );
+                return Err(error);
+            }
+        }
     }
 
     match execute_entry(dirs, &entry, &spec, &entry_plan) {
@@ -2657,6 +3065,16 @@ pub fn register_launcher(
             }
         }
         None => bail!("launcher entry missing after registration"),
+    }
+    if settings_reconciled
+        && launcher_client_dir_item(instance, &wiring, &prefix).state != ItemState::Verified
+    {
+        journal_event(
+            instance,
+            name,
+            serde_json::json!({"op": "register-launcher-failed", "step": "verify-settings"}),
+        );
+        bail!("launcher client folder failed verification");
     }
     if mutated {
         journal_event(
@@ -3298,10 +3716,47 @@ mod tests {
 
     /// Instance with a launcher block (installer + own prefix + entry).
     /// Returns the instance; the installer file digest is computed live.
-    fn launcher_fixture(root: &Path, installer_sha: Option<String>) -> Instance {
+    /// An installed executable path can be declared for the post-install
+    /// entry; the fake launcher settings point at the wrong folder so
+    /// reconciliation has something to fix (created only when asked).
+    fn launcher_fixture(
+        root: &Path,
+        installer_sha: Option<String>,
+        executable: bool,
+        settings: bool,
+    ) -> Instance {
         let state = root.parent().unwrap().join("octo-manager");
         let installer = root.parent().unwrap().join("OctoLauncher_Installer.exe");
         fs::write(&installer, "fake-installer-bytes").unwrap();
+        let prefix = root.parent().unwrap().join("octowow-launcher-prefix");
+        let mut launcher = serde_json::json!({
+            "installer": {"path": installer},
+            "prefix": prefix,
+            "lutris": {"slug": "octowow-launcher-test", "name": "OctoWoW Launcher"},
+        });
+        if executable {
+            let exe = prefix.join("drive_c/users/testuser/AppData/Local/Programs/OctoLauncher/OctoLauncher.exe");
+            fs::create_dir_all(exe.parent().unwrap()).unwrap();
+            fs::write(&exe, "fake-launcher-exe").unwrap();
+            launcher["executable"] = serde_json::Value::String(exe.display().to_string());
+        }
+        if settings {
+            // Default Wine mapping (z: -> /) plus a settings file pointing
+            // at the wrong folder; unrelated keys must survive untouched.
+            // The prefix already exists (win64 marker) so registration
+            // reconciles instead of creating it.
+            fs::create_dir_all(&prefix).unwrap();
+            fs::write(prefix.join("system.reg"), "#arch=win64\n").unwrap();
+            fs::create_dir_all(prefix.join("dosdevices")).unwrap();
+            std::os::unix::fs::symlink("/", prefix.join("dosdevices/z:")).unwrap();
+            let dir = prefix.join("drive_c/users/testuser/AppData/Roaming/octo-launcher");
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("settings.json"),
+                "{\n  \"server\": \"live\",\n  \"clientDir\": \"Z:\\\\wrong\\\\folder\",\n  \"activeClientDir\": \"Z:\\\\wrong\\\\folder\",\n  \"windowPosition\": {\"x\": 1}\n}\n",
+            )
+            .unwrap();
+        }
         let mut value = serde_json::json!({
             "root": root,
             "client": "wow-classic",
@@ -3310,11 +3765,7 @@ mod tests {
             "wiring": {
                 "prefix": {"path": root.parent().unwrap().join("octowow-prefix")},
                 "lutris": {"slug": "octowow-test", "name": "OctoWoW"},
-                "launcher": {
-                    "installer": {"path": installer},
-                    "prefix": root.parent().unwrap().join("octowow-launcher-prefix"),
-                    "lutris": {"slug": "octowow-launcher-test", "name": "OctoWoW Launcher"},
-                },
+                "launcher": launcher,
             },
         });
         if let Some(sha) = installer_sha {
@@ -3327,7 +3778,7 @@ mod tests {
     fn launcher_spec_has_no_game_overrides_and_parses() {
         let (_envelope, root) = fixture_root();
         let home = fixture_home(&["wine-ge-9-2"]);
-        let instance = launcher_fixture(&root, None);
+        let instance = launcher_fixture(&root, None, false, false);
         let wiring = resolve_wiring(&instance).unwrap();
         let launcher = wiring.launcher.clone().unwrap();
         let runner = discover_runner(&dirs(&home), "wine", "latest").unwrap();
@@ -3337,6 +3788,7 @@ mod tests {
             launcher.lutris.as_ref().unwrap(),
             &runner,
             &wiring,
+            launcher.executable.as_ref(),
         )
         .unwrap();
         assert!(spec.dll_overrides.is_empty());
@@ -3352,6 +3804,198 @@ mod tests {
     }
 
     #[test]
+    fn launcher_spec_prefers_declared_executable() {
+        let (_envelope, root) = fixture_root();
+        let home = fixture_home(&["wine-ge-9-2"]);
+        let instance = launcher_fixture(&root, None, true, false);
+        let wiring = resolve_wiring(&instance).unwrap();
+        let launcher = wiring.launcher.clone().unwrap();
+        let runner = discover_runner(&dirs(&home), "wine", "latest").unwrap();
+        let spec = launcher_spec(
+            launcher.installer.as_ref().unwrap(),
+            &launcher.prefix.clone().unwrap(),
+            launcher.lutris.as_ref().unwrap(),
+            &runner,
+            &wiring,
+            launcher.executable.as_ref(),
+        )
+        .unwrap();
+        let exe = launcher.executable.clone().unwrap();
+        assert_eq!(spec.exe, exe.display().to_string());
+        assert_eq!(spec.dir, exe.parent().unwrap().display().to_string());
+    }
+
+    #[test]
+    fn launcher_settings_skips_profile_aliases() {
+        let prefix = tempfile::tempdir().unwrap();
+        let users = prefix.path().join("drive_c/users");
+        let settings = "testuser/AppData/Roaming/octo-launcher/settings.json";
+        fs::create_dir_all(users.join("testuser/AppData/Roaming/octo-launcher")).unwrap();
+        fs::write(users.join(settings), "{\"clientDir\": \"Z:\\\\x\"}").unwrap();
+        // A profile alias and a shell-folder symlink must neither count as
+        // profiles nor explode the scan.
+        std::os::unix::fs::symlink(users.join("testuser"), users.join("steamuser")).unwrap();
+        std::os::unix::fs::symlink("/nonexistent-templates", users.join("Templates")).unwrap();
+        let found = find_launcher_settings(prefix.path()).unwrap().unwrap();
+        assert_eq!(found, users.join(settings));
+    }
+
+    #[test]
+    fn launcher_client_dir_mapping_needs_default_z_drive() {        let prefix = tempfile::tempdir().unwrap();
+        // No dosdevices at all.
+        assert!(wine_client_dir(prefix.path(), Path::new("/games/octo")).is_err());
+        // A custom mapping fails closed.
+        fs::create_dir_all(prefix.path().join("dosdevices")).unwrap();
+        std::os::unix::fs::symlink("/elsewhere", prefix.path().join("dosdevices/z:")).unwrap();
+        let err = wine_client_dir(prefix.path(), Path::new("/games/octo")).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("not /"),
+            "unexpected: {err:#}"
+        );
+        // The default mapping converts slashes to backslashes.
+        fs::remove_file(prefix.path().join("dosdevices/z:")).unwrap();
+        std::os::unix::fs::symlink("/", prefix.path().join("dosdevices/z:")).unwrap();
+        assert_eq!(
+            wine_client_dir(prefix.path(), Path::new("/games/octo")).unwrap(),
+            "Z:\\games\\octo"
+        );
+    }
+
+    #[test]
+    fn launcher_settings_edit_touches_only_the_two_keys() {
+        let before = "{\n  \"server\": \"live\",\n  \"clientDir\": \"Z:\\\\old\",\n  \"activeClientDir\": \"Z:\\\\old\",\n  \"mods\": {\"dxvk\": {\"enabled\": true}}\n}\n";
+        let (after, changed) = set_launcher_client_dirs(before, "Z:\\new").unwrap();
+        assert!(changed);
+        assert!(after.contains("\"clientDir\": \"Z:\\\\new\""));
+        assert!(after.contains("\"activeClientDir\": \"Z:\\\\new\""));
+        // Unrelated state survives byte-identical.
+        assert!(after.contains("\"server\": \"live\""));
+        assert!(after.contains("\"mods\": {\"dxvk\": {\"enabled\": true}}"));
+        // Already reconciled: no change.
+        let (_, changed) = set_launcher_client_dirs(&after, "Z:\\new").unwrap();
+        assert!(!changed);
+        // Missing key fails closed instead of inventing placement.
+        assert!(set_launcher_client_dirs("{\"a\": 1}", "Z:\\new").is_err());
+    }
+
+    #[test]
+    fn register_launcher_repoints_entry_and_client_dir() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        require_sqlite();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        wineboot_home(&home, "wine-ge-9-2");
+        lutris_home(home.path());
+        let instance = launcher_fixture(&root, None, true, true);
+        // Status before: entry missing, stored client folder wrong.
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        let state_of = |name: &str| {
+            items
+                .iter()
+                .find(|i| i.name == name)
+                .unwrap_or_else(|| panic!("no item {name}"))
+                .state
+        };
+        assert_eq!(state_of("launcher-entry"), ItemState::Missing);
+        assert_eq!(state_of("launcher-client-dir"), ItemState::Mismatched);
+        register_launcher("test", &instance, &dirs(&home), false).unwrap();
+        // Lutris entry launches the installed exe from its own directory.
+        let wiring = resolve_wiring(&instance).unwrap();
+        let launcher = wiring.launcher.clone().unwrap();
+        let exe = launcher.executable.clone().unwrap();
+        let yml = fs::read_to_string(
+            home.path()
+                .join(".config/lutris/games/octowow-launcher-test.yml"),
+        )
+        .unwrap();
+        let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
+        assert_eq!(
+            parsed["game"]["exe"].as_str().unwrap(),
+            exe.display().to_string()
+        );
+        assert_eq!(
+            parsed["game"]["working_dir"].as_str().unwrap(),
+            exe.parent().unwrap().display().to_string()
+        );
+        // Settings: both keys name the game root; the rest is untouched.
+        let settings = launcher.prefix.clone().unwrap().join(
+            "drive_c/users/testuser/AppData/Roaming/octo-launcher/settings.json",
+        );
+        let body = fs::read_to_string(&settings).unwrap();
+        let want = format!(
+            "Z:{}",
+            root.display().to_string().replace('/', "\\")
+        );
+        let want_json = serde_json::to_string(&want).unwrap();
+        assert!(body.contains(&format!("\"clientDir\": {want_json}")));
+        assert!(body.contains(&format!("\"activeClientDir\": {want_json}")));
+        assert!(body.contains("\"server\": \"live\""));
+        assert!(body.contains("\"windowPosition\": {\"x\": 1}"));
+        assert!(!body.contains("wrong"));
+        // Previous settings retained under a unique backup.
+        let backups: Vec<_> = fs::read_dir(settings.parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|entry| entry.file_name()))
+            .filter(|name| {
+                name.to_string_lossy()
+                    .starts_with("settings.bak-modde-launcher-settings-")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+        // Repeat call is a full no-op and both items verify.
+        let before_home = snapshot_tree(home.path());
+        let before_game = snapshot_tree(_envelope.path());
+        register_launcher("test", &instance, &dirs(&home), false).unwrap();
+        assert_eq!(snapshot_tree(home.path()), before_home);
+        assert_eq!(snapshot_tree(_envelope.path()), before_game);
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        let state_of = |name: &str| {
+            items
+                .iter()
+                .find(|i| i.name == name)
+                .unwrap_or_else(|| panic!("no item {name}"))
+                .state
+        };
+        assert_eq!(state_of("launcher-entry"), ItemState::Verified);
+        assert_eq!(state_of("launcher-client-dir"), ItemState::Verified);
+    }
+
+    #[test]
+    fn register_launcher_refuses_ambiguous_settings_before_writes() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        require_sqlite();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        wineboot_home(&home, "wine-ge-9-2");
+        lutris_home(home.path());
+        // Prefix exists with a win64 marker, but two user profiles hold
+        // settings: fail before any yml or row exists, with evidence.
+        let prefix = root.parent().unwrap().join("octowow-launcher-prefix");
+        fs::create_dir_all(&prefix).unwrap();
+        fs::write(prefix.join("system.reg"), "#arch=win64\n").unwrap();
+        for user in ["alice", "bob"] {
+            let dir = prefix.join(format!("drive_c/users/{user}/AppData/Roaming/octo-launcher"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("settings.json"), "{\"clientDir\": \"Z:\\\\x\"}").unwrap();
+        }
+        let instance = launcher_fixture(&root, None, false, false);
+        let err = register_launcher("test", &instance, &dirs(&home), false).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("ambiguous launcher settings"),
+            "unexpected: {err:#}"
+        );
+        assert!(
+            !home
+                .path()
+                .join(".config/lutris/games/octowow-launcher-test.yml")
+                .exists()
+        );
+        let journal =
+            fs::read_to_string(_envelope.path().join("octo-manager/wiring-journal.jsonl")).unwrap();
+        assert!(journal.contains("launcher-settings"));
+    }
+
+    #[test]
     fn register_launcher_creates_prefix_and_entry_then_noops() {
         let _guard = APPLY_LOCK.lock().unwrap();
         require_sqlite();
@@ -3359,7 +4003,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         wineboot_home(&home, "wine-ge-9-2");
         lutris_home(home.path());
-        let instance = launcher_fixture(&root, None);
+        let instance = launcher_fixture(&root, None, false, false);
         // Status reports the missing launcher entry before registration.
         let items = status("test", &instance, &dirs(&home)).unwrap();
         assert_eq!(
@@ -3409,7 +4053,7 @@ mod tests {
         wineboot_home(&home, "wine-ge-9-2");
         lutris_home(home.path());
         // Wrong digest fails before prefix, yml, or row exist.
-        let instance = launcher_fixture(&root, Some("0".repeat(64)));
+        let instance = launcher_fixture(&root, Some("0".repeat(64)), false, false);
         let err = register_launcher("test", &instance, &dirs(&home), false).unwrap_err();
         assert!(format!("{err:#}").contains("digest"), "unexpected: {err:#}");
         assert!(!_envelope.path().join("octowow-launcher-prefix").exists());
@@ -3421,7 +4065,7 @@ mod tests {
         );
         // Missing installer file fails the same way (fixture recreates it;
         // remove once for the missing case).
-        let instance = launcher_fixture(&root, None);
+        let instance = launcher_fixture(&root, None, false, false);
         fs::remove_file(root.parent().unwrap().join("OctoLauncher_Installer.exe")).unwrap();
         assert!(register_launcher("test", &instance, &dirs(&home), false).is_err());
         assert!(!_envelope.path().join("octowow-launcher-prefix").exists());
@@ -3441,7 +4085,7 @@ mod tests {
             "INSERT INTO games (name, slug, runner, platform, directory, executable, configpath, installed) VALUES ('Other', 'octowow-launcher-test', 'wine', 'Linux', '/games/other', '/games/other/run.exe', 'octowow-launcher-test', 1);".into(),
         ])
         .unwrap();
-        let instance = launcher_fixture(&root, None);
+        let instance = launcher_fixture(&root, None, false, false);
         let err = register_launcher("test", &instance, &dirs(&home), false).unwrap_err();
         assert!(
             format!("{err:#}").contains("--adopt"),
