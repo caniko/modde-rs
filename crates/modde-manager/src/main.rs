@@ -290,14 +290,17 @@ fn main() -> Result<()> {
             expected_manifest_sha256.as_deref(),
         ),
         CommandKind::Onboard { action } => {
+            // Lutris locations follow XDG_* with $HOME fallback, exactly as
+            // the Lutris client resolves them.
             let home = wiring::home_dir()?;
+            let dirs = wiring::HomeDirs::from_home(home);
             match action {
                 OnboardAction::Status { instance, json } => {
                     let instance_config = config
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
-                    let items = wiring::status(&instance, instance_config, &home)?;
+                    let items = wiring::status(&instance, instance_config, &dirs)?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&items)?);
                     } else if items
@@ -333,7 +336,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
-                    let changes = wiring::plan(&instance, instance_config, &home)?;
+                    let changes = wiring::plan(&instance, instance_config, &dirs)?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&changes)?);
                     } else if changes.is_empty() {
@@ -362,7 +365,7 @@ fn main() -> Result<()> {
                     wiring::apply(
                         &instance,
                         instance_config,
-                        &home,
+                        &dirs,
                         adopt,
                         reselect,
                         expect_runner.as_deref(),

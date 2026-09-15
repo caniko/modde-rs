@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no-op), restores the yml if the database step fails, keeps unique
   WAL-safe backups, and owns only Wine prefix creation, the Lutris yml,
   and the Lutris row.
+- **Manager**: Harden onboarding execution: XDG-compliant Lutris locations
+  (explicit `XDG_*` wins; hermetic test dirs), bounded PE parsing via
+  `e_lfanew`, session-preserving Wine environment with `WINE*` removal
+  plus a `wineserver -w` flush wait, paired native/Flatpak
+  config-database selection, fail-closed `pgrep` exit handling, and
+  streaming capped reads throughout.
 
 ### Changed
 

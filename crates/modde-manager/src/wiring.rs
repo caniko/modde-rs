@@ -478,24 +478,65 @@ pub fn home_dir() -> Result<PathBuf> {
         .context("HOME must be an absolute path")
 }
 
+/// Lutris locations resolved per the XDG Base Directory spec: explicit
+/// `XDG_DATA_HOME`/`XDG_CONFIG_HOME` win over `$HOME`-joined fallbacks.
+/// Lutris itself resolves this way, so joining $HOME blindly splits brain
+/// from the real client whenever those variables are set (as on NixOS).
+#[derive(Debug, Clone)]
+pub struct HomeDirs {
+    pub home: PathBuf,
+    pub data: PathBuf,
+    pub config: PathBuf,
+}
+
+impl HomeDirs {
+    pub fn from_home(home: PathBuf) -> Self {
+        Self::resolve(
+            home,
+            std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+            std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        )
+    }
+
+    fn resolve(home: PathBuf, data_var: Option<PathBuf>, config_var: Option<PathBuf>) -> Self {
+        let pick = |var: Option<PathBuf>, fallback: &str| {
+            var.filter(|p| p.is_absolute())
+                .unwrap_or_else(|| home.join(fallback))
+        };
+        Self {
+            data: pick(data_var, ".local/share"),
+            config: pick(config_var, ".config"),
+            home,
+        }
+    }
+
+    /// Test-only: ignore the ambient environment for hermetic fixtures.
+    #[cfg(test)]
+    pub fn isolated(home: PathBuf) -> Self {
+        Self {
+            data: home.join(".local/share"),
+            config: home.join(".config"),
+            home,
+        }
+    }
+}
+
 /// Lutris installations as matched (config dir, data dir) pairs: native
 /// first, then the Flatpak sandbox. Config and database are always selected
 /// together — never a native yml with a Flatpak database or vice versa.
-fn lutris_sites(home: &Path) -> [(PathBuf, PathBuf); 2] {
+fn lutris_sites(dirs: &HomeDirs) -> [(PathBuf, PathBuf); 2] {
     [
+        (dirs.config.join("lutris/games"), dirs.data.join("lutris")),
         (
-            home.join(".config/lutris/games"),
-            home.join(".local/share/lutris"),
-        ),
-        (
-            home.join(".var/app/net.lutris.Lutris/config/lutris/games"),
-            home.join(".var/app/net.lutris.Lutris/data/lutris"),
+            dirs.home
+                .join(".var/app/net.lutris.Lutris/config/lutris/games"),
+            dirs.home.join(".var/app/net.lutris.Lutris/data/lutris"),
         ),
     ]
 }
 
-fn runner_search_dirs(home: &Path) -> Vec<PathBuf> {
-    lutris_sites(home)
+fn runner_search_dirs(dirs: &HomeDirs) -> Vec<PathBuf> {
+    lutris_sites(dirs)
         .into_iter()
         .map(|(_, data)| data.join("runners/wine"))
         .collect()
@@ -503,8 +544,8 @@ fn runner_search_dirs(home: &Path) -> Vec<PathBuf> {
 
 /// First site whose database exists (native preferred). The paired config
 /// dir travels with it.
-fn lutris_site(home: &Path) -> Option<(PathBuf, PathBuf)> {
-    lutris_sites(home)
+fn lutris_site(dirs: &HomeDirs) -> Option<(PathBuf, PathBuf)> {
+    lutris_sites(dirs)
         .into_iter()
         .find(|(_, data)| data.join("pga.db").is_file())
 }
@@ -512,19 +553,19 @@ fn lutris_site(home: &Path) -> Option<(PathBuf, PathBuf)> {
 /// The slug's yml in the database's own installation. A yml living in the
 /// other installation does not count (wrong home). Both installations are
 /// searched only while database-less, for orphan detection.
-fn lutris_yml_path(home: &Path, slug: &str) -> Option<PathBuf> {
-    if let Some((config, _)) = lutris_site(home) {
+fn lutris_yml_path(dirs: &HomeDirs, slug: &str) -> Option<PathBuf> {
+    if let Some((config, _)) = lutris_site(dirs) {
         let candidate = config.join(format!("{slug}.yml"));
         return candidate.is_file().then_some(candidate);
     }
-    lutris_sites(home)
+    lutris_sites(dirs)
         .into_iter()
         .map(|(config, _)| config.join(format!("{slug}.yml")))
         .find(|p| p.is_file())
 }
 
-fn lutris_db_path(home: &Path) -> Option<PathBuf> {
-    lutris_site(home).map(|(_, data)| data.join("pga.db"))
+fn lutris_db_path(dirs: &HomeDirs) -> Option<PathBuf> {
+    lutris_site(dirs).map(|(_, data)| data.join("pga.db"))
 }
 
 #[derive(Debug, Clone)]
@@ -554,9 +595,9 @@ fn major_version(name: &str) -> Option<u64> {
 /// Scan Lutris runner dirs for `wine-*/bin/wine` executables, newest first
 /// by numeric version. The wine-ge-8 floor is the minimum that runs this
 /// client; anything older is ignored, not warned about.
-fn scan_runners(home: &Path) -> Vec<(String, PathBuf)> {
+fn scan_runners(dirs: &HomeDirs) -> Vec<(String, PathBuf)> {
     let mut found = Vec::new();
-    for base in runner_search_dirs(home) {
+    for base in runner_search_dirs(dirs) {
         let entries = match fs::read_dir(&base) {
             Ok(entries) => entries,
             Err(_) => continue,
@@ -596,14 +637,14 @@ fn system_wine() -> Result<Runner> {
 /// Resolve the declared wine runner. `latest` picks the numerically newest
 /// installed runner; an exact version pins a directory name; `system` uses
 /// `PATH` (looked up in Rust, no shell).
-pub fn discover_runner(home: &Path, kind: &str, version: &str) -> Result<Runner> {
+pub fn discover_runner(dirs: &HomeDirs, kind: &str, version: &str) -> Result<Runner> {
     if kind != "wine" {
         bail!("unsupported runtime kind '{kind}'; supported: wine");
     }
     if version == "system" {
         return system_wine();
     }
-    let found = scan_runners(home);
+    let found = scan_runners(dirs);
     if version != "latest" {
         return found
             .into_iter()
@@ -657,7 +698,7 @@ fn read_recorded(instance: &Instance) -> Result<Option<RecordedRunner>> {
 /// a declaration pin contradicting it fails closed. A recorded binary that
 /// no longer executes blocks unless `reselect` explicitly re-resolves.
 pub fn select_runner(
-    home: &Path,
+    dirs: &HomeDirs,
     instance: &Instance,
     wiring: &Wiring,
     reselect: bool,
@@ -689,7 +730,7 @@ pub fn select_runner(
         }
     }
     Ok((
-        discover_runner(home, &wiring.runtime.kind, &wiring.runtime.version)?,
+        discover_runner(dirs, &wiring.runtime.kind, &wiring.runtime.version)?,
         false,
     ))
 }
@@ -1008,7 +1049,7 @@ fn sqlite3(args: &[String]) -> Result<String> {
 }
 
 /// Read-only readiness report. Never executes wine, Lutris, or the launcher.
-pub fn status(name: &str, instance: &Instance, home: &Path) -> Result<Vec<StatusItem>> {
+pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<StatusItem>> {
     let wiring = resolve_wiring(instance)?;
     let mut items = Vec::new();
     if !instance.root.is_dir() {
@@ -1022,7 +1063,7 @@ pub fn status(name: &str, instance: &Instance, home: &Path) -> Result<Vec<Status
 
     // Runner: persisted record wins over fresh discovery so the reviewed
     // selection is the executed one.
-    let runner = select_runner(home, instance, &wiring, false);
+    let runner = select_runner(dirs, instance, &wiring, false);
     match &runner {
         Ok((found, recorded)) => {
             items.push(item(
@@ -1430,7 +1471,7 @@ pub fn status(name: &str, instance: &Instance, home: &Path) -> Result<Vec<Status
     // Lutris entry: yml content + pga.db row + anticheat absence.
     if let Some(entry) = &wiring.lutris {
         validate_slug(&entry.slug)?;
-        match lutris_yml_path(home, &entry.slug) {
+        match lutris_yml_path(dirs, &entry.slug) {
             Some(path) => {
                 items.push(check_lutris_yml(&path, instance, &wiring, entry));
             }
@@ -1441,7 +1482,7 @@ pub fn status(name: &str, instance: &Instance, home: &Path) -> Result<Vec<Status
                 "run: onboard apply".into(),
             )),
         }
-        match lutris_db_path(home) {
+        match lutris_db_path(dirs) {
             Some(db) => match sqlite3(&[
                 db.display().to_string(),
                 format!("SELECT executable FROM games WHERE slug='{}';", entry.slug),
@@ -1503,9 +1544,9 @@ fn is_ownable(name: &str) -> bool {
 /// Read-only wiring plan derived from shared readiness observations:
 /// ownable items become changes, the rest are blockers. Never writes,
 /// never executes anything.
-pub fn plan(name: &str, instance: &Instance, home: &Path) -> Result<Vec<WiringChange>> {
+pub fn plan(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<WiringChange>> {
     let mut changes = Vec::new();
-    for item in status(name, instance, home)? {
+    for item in status(name, instance, dirs)? {
         if item.state != ItemState::Verified {
             let kind = if is_ownable(&item.name) {
                 WiringChangeKind::Change
@@ -1728,8 +1769,8 @@ fn backup_db(db: &Path) -> Result<PathBuf> {
     Ok(backup)
 }
 
-fn pga_row(home: &Path, slug: &str) -> Result<(Option<PathBuf>, String)> {
-    let Some(db) = lutris_db_path(home) else {
+fn pga_row(dirs: &HomeDirs, slug: &str) -> Result<(Option<PathBuf>, String)> {
+    let Some(db) = lutris_db_path(dirs) else {
         return Ok((None, String::new()));
     };
     let row = sqlite3(&[
@@ -1743,8 +1784,8 @@ fn pga_row(home: &Path, slug: &str) -> Result<(Option<PathBuf>, String)> {
 
 /// Backup-first row upsert. Returns the action taken; an identical existing
 /// row is a no-op (repeat apply changes nothing).
-fn upsert_pga_row(home: &Path, entry: &LutrisEntry, exe: &str, dir: &str) -> Result<String> {
-    let (Some(db), existing) = pga_row(home, &entry.slug)? else {
+fn upsert_pga_row(dirs: &HomeDirs, entry: &LutrisEntry, exe: &str, dir: &str) -> Result<String> {
+    let (Some(db), existing) = pga_row(dirs, &entry.slug)? else {
         bail!("no pga.db found (start Lutris once, then close it)");
     };
     let want = format!("{}|wine|Linux|{}|{}|{}|1", entry.name, dir, exe, entry.slug);
@@ -1927,33 +1968,38 @@ fn journal_event(instance: &Instance, name: &str, event: serde_json::Value) {
     }
 }
 
-/// Scrubbed process environment for `wineboot --init`: the host and session
-/// environment is preserved (Nix runtime paths, HOME, desktop session), but
-/// every inherited `WINE*` variable is removed so a stray `WINEARCH=win32`
-/// (or any other `WINE_*`) cannot override the declared architecture.
-/// `WINEPREFIX`/`WINEDEBUG` (and `WINEARCH` for declared win32 prefixes)
-/// are then set explicitly. Pure over a snapshot for testability.
+/// Scrubbed process environment for `wineboot --init`: returns the inherited
+/// `WINE*` variables to remove plus the explicit values to set. Everything
+/// else (Nix runtime paths, HOME, XDG_RUNTIME_DIR, desktop session) is
+/// preserved — wineboot exits 0 without initializing when the session
+/// environment is missing. Pure over a snapshot for testability.
 fn scrub_wine_env(
     current: Vec<(std::ffi::OsString, std::ffi::OsString)>,
     prefix: &Path,
     arch: &str,
-) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
-    let mut env: Vec<(std::ffi::OsString, std::ffi::OsString)> = current
-        .into_iter()
-        .filter(|(key, _)| !key.to_string_lossy().starts_with("WINE"))
+) -> (
+    Vec<std::ffi::OsString>,
+    Vec<(std::ffi::OsString, std::ffi::OsString)>,
+) {
+    let remove: Vec<std::ffi::OsString> = current
+        .iter()
+        .filter(|(key, _)| key.to_string_lossy().starts_with("WINE"))
+        .map(|(key, _)| key.clone())
         .collect();
-    env.push(("WINEPREFIX".into(), prefix.as_os_str().to_owned()));
-    env.push(("WINEDEBUG".into(), "-all".into()));
+    let mut set = vec![
+        ("WINEPREFIX".into(), prefix.as_os_str().to_owned()),
+        ("WINEDEBUG".into(), "-all".into()),
+    ];
     if arch == "win32" {
-        env.push(("WINEARCH".into(), "win32".into()));
+        set.push(("WINEARCH".into(), "win32".into()));
     }
-    env
+    (remove, set)
 }
 
 pub fn prepare(
     name: &str,
     instance: &Instance,
-    home: &Path,
+    dirs: &HomeDirs,
     reselect: bool,
     adopt: bool,
 ) -> Result<PreparedWiring> {
@@ -1963,7 +2009,7 @@ pub fn prepare(
     Anchor::open(&instance.root)?;
     super::assert_stopped(instance)?;
 
-    let (runner, _) = select_runner(home, instance, &wiring, reselect)
+    let (runner, _) = select_runner(dirs, instance, &wiring, reselect)
         .context("cannot onboard without a resolved runner")?;
 
     let mut prefix = None;
@@ -1999,7 +2045,7 @@ pub fn prepare(
         // lock is taken before the row is even read, so a concurrent
         // onboard run cannot invalidate the ownership check below.
         let (site_config, site_data) =
-            lutris_site(home).context("no pga.db found (start Lutris once, then close it)")?;
+            lutris_site(dirs).context("no pga.db found (start Lutris once, then close it)")?;
         let target = site_config.join(format!("{}.yml", entry.slug));
         let yml = render_lutris_yml(instance, entry, &runner, &wiring)?;
         db_guard = Some(
@@ -2011,7 +2057,7 @@ pub fn prepare(
                         .context("another onboard run holds the Lutris database")
                 })?,
         );
-        let (db, row) = pga_row(home, &entry.slug)?;
+        let (db, row) = pga_row(dirs, &entry.slug)?;
         if db.is_none() {
             bail!("no pga.db found (start Lutris once, then close it)");
         }
@@ -2041,7 +2087,7 @@ pub fn prepare(
     // Client/HD prerequisites are external maintenance (launcher updates,
     // client install): anything apply does not own must already verify, or
     // no mutation happens at all. Same observations status/plan report.
-    let blockers: Vec<_> = status(name, instance, home)?
+    let blockers: Vec<_> = status(name, instance, dirs)?
         .into_iter()
         .filter(|item| item.state != ItemState::Verified && !is_ownable(&item.name))
         .collect();
@@ -2070,9 +2116,21 @@ pub fn prepare(
     })
 }
 
+/// The wineserver paired with a runner: the sibling binary when present,
+/// otherwise PATH resolution.
+fn wineserver_bin(runner: &Runner) -> PathBuf {
+    let sibling = runner.path.parent().map(|dir| dir.join("wineserver"));
+    match sibling {
+        Some(path) if is_executable(&path) => path,
+        _ => PathBuf::from("wineserver"),
+    }
+}
+
 /// Create a declared-but-absent prefix: single-level directory creation
 /// under a re-validated parent, then `wineboot --init` with a scrubbed
-/// environment. The produced architecture must equal the declared one.
+/// environment. `wineboot` exits before the server flushes the registry,
+/// so `wineserver -w` (same prefix) runs before verification. The produced
+/// architecture must equal the declared one.
 fn create_prefix(prefix: &Path, runner: &Runner, wiring: &Wiring) -> Result<String> {
     let parent = prefix.parent().context("prefix needs a parent")?;
     let anchor = Anchor::open(parent)?;
@@ -2085,14 +2143,32 @@ fn create_prefix(prefix: &Path, runner: &Runner, wiring: &Wiring) -> Result<Stri
         Err(e) => return Err(e).context(format!("create {}", prefix.display())),
     }
     let mut cmd = Command::new(&runner.path);
-    cmd.arg("wineboot").arg("--init").env_clear();
-    for (key, value) in scrub_wine_env(std::env::vars_os().collect(), prefix, &wiring.runtime.arch)
-    {
+    cmd.arg("wineboot").arg("--init");
+    let (remove, set) = scrub_wine_env(std::env::vars_os().collect(), prefix, &wiring.runtime.arch);
+    for key in remove {
+        cmd.env_remove(key);
+    }
+    for (key, value) in set {
         cmd.env(key, value);
     }
     let status = cmd.status().context("run wineboot --init")?;
     if !status.success() {
         bail!("wineboot --init failed: {status}");
+    }
+    // The server flushes the registry after its clients exit; without this
+    // wait the prefix looks uninitialized despite exit 0.
+    let (remove, set) = scrub_wine_env(std::env::vars_os().collect(), prefix, &wiring.runtime.arch);
+    let mut wait = Command::new(wineserver_bin(runner));
+    wait.arg("-w");
+    for key in remove {
+        wait.env_remove(key);
+    }
+    for (key, value) in set {
+        wait.env(key, value);
+    }
+    let status = wait.status().context("wait for wineserver")?;
+    if !status.success() {
+        bail!("wineserver -w failed: {status}");
     }
     let want = want_prefix_arch(wiring);
     match prefix_arch(prefix)? {
@@ -2111,14 +2187,14 @@ fn create_prefix(prefix: &Path, runner: &Runner, wiring: &Wiring) -> Result<Stri
 pub fn apply(
     name: &str,
     instance: &Instance,
-    home: &Path,
+    dirs: &HomeDirs,
     adopt: bool,
     reselect: bool,
     expect_runner: Option<&str>,
 ) -> Result<()> {
     let root_anchor = Anchor::open(&instance.root)?;
     let _lease = root_anchor.lock()?;
-    let prepared = prepare(name, instance, home, reselect, adopt)?;
+    let prepared = prepare(name, instance, dirs, reselect, adopt)?;
     if let Some(expected) = expect_runner {
         if prepared.runner.version != expected {
             bail!(
@@ -2170,7 +2246,7 @@ pub fn apply(
             }
         );
         let dir = prepared.dir.clone();
-        match upsert_pga_row(home, entry, &prepared.exe, &dir) {
+        match upsert_pga_row(dirs, entry, &prepared.exe, &dir) {
             Ok(action) => {
                 mutated |= action != "unchanged";
                 println!("{name}: lutris entry {action}");
@@ -2209,7 +2285,7 @@ pub fn apply(
         mutated = true;
         println!("{name}: runtime selection recorded");
     }
-    let bad: Vec<_> = status(name, instance, home)?
+    let bad: Vec<_> = status(name, instance, dirs)?
         .into_iter()
         .filter(|item| item.state != ItemState::Verified)
         .collect();
@@ -2377,12 +2453,12 @@ mod tests {
     #[test]
     fn runner_discovery_picks_latest_numerically_and_rejects_old() {
         let home = fixture_home(&["wine-ge-8-1", "wine-ge-9-2", "wine-ge-9-10", "wine-7-0"]);
-        let found = discover_runner(home.path(), "wine", "latest").unwrap();
+        let found = discover_runner(&dirs(&home), "wine", "latest").unwrap();
         assert_eq!(found.version, "wine-ge-9-10");
-        assert!(discover_runner(home.path(), "wine", "wine-7-0").is_err());
-        assert!(discover_runner(home.path(), "proton", "latest").is_err());
+        assert!(discover_runner(&dirs(&home), "wine", "wine-7-0").is_err());
+        assert!(discover_runner(&dirs(&home), "proton", "latest").is_err());
         let empty = tempfile::tempdir().unwrap();
-        assert!(discover_runner(empty.path(), "wine", "latest").is_err());
+        assert!(discover_runner(&dirs(&empty), "wine", "latest").is_err());
     }
 
     #[test]
@@ -2440,7 +2516,7 @@ mod tests {
         let instance = fixture_instance(&root);
         let before_root: Vec<_> = walk_paths(&root);
         let before_home: Vec<_> = walk_paths(home.path());
-        let items = status("test", &instance, home.path()).unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
         // Neither game nor Lutris state may change under read-only status.
         assert_eq!(walk_paths(&root), before_root);
         assert_eq!(walk_paths(home.path()), before_home);
@@ -2454,7 +2530,7 @@ mod tests {
         assert_eq!(state("lutris-yml"), ItemState::Missing);
         assert_eq!(state("lutris-db"), ItemState::Missing);
         // plan mirrors every non-verified item, still read-only.
-        let changes = plan("test", &instance, home.path()).unwrap();
+        let changes = plan("test", &instance, &dirs(&home)).unwrap();
         assert!(!changes.is_empty());
         assert_eq!(walk_paths(&root), before_root);
         assert_eq!(walk_paths(home.path()), before_home);
@@ -2469,7 +2545,7 @@ mod tests {
         fs::write(root.join("Data/patch-F.mpq"), "renamed").unwrap();
         // d3d9.dll bundled while Lutris-managed DXVK is on: two layers.
         fs::write(root.join("d3d9.dll"), "bundled").unwrap();
-        let items = status("test", &instance, home.path()).unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
         let state = |name: &str| items.iter().find(|i| i.name == name).unwrap().state;
         assert_eq!(state("hd-patch-letters"), ItemState::Mismatched);
         assert_eq!(state("dxvk"), ItemState::Mismatched);
@@ -2481,7 +2557,7 @@ mod tests {
         let home = fixture_home(&["wine-ge-9-2"]);
         let instance = fixture_instance(&root);
         let wiring = resolve_wiring(&instance).unwrap();
-        let runner = discover_runner(home.path(), "wine", "latest").unwrap();
+        let runner = discover_runner(&dirs(&home), "wine", "latest").unwrap();
         let yml = render_lutris_yml(&instance, wiring.lutris.as_ref().unwrap(), &runner, &wiring)
             .unwrap();
         let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
@@ -2528,6 +2604,12 @@ mod tests {
         assert!(sqlite3_available(), "sqlite3 required for wiring tests");
     }
 
+    /// Hermetic Lutris locations for fixtures: ambient XDG_* must never
+    /// leak into tests.
+    fn dirs(home: &tempfile::TempDir) -> HomeDirs {
+        HomeDirs::isolated(home.path().to_owned())
+    }
+
     /// Full state capture (names, device, inode, mode, mtime, bytes) for
     /// no-write proofs: replacing a file with identical content still
     /// changes identity or timestamps and fails the comparison.
@@ -2572,25 +2654,21 @@ mod tests {
             (OsString::from("DISPLAY"), OsString::from(":0")),
             (OsString::from("PATH"), OsString::from("/nix/store/x/bin")),
         ];
-        let env: BTreeMap<_, _> = scrub_wine_env(current, prefix, "wow64")
-            .into_iter()
-            .collect();
-        // Host/session environment survives; every inherited WINE* is gone.
-        assert_eq!(env[&OsString::from("HOME")], OsString::from("/home/u"));
-        assert_eq!(env[&OsString::from("DISPLAY")], OsString::from(":0"));
+        let (remove, set) = scrub_wine_env(current, prefix, "wow64");
+        // Every inherited WINE* is removed; session env is untouched (absent
+        // from both lists, hence inherited).
+        assert!(remove.contains(&OsString::from("WINEARCH")));
+        assert!(remove.contains(&OsString::from("WINEPREFIX")));
+        assert!(!remove.contains(&OsString::from("HOME")));
+        let set: BTreeMap<_, _> = set.into_iter().collect();
         assert_eq!(
-            env[&OsString::from("PATH")],
-            OsString::from("/nix/store/x/bin")
-        );
-        assert_eq!(
-            env[&OsString::from("WINEPREFIX")],
+            set[&OsString::from("WINEPREFIX")],
             OsString::from("/games/octo-prefix")
         );
-        assert!(!env.contains_key(&OsString::from("WINEARCH")));
-        let env: BTreeMap<_, _> = scrub_wine_env(vec![], prefix, "win32")
-            .into_iter()
-            .collect();
-        assert_eq!(env[&OsString::from("WINEARCH")], OsString::from("win32"));
+        assert!(!set.contains_key(&OsString::from("WINEARCH")));
+        let (_, set) = scrub_wine_env(vec![], prefix, "win32");
+        let set: BTreeMap<_, _> = set.into_iter().collect();
+        assert_eq!(set[&OsString::from("WINEARCH")], OsString::from("win32"));
     }
 
     #[test]
@@ -2665,7 +2743,7 @@ mod tests {
         let native_yml = home.path().join(".config/lutris/games/octowow-test.yml");
         fs::create_dir_all(native_yml.parent().unwrap()).unwrap();
         fs::write(&native_yml, "game:\n  exe: elsewhere\n").unwrap();
-        assert!(lutris_yml_path(home.path(), "octowow-test").is_none());
+        assert!(lutris_yml_path(&dirs(&home), "octowow-test").is_none());
     }
 
     #[test]
@@ -2681,7 +2759,7 @@ mod tests {
         let data = home.path().join(".local/share/lutris");
         let anchor = Anchor::open(&data).unwrap();
         let _held = anchor.lock().unwrap();
-        let err = apply("test", &instance, home.path(), false, false, None).unwrap_err();
+        let err = apply("test", &instance, &dirs(&home), false, false, None).unwrap_err();
         assert!(
             format!("{err:#}").contains("another onboard run"),
             "unexpected: {err:#}"
@@ -2693,6 +2771,29 @@ mod tests {
                 .exists()
         );
         assert!(!_envelope.path().join("octowow-prefix").exists());
+    }
+
+    #[test]
+    fn xdg_resolution_honors_explicit_absolute_and_falls_back() {
+        let home = PathBuf::from("/home/u");
+        let dirs = HomeDirs::resolve(
+            home.clone(),
+            Some(PathBuf::from("/data/xdg")),
+            Some(PathBuf::from("relative/ignored")),
+        );
+        assert_eq!(dirs.data, PathBuf::from("/data/xdg"));
+        assert_eq!(dirs.config, PathBuf::from("/home/u/.config"));
+        let dirs = HomeDirs::resolve(home.clone(), None, None);
+        assert_eq!(dirs.data, PathBuf::from("/home/u/.local/share"));
+        assert_eq!(dirs.config, PathBuf::from("/home/u/.config"));
+        // Paired sites derive from the resolved roots, not $HOME joins.
+        assert_eq!(
+            lutris_sites(&dirs)[0],
+            (
+                PathBuf::from("/home/u/.config/lutris/games"),
+                PathBuf::from("/home/u/.local/share/lutris"),
+            )
+        );
     }
 
     #[test]
@@ -2724,13 +2825,16 @@ mod tests {
             "#!/bin/sh\nprintf '#arch=win32\\n' > \"$WINEPREFIX/system.reg\"\n",
         )
         .unwrap();
+        fs::write(bin.join("wineserver"), "#!/bin/sh\nexit 0\n").unwrap();
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(bin.join("wine"), fs::Permissions::from_mode(0o755)).unwrap();
+            for binary in ["wine", "wineserver"] {
+                fs::set_permissions(bin.join(binary), fs::Permissions::from_mode(0o755)).unwrap();
+            }
         }
         lutris_home(home.path());
         let instance = apply_fixture(&root, home.path());
-        let err = apply("test", &instance, home.path(), false, false, None).unwrap_err();
+        let err = apply("test", &instance, &dirs(&home), false, false, None).unwrap_err();
         assert!(
             format!("{err:#}").contains("want=win64"),
             "unexpected: {err:#}"
@@ -2759,7 +2863,7 @@ mod tests {
         }
         lutris_home(home.path());
         let instance = apply_fixture(&root, home.path());
-        let err = apply("test", &instance, home.path(), false, false, None).unwrap_err();
+        let err = apply("test", &instance, &dirs(&home), false, false, None).unwrap_err();
         assert!(
             format!("{err:#}").contains("wineboot"),
             "unexpected: {err:#}"
@@ -2788,7 +2892,7 @@ mod tests {
         ])
         .unwrap();
         let instance = apply_fixture(&root, home.path());
-        let err = apply("test", &instance, home.path(), false, false, None).unwrap_err();
+        let err = apply("test", &instance, &dirs(&home), false, false, None).unwrap_err();
         assert!(
             format!("{err:#}").contains("database"),
             "unexpected: {err:#}"
@@ -2807,7 +2911,7 @@ mod tests {
         let (_envelope, root) = fixture_root();
         let home = fixture_home(&["wine-ge-9-2"]);
         let instance = fixture_instance(&root);
-        let changes = plan("test", &instance, home.path()).unwrap();
+        let changes = plan("test", &instance, &dirs(&home)).unwrap();
         let kind = |name: &str| {
             changes
                 .iter()
@@ -2843,7 +2947,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let (runner, recorded) = select_runner(home.path(), &instance, &wiring, false).unwrap();
+        let (runner, recorded) = select_runner(&dirs(&home), &instance, &wiring, false).unwrap();
         assert!(recorded);
         assert_eq!(runner.version, "system");
     }
@@ -2859,7 +2963,8 @@ mod tests {
         .unwrap();
     }
 
-    /// Fake wine whose wineboot creates a win64 system.reg (WOW64-capable).
+    /// Fake wine whose wineboot creates a win64 system.reg (WOW64-capable),
+    /// plus a sibling fake wineserver that exits 0 (the creation wait).
     fn wineboot_home(home: &tempfile::TempDir, version: &str) {
         let bin = home
             .path()
@@ -2870,11 +2975,36 @@ mod tests {
             "#!/bin/sh\nif [ \"$1\" = \"wineboot\" ]; then printf '#arch=win64\\n' > \"$WINEPREFIX/system.reg\"; fi\n",
         )
         .unwrap();
-        #[cfg(unix)]
+        fs::write(bin.join("wineserver"), "#!/bin/sh\nexit 0\n").unwrap();
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(bin.join("wine"), fs::Permissions::from_mode(0o755)).unwrap();
+            for binary in ["wine", "wineserver"] {
+                fs::set_permissions(bin.join(binary), fs::Permissions::from_mode(0o755)).unwrap();
+            }
         }
+    }
+
+    #[test]
+    fn wineserver_prefers_runner_sibling() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("wine"), "#!/bin/sh\n").unwrap();
+        fs::write(bin.join("wineserver"), "#!/bin/sh\n").unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(bin.join("wineserver"), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let runner = Runner {
+            path: bin.join("wine"),
+            version: "test".into(),
+        };
+        assert_eq!(wineserver_bin(&runner), bin.join("wineserver"));
+        let runner = Runner {
+            path: PathBuf::from("/nonexistent/wine"),
+            version: "test".into(),
+        };
+        assert_eq!(wineserver_bin(&runner), PathBuf::from("wineserver"));
     }
 
     fn db_dump(home: &Path) -> String {
@@ -2908,7 +3038,7 @@ mod tests {
         ])
         .unwrap();
         let instance = apply_fixture(&root, home.path());
-        let err = apply("test", &instance, home.path(), false, false, None).unwrap_err();
+        let err = apply("test", &instance, &dirs(&home), false, false, None).unwrap_err();
         assert!(
             format!("{err:#}").contains("--adopt"),
             "unexpected: {err:#}"
@@ -2944,7 +3074,7 @@ mod tests {
         ])
         .unwrap();
         let instance = apply_fixture(&root, home.path());
-        apply("test", &instance, home.path(), false, false, None).unwrap();
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
         let yml_path = home.path().join(".config/lutris/games/octowow-test.yml");
         let yml_before = fs::read(&yml_path).unwrap();
         let dump_before = db_dump(home.path());
@@ -2954,7 +3084,7 @@ mod tests {
         wineboot_home(&home, "wine-ge-10-1");
         let before_game = snapshot_tree(_envelope.path());
         let before_home = snapshot_tree(home.path());
-        apply("test", &instance, home.path(), false, false, None).unwrap();
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
         assert_eq!(fs::read(&yml_path).unwrap(), yml_before);
         assert_eq!(db_dump(home.path()), dump_before);
         assert_eq!(snapshot_tree(_envelope.path()), before_game);
@@ -2974,7 +3104,7 @@ mod tests {
         );
         assert_eq!(checked.state, ItemState::Verified);
         assert!(
-            status("test", &instance, home.path())
+            status("test", &instance, &dirs(&home))
                 .unwrap()
                 .iter()
                 .all(|item| item.state == ItemState::Verified)
@@ -2998,8 +3128,8 @@ mod tests {
         instance.wiring.as_mut().unwrap().prefix = Some(Prefix {
             path: root.join("octowow-prefix"),
         });
-        assert!(status("test", &instance, home.path()).is_err());
-        assert!(apply("test", &instance, home.path(), false, false, None).is_err());
+        assert!(status("test", &instance, &dirs(&home)).is_err());
+        assert!(apply("test", &instance, &dirs(&home), false, false, None).is_err());
     }
 
     #[test]
@@ -3012,8 +3142,8 @@ mod tests {
         let link = _envelope.path().join("octowow-prefix");
         std::os::unix::fs::symlink(&real, &link).unwrap();
         let instance = fixture_instance(&root);
-        assert!(status("test", &instance, home.path()).is_err());
-        assert!(apply("test", &instance, home.path(), false, false, None).is_err());
+        assert!(status("test", &instance, &dirs(&home)).is_err());
+        assert!(apply("test", &instance, &dirs(&home), false, false, None).is_err());
         // The symlink itself is untouched.
         assert!(
             fs::symlink_metadata(&link)
@@ -3077,7 +3207,7 @@ mod tests {
         wineboot_home(&home, "wine-ge-9-2");
         fs::create_dir_all(home.path().join(".config/lutris/games")).unwrap();
         let instance = apply_fixture(&root, home.path());
-        let err = apply("test", &instance, home.path(), false, false, None).unwrap_err();
+        let err = apply("test", &instance, &dirs(&home), false, false, None).unwrap_err();
         assert!(
             format!("{err:#}").contains("no pga.db"),
             "unexpected: {err:#}"
@@ -3103,16 +3233,16 @@ mod tests {
         let yml_path = home.path().join(".config/lutris/games/octowow-test.yml");
         fs::write(&yml_path, "game:\n  exe: /games/other/Game.exe\n").unwrap();
         let instance = apply_fixture(&root, home.path());
-        let err = apply("test", &instance, home.path(), false, false, None).unwrap_err();
+        let err = apply("test", &instance, &dirs(&home), false, false, None).unwrap_err();
         assert!(
             format!("{err:#}").contains("--adopt"),
             "unexpected: {err:#}"
         );
         assert!(!_envelope.path().join("octowow-prefix").exists());
         // With adopt, the orphan is taken over and the full apply succeeds.
-        apply("test", &instance, home.path(), true, false, None).unwrap();
+        apply("test", &instance, &dirs(&home), true, false, None).unwrap();
         assert!(
-            status("test", &instance, home.path())
+            status("test", &instance, &dirs(&home))
                 .unwrap()
                 .iter()
                 .all(|item| item.state == ItemState::Verified)
@@ -3128,7 +3258,7 @@ mod tests {
         let state = _envelope.path().join("octo-manager");
         fs::create_dir_all(&state).unwrap();
         fs::write(state.join("wiring-runtime.json"), "not json").unwrap();
-        let items = status("test", &instance, home.path()).unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
         let runner = items.iter().find(|i| i.name == "runner").unwrap();
         assert_eq!(runner.state, ItemState::Missing);
         assert!(
@@ -3136,7 +3266,7 @@ mod tests {
             "unexpected: {}",
             runner.detail
         );
-        assert!(apply("test", &instance, home.path(), false, false, None).is_err());
+        assert!(apply("test", &instance, &dirs(&home), false, false, None).is_err());
     }
 
     #[test]
@@ -3158,12 +3288,12 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let err = select_runner(home.path(), &instance, &wiring, false).unwrap_err();
+        let err = select_runner(&dirs(&home), &instance, &wiring, false).unwrap_err();
         assert!(
             format!("{err:#}").contains("--reselect"),
             "unexpected: {err:#}"
         );
-        let (runner, recorded) = select_runner(home.path(), &instance, &wiring, true).unwrap();
+        let (runner, recorded) = select_runner(&dirs(&home), &instance, &wiring, true).unwrap();
         assert_eq!(runner.version, "wine-ge-9-2");
         assert!(!recorded);
     }
@@ -3176,7 +3306,7 @@ mod tests {
         for name in ["patch-1.mpq", "patch-5.mpq", "patch.MPQ", "patch-A.mpq"] {
             fs::write(root.join("Data").join(name), "bytes").unwrap();
         }
-        let items = status("test", &instance, home.path()).unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
         assert!(items.iter().all(|i| i.name != "hd-patch-letters"));
     }
 
@@ -3189,7 +3319,7 @@ mod tests {
         wineboot_home(&home, "wine-ge-9-2");
         lutris_home(home.path());
         let instance = apply_fixture(&root, home.path());
-        apply("test", &instance, home.path(), false, false, None).unwrap();
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
         let yml_path = home.path().join(".config/lutris/games/octowow-test.yml");
         let good = fs::read(&yml_path).unwrap();
         // Rename the entry so the row update is attempted, then arm a
@@ -3211,7 +3341,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .name = "Renamed".into();
-        let err = apply("test", &renamed, home.path(), false, false, None).unwrap_err();
+        let err = apply("test", &renamed, &dirs(&home), false, false, None).unwrap_err();
         assert!(
             format!("{err:#}").contains("database"),
             "unexpected: {err:#}"
@@ -3231,7 +3361,7 @@ mod tests {
         let err = apply(
             "test",
             &instance,
-            home.path(),
+            &dirs(&home),
             false,
             false,
             Some("wine-ge-9-9"),
@@ -3245,7 +3375,7 @@ mod tests {
         apply(
             "test",
             &instance,
-            home.path(),
+            &dirs(&home),
             false,
             false,
             Some("wine-ge-9-2"),
