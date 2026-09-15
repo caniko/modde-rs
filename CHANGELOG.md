@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no-op), restores the yml if the database step fails, keeps unique
   WAL-safe backups, and owns only Wine prefix creation, the Lutris yml,
   and the Lutris row.
+- **Manager**: Add `onboard register-launcher`: the launcher itself (usually
+  the installer first) as its own Lutris entry with its own sibling prefix,
+  through a shared entry plan/execute adapter (`EntrySpec` render, check,
+  plan, and execute agree by construction). Ownership is validated before
+  prefix creation; the installer must be a regular file with an optional
+  streaming digest. Never launches anything.
 - **Manager**: Harden onboarding execution: XDG-compliant Lutris locations
   (explicit `XDG_*` wins; hermetic test dirs), bounded PE parsing via
   `e_lfanew`, session-preserving Wine environment with `WINE*` removal

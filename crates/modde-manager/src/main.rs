@@ -101,6 +101,15 @@ enum OnboardAction {
         #[arg(long)]
         expect_runner: Option<String>,
     },
+    /// Register the launcher itself (usually the installer first) as its
+    /// own Lutris entry with its own prefix. Never launches anything.
+    RegisterLauncher {
+        #[arg(long)]
+        instance: String,
+        /// Take over an existing Lutris entry that points elsewhere.
+        #[arg(long)]
+        adopt: bool,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -370,6 +379,13 @@ fn main() -> Result<()> {
                         reselect,
                         expect_runner.as_deref(),
                     )
+                }
+                OnboardAction::RegisterLauncher { instance, adopt } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    wiring::register_launcher(&instance, instance_config, &dirs, adopt)
                 }
             }
         }

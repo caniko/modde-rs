@@ -184,6 +184,99 @@ pub struct LauncherState {
     pub prefix: Option<PathBuf>,
     #[serde(default)]
     pub tweaks: BTreeMap<String, bool>,
+    /// Lutris entry for the launcher itself (usually the installer first,
+    /// re-pointed after installation). Same adapter as game entries.
+    #[serde(default)]
+    pub lutris: Option<LutrisEntry>,
+}
+
+/// One Lutris game entry, game or launcher: everything the yml renderer
+/// and the structural check compare. Built once per caller, so render,
+/// check, plan, and execute never disagree about desired state.
+#[derive(Debug, Clone)]
+pub struct EntrySpec {
+    pub slug: String,
+    pub name: String,
+    pub game_slug: String,
+    pub exe: String,
+    pub dir: String,
+    pub prefix: Option<String>,
+    pub runner_version: String,
+    pub wine_arch: String,
+    pub dxvk: bool,
+    pub vkd3d: bool,
+    pub esync: bool,
+    pub fsync: bool,
+    pub dll_overrides: Vec<String>,
+    pub extra_env: BTreeMap<String, String>,
+}
+
+fn game_spec(
+    instance: &Instance,
+    entry: &LutrisEntry,
+    runner: &Runner,
+    wiring: &Wiring,
+) -> Result<EntrySpec> {
+    Ok(EntrySpec {
+        slug: entry.slug.clone(),
+        name: entry.name.clone(),
+        game_slug: entry.game_slug.clone(),
+        exe: instance
+            .root
+            .join(&wiring.launch.executable)
+            .display()
+            .to_string(),
+        dir: instance.root.display().to_string(),
+        prefix: wiring
+            .prefix
+            .as_ref()
+            .map(|prefix| prefix.path.display().to_string()),
+        runner_version: runner.version.clone(),
+        wine_arch: mapped_arch(&wiring.runtime.arch).to_owned(),
+        dxvk: wiring.tunings.dxvk,
+        vkd3d: wiring.tunings.vkd3d,
+        esync: wiring.tunings.esync,
+        fsync: wiring.tunings.fsync,
+        dll_overrides: wiring.dll_overrides.clone(),
+        extra_env: wiring.tunings.env.clone(),
+    })
+}
+
+fn launcher_spec(
+    installer: &InstallerExpectation,
+    prefix: &Path,
+    entry: &LutrisEntry,
+    runner: &Runner,
+    wiring: &Wiring,
+) -> Result<EntrySpec> {
+    let dir = installer
+        .path
+        .parent()
+        .context("installer needs a parent directory")?
+        .display()
+        .to_string();
+    Ok(EntrySpec {
+        slug: entry.slug.clone(),
+        name: entry.name.clone(),
+        game_slug: entry.game_slug.clone(),
+        exe: installer.path.display().to_string(),
+        dir,
+        prefix: Some(prefix.display().to_string()),
+        runner_version: runner.version.clone(),
+        wine_arch: mapped_arch(&wiring.runtime.arch).to_owned(),
+        dxvk: wiring.tunings.dxvk,
+        vkd3d: wiring.tunings.vkd3d,
+        esync: wiring.tunings.esync,
+        fsync: wiring.tunings.fsync,
+        // Non-game process: no game-client DLL overrides.
+        dll_overrides: Vec::new(),
+        extra_env: wiring.tunings.env.clone(),
+    })
+}
+
+/// Lutris wine arch is win32|win64; WOW64-capable setups use a win64 prefix.
+fn mapped_arch(arch: &str) -> &str {
+    if arch == "wow64" { "win64" } else { arch }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -913,13 +1006,57 @@ fn check_lutris_yml(
     wiring: &Wiring,
     entry: &LutrisEntry,
 ) -> StatusItem {
-    let fix = "run: onboard apply (rewrites this entry only)".to_string();
-    let mismatch = |detail: String| item("lutris-yml", ItemState::Mismatched, detail, fix.clone());
+    // No record yet: discovery decides, so the version check waits for apply.
+    // A corrupt record fails the whole check (fail-closed, like selection).
+    let recorded = read_recorded(instance).map(|record| record.map(|record| record.version));
+    let spec = EntrySpec {
+        slug: entry.slug.clone(),
+        name: entry.name.clone(),
+        game_slug: entry.game_slug.clone(),
+        exe: instance
+            .root
+            .join(&wiring.launch.executable)
+            .display()
+            .to_string(),
+        dir: instance.root.display().to_string(),
+        prefix: wiring
+            .prefix
+            .as_ref()
+            .map(|prefix| prefix.path.display().to_string()),
+        runner_version: String::new(),
+        wine_arch: mapped_arch(&wiring.runtime.arch).to_owned(),
+        dxvk: wiring.tunings.dxvk,
+        vkd3d: wiring.tunings.vkd3d,
+        esync: wiring.tunings.esync,
+        fsync: wiring.tunings.fsync,
+        dll_overrides: wiring.dll_overrides.clone(),
+        extra_env: wiring.tunings.env.clone(),
+    };
+    check_entry_yml(
+        path,
+        "lutris-yml",
+        "run: onboard apply (rewrites this entry only)",
+        &spec,
+        recorded,
+    )
+}
+
+/// Structural check of one Lutris game yml against an entry spec: exact
+/// exe, working dir, prefix, wine version/arch/toggles, DLL overrides, and
+/// explicitly disabled anti-cheat runtimes.
+fn check_entry_yml(
+    path: &Path,
+    item_name: &str,
+    fix: &str,
+    spec: &EntrySpec,
+    recorded: Result<Option<String>>,
+) -> StatusItem {
+    let mismatch = |detail: String| item(item_name, ItemState::Mismatched, detail, fix.to_owned());
     let body = match fs::read_to_string(path) {
         Ok(body) => body,
         Err(e) => {
             return item(
-                "lutris-yml",
+                item_name,
                 ItemState::Unverifiable,
                 format!("{e}"),
                 "inspect the yml permissions".into(),
@@ -950,26 +1087,19 @@ fn check_lutris_yml(
             None => Some(format!("{label} missing, want '{want}'")),
         }
     };
-    if let Some(problem) = expect_str(&["slug"], &entry.slug, "slug") {
+    if let Some(problem) = expect_str(&["slug"], &spec.slug, "slug") {
         problems.push(problem);
     }
-    let exe = instance
-        .root
-        .join(&wiring.launch.executable)
-        .display()
-        .to_string();
-    let working_dir = instance.root.display().to_string();
     for (keys, want) in [
-        (["game", "exe"], exe.as_str()),
-        (["game", "working_dir"], working_dir.as_str()),
+        (["game", "exe"], spec.exe.as_str()),
+        (["game", "working_dir"], spec.dir.as_str()),
     ] {
         if let Some(problem) = expect_str(&keys, want, keys[1]) {
             problems.push(problem);
         }
     }
-    if let Some(prefix) = &wiring.prefix {
-        let want = prefix.path.display().to_string();
-        if let Some(problem) = expect_str(&["game", "prefix"], &want, "prefix") {
+    if let Some(prefix) = &spec.prefix {
+        if let Some(problem) = expect_str(&["game", "prefix"], prefix, "prefix") {
             problems.push(problem);
         }
     }
@@ -978,30 +1108,23 @@ fn check_lutris_yml(
     }
     // No record yet: discovery decides, so the version check waits for apply.
     // A corrupt record fails the whole check (fail-closed, like selection).
-    match read_recorded(instance) {
-        Ok(Some(recorded)) => {
-            if let Some(problem) =
-                expect_str(&["wine", "version"], &recorded.version, "wine version")
-            {
+    match recorded {
+        Ok(Some(version)) => {
+            if let Some(problem) = expect_str(&["wine", "version"], &version, "wine version") {
                 problems.push(problem);
             }
         }
         Ok(None) => {}
         Err(e) => problems.push(format!("runtime record unreadable: {e:#}")),
     }
-    let want_arch = if wiring.runtime.arch == "wow64" {
-        "win64"
-    } else {
-        wiring.runtime.arch.as_str()
-    };
-    if let Some(problem) = expect_str(&["wine", "arch"], want_arch, "wine arch") {
+    if let Some(problem) = expect_str(&["wine", "arch"], &spec.wine_arch, "wine arch") {
         problems.push(problem);
     }
     for (key, want) in [
-        ("dxvk", wiring.tunings.dxvk),
-        ("vkd3d", wiring.tunings.vkd3d),
-        ("esync", wiring.tunings.esync),
-        ("fsync", wiring.tunings.fsync),
+        ("dxvk", spec.dxvk),
+        ("vkd3d", spec.vkd3d),
+        ("esync", spec.esync),
+        ("fsync", spec.fsync),
         ("eac", false),
         ("battleye", false),
     ] {
@@ -1014,20 +1137,20 @@ fn check_lutris_yml(
     let overrides = get(&["system", "env", "WINEDLLOVERRIDES"]).and_then(|v| v.as_str());
     match overrides {
         Some(have) => {
-            for dll in &wiring.dll_overrides {
+            for dll in &spec.dll_overrides {
                 if !have.split(';').any(|entry| entry.trim() == dll) {
                     problems.push(format!("dll override missing: {dll}"));
                 }
             }
         }
-        None if !wiring.dll_overrides.is_empty() => {
+        None if !spec.dll_overrides.is_empty() => {
             problems.push("WINEDLLOVERRIDES missing".into());
         }
         _ => {}
     }
     if problems.is_empty() {
         item(
-            "lutris-yml",
+            item_name,
             ItemState::Verified,
             path.display().to_string(),
             String::new(),
@@ -1515,6 +1638,39 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
         }
     }
 
+    // Launcher entry: same adapter, separate slug. Only reported when the
+    // installer, its prefix, and the entry are all declared.
+    if let Some(launcher) = &wiring.launcher {
+        if let (Some(installer), Some(prefix), Some(entry)) =
+            (&launcher.installer, &launcher.prefix, &launcher.lutris)
+        {
+            // The check compares against the recorded runner, never this
+            // placeholder: status resolves no runner version of its own.
+            let dummy = Runner {
+                path: PathBuf::new(),
+                version: String::new(),
+            };
+            let spec = launcher_spec(installer, prefix, entry, &dummy, &wiring)?;
+            let recorded =
+                read_recorded(instance).map(|record| record.map(|record| record.version));
+            match lutris_yml_path(dirs, &entry.slug) {
+                Some(path) => items.push(check_entry_yml(
+                    &path,
+                    "launcher-entry",
+                    "run: onboard register-launcher",
+                    &spec,
+                    recorded,
+                )),
+                None => items.push(item(
+                    "launcher-entry",
+                    ItemState::Missing,
+                    format!("no {}.yml in Lutris config dirs", entry.slug),
+                    "run: onboard register-launcher".into(),
+                )),
+            }
+        }
+    }
+
     let _ = name;
     Ok(items)
 }
@@ -1598,23 +1754,19 @@ pub fn render_lutris_yml(
     runner: &Runner,
     wiring: &Wiring,
 ) -> Result<String> {
-    let exe = instance.root.join(&wiring.launch.executable);
-    let prefix = wiring
-        .prefix
-        .as_ref()
-        .context("lutris entry needs a declared prefix path")?
-        .path
-        .display()
-        .to_string();
+    render_entry_yml(&game_spec(instance, entry, runner, wiring)?)
+}
+
+pub fn render_entry_yml(spec: &EntrySpec) -> Result<String> {
     // ponytail: Vec pairs, not a map — yaml_ng::Value has no Ord.
     let mut env: Vec<(serde_yaml_ng::Value, serde_yaml_ng::Value)> = Vec::new();
-    if !wiring.dll_overrides.is_empty() {
+    if !spec.dll_overrides.is_empty() {
         env.push((
             serde_yaml_ng::Value::String("WINEDLLOVERRIDES".into()),
-            serde_yaml_ng::Value::String(wiring.dll_overrides.join(";")),
+            serde_yaml_ng::Value::String(spec.dll_overrides.join(";")),
         ));
     }
-    for (key, value) in &wiring.tunings.env {
+    for (key, value) in &spec.extra_env {
         if key == "WINEDLLOVERRIDES" {
             continue;
         }
@@ -1623,37 +1775,35 @@ pub fn render_lutris_yml(
             serde_yaml_ng::Value::String(value.clone()),
         ));
     }
-    // Lutris wine arch is win32|win64; WOW64-capable setups use a win64 prefix.
-    let arch = if wiring.runtime.arch == "wow64" {
-        "win64"
-    } else {
-        wiring.runtime.arch.as_str()
-    };
     let doc = serde_yaml_ng::Mapping::from_iter([
         (
             serde_yaml_ng::Value::String("game".into()),
             serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter([
                 (
                     serde_yaml_ng::Value::String("exe".into()),
-                    serde_yaml_ng::Value::String(exe.display().to_string()),
+                    serde_yaml_ng::Value::String(spec.exe.clone()),
                 ),
                 (
                     serde_yaml_ng::Value::String("working_dir".into()),
-                    serde_yaml_ng::Value::String(instance.root.display().to_string()),
+                    serde_yaml_ng::Value::String(spec.dir.clone()),
                 ),
                 (
                     serde_yaml_ng::Value::String("prefix".into()),
-                    serde_yaml_ng::Value::String(prefix),
+                    serde_yaml_ng::Value::String(
+                        spec.prefix
+                            .clone()
+                            .context("lutris entry needs a declared prefix path")?,
+                    ),
                 ),
             ])),
         ),
         (
             serde_yaml_ng::Value::String("game_slug".into()),
-            serde_yaml_ng::Value::String(entry.game_slug.clone()),
+            serde_yaml_ng::Value::String(spec.game_slug.clone()),
         ),
         (
             serde_yaml_ng::Value::String("name".into()),
-            serde_yaml_ng::Value::String(entry.name.clone()),
+            serde_yaml_ng::Value::String(spec.name.clone()),
         ),
         (
             serde_yaml_ng::Value::String("runner".into()),
@@ -1661,7 +1811,7 @@ pub fn render_lutris_yml(
         ),
         (
             serde_yaml_ng::Value::String("slug".into()),
-            serde_yaml_ng::Value::String(entry.slug.clone()),
+            serde_yaml_ng::Value::String(spec.slug.clone()),
         ),
         (
             serde_yaml_ng::Value::String("version".into()),
@@ -1672,27 +1822,27 @@ pub fn render_lutris_yml(
             serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter([
                 (
                     serde_yaml_ng::Value::String("version".into()),
-                    serde_yaml_ng::Value::String(runner.version.clone()),
+                    serde_yaml_ng::Value::String(spec.runner_version.clone()),
                 ),
                 (
                     serde_yaml_ng::Value::String("arch".into()),
-                    serde_yaml_ng::Value::String(arch.into()),
+                    serde_yaml_ng::Value::String(spec.wine_arch.clone()),
                 ),
                 (
                     serde_yaml_ng::Value::String("dxvk".into()),
-                    serde_yaml_ng::Value::Bool(wiring.tunings.dxvk),
+                    serde_yaml_ng::Value::Bool(spec.dxvk),
                 ),
                 (
                     serde_yaml_ng::Value::String("vkd3d".into()),
-                    serde_yaml_ng::Value::Bool(wiring.tunings.vkd3d),
+                    serde_yaml_ng::Value::Bool(spec.vkd3d),
                 ),
                 (
                     serde_yaml_ng::Value::String("esync".into()),
-                    serde_yaml_ng::Value::Bool(wiring.tunings.esync),
+                    serde_yaml_ng::Value::Bool(spec.esync),
                 ),
                 (
                     serde_yaml_ng::Value::String("fsync".into()),
-                    serde_yaml_ng::Value::Bool(wiring.tunings.fsync),
+                    serde_yaml_ng::Value::Bool(spec.fsync),
                 ),
                 // Anti-cheat is always off for this client: explicit false,
                 // never absent-by-luck.
@@ -1825,10 +1975,90 @@ fn upsert_pga_row(dirs: &HomeDirs, entry: &LutrisEntry, exe: &str, dir: &str) ->
 }
 
 fn want_prefix_arch(wiring: &Wiring) -> &str {
-    if wiring.runtime.arch == "wow64" {
-        "win64"
-    } else {
-        wiring.runtime.arch.as_str()
+    mapped_arch(&wiring.runtime.arch)
+}
+
+/// Validated registration work for one entry: paired yml target, rendered
+/// body, and the live database row. Read-only to construct; `execute_entry`
+/// performs the writes.
+pub struct EntryPlan {
+    pub target: PathBuf,
+    pub body: String,
+}
+
+pub fn plan_entry(
+    dirs: &HomeDirs,
+    entry: &LutrisEntry,
+    spec: &EntrySpec,
+    adopt: bool,
+) -> Result<EntryPlan> {
+    validate_slug(&entry.slug)?;
+    if lutris_running()? {
+        bail!("lutris is running; close it completely before onboarding");
+    }
+    // The database must exist before anything is written: a missing
+    // database is a blocker, not something apply works around. The yml
+    // target is the config dir paired with that database.
+    let (site_config, _) =
+        lutris_site(dirs).context("no pga.db found (start Lutris once, then close it)")?;
+    let target = site_config.join(format!("{}.yml", entry.slug));
+    let body = render_entry_yml(spec)?;
+    let (db, row) = pga_row(dirs, &entry.slug)?;
+    if db.is_none() {
+        bail!("no pga.db found (start Lutris once, then close it)");
+    }
+    // Ownership up front: a row pointing at another executable or
+    // directory needs --adopt; display-name drift is our own update.
+    // An orphaned yml (no row at all) needs --adopt too.
+    if !row.is_empty() {
+        let parts: Vec<&str> = row.split('|').collect();
+        let same_identity =
+            parts.get(3) == Some(&spec.dir.as_str()) && parts.get(4) == Some(&spec.exe.as_str());
+        if !same_identity && !adopt {
+            bail!(
+                "lutris entry '{}' points elsewhere; pass --adopt to take it over",
+                entry.slug
+            );
+        }
+    } else if target.is_file() && fs::read(&target)? != body.as_bytes() && !adopt {
+        bail!(
+            "orphaned {}.yml with no database row; pass --adopt to take it over",
+            entry.slug
+        );
+    }
+    Ok(EntryPlan { target, body })
+}
+
+/// Execute a planned entry registration: content-aware yml write plus
+/// backup-first row upsert. Returns (yml changed, db action). If the
+/// database step fails, the yml is restored from the retained backup — or,
+/// for a first registration, the created orphan is removed again (only if
+/// still byte-identical to what was written).
+pub fn execute_entry(
+    dirs: &HomeDirs,
+    entry: &LutrisEntry,
+    spec: &EntrySpec,
+    plan: &EntryPlan,
+) -> Result<(bool, String)> {
+    let target_existed = plan.target.is_file();
+    let (changed, backup) = write_yml(&plan.target, &plan.body)?;
+    match upsert_pga_row(dirs, entry, &spec.exe, &spec.dir) {
+        Ok(action) => Ok((changed, action)),
+        Err(error) => {
+            if let Some(backup) = &backup {
+                let previous = fs::read(backup)?;
+                atomic_write_0600(&plan.target, &previous)?;
+                eprintln!("database step failed; yml restored; evidence retained");
+            } else if !target_existed
+                && fs::read(&plan.target).is_ok_and(|current| current == plan.body.as_bytes())
+            {
+                let _ = fs::remove_file(&plan.target);
+                eprintln!("database step failed; new yml removed; evidence retained");
+            } else if !target_existed {
+                eprintln!("database step failed; yml changed underneath, left in place");
+            }
+            Err(error).context("lutris database update failed")
+        }
     }
 }
 
@@ -1920,8 +2150,6 @@ fn classify_patch(name: &str, native_letters: &[String]) -> Option<String> {
 pub struct PreparedWiring {
     wiring: Wiring,
     runner: Runner,
-    exe: String,
-    dir: String,
     prefix: Option<PathBuf>,
     prefix_present: bool,
     yml_target: Option<PathBuf>,
@@ -2027,27 +2255,11 @@ pub fn prepare(
     let mut yml_target = None;
     let mut yml_body = String::new();
     let mut db_guard = None;
-    let mut exe = String::new();
-    let dir = instance.root.display().to_string();
     if let Some(entry) = &wiring.lutris {
-        validate_slug(&entry.slug)?;
-        if lutris_running()? {
-            bail!("lutris is running; close it completely before onboarding");
-        }
-        exe = instance
-            .root
-            .join(&wiring.launch.executable)
-            .display()
-            .to_string();
-        // The database must exist before anything is written: a missing
-        // database is a blocker, not something apply works around. The yml
-        // target is the config dir paired with that database. The data-dir
-        // lock is taken before the row is even read, so a concurrent
-        // onboard run cannot invalidate the ownership check below.
-        let (site_config, site_data) =
+        // The data-dir lock is taken before the row is even read, so a
+        // concurrent onboard run cannot invalidate the ownership check.
+        let (_, site_data) =
             lutris_site(dirs).context("no pga.db found (start Lutris once, then close it)")?;
-        let target = site_config.join(format!("{}.yml", entry.slug));
-        let yml = render_lutris_yml(instance, entry, &runner, &wiring)?;
         db_guard = Some(
             Anchor::open(&site_data)
                 .context("invalid Lutris data dir")
@@ -2057,39 +2269,23 @@ pub fn prepare(
                         .context("another onboard run holds the Lutris database")
                 })?,
         );
-        let (db, row) = pga_row(dirs, &entry.slug)?;
-        if db.is_none() {
-            bail!("no pga.db found (start Lutris once, then close it)");
-        }
-        // Ownership up front: a row pointing at another executable or
-        // directory needs --adopt; display-name drift is our own update.
-        // An orphaned yml (no row at all) needs --adopt too.
-        if !row.is_empty() {
-            let parts: Vec<&str> = row.split('|').collect();
-            let same_identity =
-                parts.get(3) == Some(&dir.as_str()) && parts.get(4) == Some(&exe.as_str());
-            if !same_identity && !adopt {
-                bail!(
-                    "lutris entry '{}' points elsewhere; pass --adopt to take it over",
-                    entry.slug
-                );
-            }
-        } else if target.is_file() && fs::read(&target)? != yml.as_bytes() && !adopt {
-            bail!(
-                "orphaned {}.yml with no database row; pass --adopt to take it over",
-                entry.slug
-            );
-        }
-        yml_target = Some(target);
-        yml_body = yml;
+        let spec = game_spec(instance, entry, &runner, &wiring)?;
+        let entry_plan = plan_entry(dirs, entry, &spec, adopt)?;
+        yml_target = Some(entry_plan.target);
+        yml_body = entry_plan.body;
     }
 
     // Client/HD prerequisites are external maintenance (launcher updates,
     // client install): anything apply does not own must already verify, or
     // no mutation happens at all. Same observations status/plan report.
+    // The launcher entry is owned by register-launcher, never by apply.
     let blockers: Vec<_> = status(name, instance, dirs)?
         .into_iter()
-        .filter(|item| item.state != ItemState::Verified && !is_ownable(&item.name))
+        .filter(|item| {
+            item.state != ItemState::Verified
+                && !is_ownable(&item.name)
+                && item.name != "launcher-entry"
+        })
         .collect();
     if !blockers.is_empty() {
         bail!(
@@ -2106,8 +2302,6 @@ pub fn prepare(
     Ok(PreparedWiring {
         wiring,
         runner,
-        exe,
-        dir,
         prefix,
         prefix_present,
         yml_target,
@@ -2234,49 +2428,31 @@ pub fn apply(
     // The Lutris data-dir lock travels inside `prepared` (acquired before
     // inspection), so concurrent onboard runs cannot invalidate ownership.
     if let (Some(entry), Some(target)) = (&prepared.wiring.lutris, &prepared.yml_target) {
-        let target_existed = target.is_file();
-        let (changed, yml_backup) = write_yml(target, &prepared.yml_body)?;
-        mutated |= changed;
-        println!(
-            "{name}: lutris yml {}",
-            if changed {
-                target.display().to_string()
-            } else {
-                "unchanged".into()
-            }
-        );
-        let dir = prepared.dir.clone();
-        match upsert_pga_row(dirs, entry, &prepared.exe, &dir) {
-            Ok(action) => {
-                mutated |= action != "unchanged";
+        let spec = game_spec(instance, entry, &prepared.runner, &prepared.wiring)?;
+        let entry_plan = EntryPlan {
+            target: target.clone(),
+            body: prepared.yml_body.clone(),
+        };
+        match execute_entry(dirs, entry, &spec, &entry_plan) {
+            Ok((changed, action)) => {
+                mutated |= changed || action != "unchanged";
+                println!(
+                    "{name}: lutris yml {}",
+                    if changed {
+                        target.display().to_string()
+                    } else {
+                        "unchanged".into()
+                    }
+                );
                 println!("{name}: lutris entry {action}");
             }
             Err(error) => {
-                if let Some(backup) = &yml_backup {
-                    let previous = fs::read(backup)?;
-                    atomic_write_0600(target, &previous)?;
-                    eprintln!("{name}: database step failed; yml restored; evidence retained");
-                } else if !target_existed {
-                    // First registration left an orphan: remove only what this
-                    // apply created, and only if untouched since.
-                    if fs::read(target).is_ok_and(|current| current == prepared.yml_body.as_bytes())
-                    {
-                        let _ = fs::remove_file(target);
-                        eprintln!(
-                            "{name}: database step failed; new yml removed; evidence retained"
-                        );
-                    } else {
-                        eprintln!(
-                            "{name}: database step failed; yml changed underneath, left in place"
-                        );
-                    }
-                }
                 journal_event(
                     instance,
                     name,
                     serde_json::json!({"op": "apply-failed", "step": "lutris-db", "error": format!("{error:#}")}),
                 );
-                return Err(error).context("lutris database update failed");
+                return Err(error);
             }
         }
     }
@@ -2311,6 +2487,159 @@ pub fn apply(
         );
     }
     println!("{name}: onboard apply complete");
+    Ok(())
+}
+
+/// Register the launcher itself as a Lutris entry (usually the installer
+/// first): its own sibling prefix plus one yml row, through the same
+/// plan/execute adapter as game entries. Single call; never launches
+/// anything — the operator runs the installer from Lutris afterwards.
+pub fn register_launcher(
+    name: &str,
+    instance: &Instance,
+    dirs: &HomeDirs,
+    adopt: bool,
+) -> Result<()> {
+    let wiring = resolve_wiring(instance)?;
+    let root_anchor = Anchor::open(&instance.root)?;
+    let _lease = root_anchor.lock()?;
+    super::assert_stopped(instance)?;
+    let launcher = wiring
+        .launcher
+        .clone()
+        .context("no launcher block declared")?;
+    let installer = launcher
+        .installer
+        .clone()
+        .context("no installer declared in launcher block")?;
+    let prefix = launcher
+        .prefix
+        .clone()
+        .context("no launcher prefix declared")?;
+    let entry = launcher
+        .lutris
+        .clone()
+        .context("no launcher lutris entry declared")?;
+    if !installer.path.is_absolute() {
+        bail!("installer path must be absolute");
+    }
+    // Single descriptor: no symlinks, regular file, streaming digest when
+    // the declaration pins one.
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&installer.path)
+        {
+            Ok(file) => file,
+            Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
+                bail!("installer is a symlink: {}", installer.path.display())
+            }
+            Err(e) => return Err(e).context("installer unreadable"),
+        };
+        if !file.metadata()?.is_file() {
+            bail!("installer is not a file: {}", installer.path.display());
+        }
+        if let Some(digest) = &installer.sha256 {
+            let (_, actual) = stream_digest_file(&mut file)?;
+            if actual != digest.to_ascii_lowercase() {
+                bail!("installer digest mismatch");
+            }
+        }
+    }
+    validate_slug(&entry.slug)?;
+    if lutris_running()? {
+        bail!("lutris is running; close it completely before registering");
+    }
+    let (runner, _) = select_runner(dirs, instance, &wiring, false)
+        .context("cannot register without a resolved runner")?;
+
+    // Path validation first (no writes): a bad prefix never gets created
+    // on the way to an ownership refusal.
+    validated_prefix(&prefix, &instance.root, &wiring)?;
+    let spec = launcher_spec(&installer, &prefix, &entry, &runner, &wiring)?;
+    // Same lock-before-inspection discipline as game registration: the
+    // ownership check inside plan_entry runs under the data-dir lock.
+    let (_, site_data) =
+        lutris_site(dirs).context("no pga.db found (start Lutris once, then close it)")?;
+    let _db_guard = Anchor::open(&site_data)
+        .context("invalid Lutris data dir")
+        .and_then(|anchor| {
+            anchor
+                .lock()
+                .context("another onboard run holds the Lutris database")
+        })?;
+    let entry_plan = plan_entry(dirs, &entry, &spec, adopt)?;
+
+    let mut mutated = false;
+    match validated_prefix(&prefix, &instance.root, &wiring)? {
+        Some(arch) => println!("{name}: launcher prefix already present ({arch})"),
+        None => match create_prefix(&prefix, &runner, &wiring) {
+            Ok(arch) => {
+                mutated = true;
+                println!("{name}: launcher prefix created ({arch})");
+            }
+            Err(error) => {
+                journal_event(
+                    instance,
+                    name,
+                    serde_json::json!({"op": "register-launcher-failed", "step": "prefix", "error": format!("{error:#}")}),
+                );
+                return Err(error);
+            }
+        },
+    }
+
+    match execute_entry(dirs, &entry, &spec, &entry_plan) {
+        Ok((changed, action)) => {
+            mutated |= changed || action != "unchanged";
+            println!("{name}: launcher entry {action}");
+        }
+        Err(error) => {
+            journal_event(
+                instance,
+                name,
+                serde_json::json!({"op": "register-launcher-failed", "step": "lutris-db", "error": format!("{error:#}")}),
+            );
+            return Err(error);
+        }
+    }
+
+    if record_runner(instance, &runner)? {
+        mutated = true;
+        println!("{name}: runtime selection recorded");
+    }
+    // Verify the effective entry, not just the write calls.
+    let recorded = read_recorded(instance).map(|record| record.map(|record| record.version));
+    match lutris_yml_path(dirs, &entry.slug) {
+        Some(path) => {
+            let checked = check_entry_yml(
+                &path,
+                "launcher-entry",
+                "run: onboard register-launcher",
+                &spec,
+                recorded,
+            );
+            if checked.state != ItemState::Verified {
+                journal_event(
+                    instance,
+                    name,
+                    serde_json::json!({"op": "register-launcher-failed", "step": "verify"}),
+                );
+                bail!("launcher entry failed verification: {}", checked.detail);
+            }
+        }
+        None => bail!("launcher entry missing after registration"),
+    }
+    if mutated {
+        journal_event(
+            instance,
+            name,
+            serde_json::json!({"op": "register-launcher-done", "runner": runner.version}),
+        );
+    }
+    println!("{name}: launcher registered");
     Ok(())
 }
 
@@ -2873,6 +3202,162 @@ mod tests {
         let journal =
             fs::read_to_string(_envelope.path().join("octo-manager/wiring-journal.jsonl")).unwrap();
         assert!(journal.contains("apply-failed") && journal.contains("prefix"));
+    }
+
+    /// Instance with a launcher block (installer + own prefix + entry).
+    /// Returns the instance; the installer file digest is computed live.
+    fn launcher_fixture(root: &Path, installer_sha: Option<String>) -> Instance {
+        let state = root.parent().unwrap().join("octo-manager");
+        let installer = root.parent().unwrap().join("OctoLauncher_Installer.exe");
+        fs::write(&installer, "fake-installer-bytes").unwrap();
+        let mut value = serde_json::json!({
+            "root": root,
+            "client": "wow-classic",
+            "state_dir": state,
+            "preset": "octowow-hd",
+            "wiring": {
+                "prefix": {"path": root.parent().unwrap().join("octowow-prefix")},
+                "lutris": {"slug": "octowow-test", "name": "OctoWoW"},
+                "launcher": {
+                    "installer": {"path": installer},
+                    "prefix": root.parent().unwrap().join("octowow-launcher-prefix"),
+                    "lutris": {"slug": "octowow-launcher-test", "name": "OctoWoW Launcher"},
+                },
+            },
+        });
+        if let Some(sha) = installer_sha {
+            value["wiring"]["launcher"]["installer"]["sha256"] = serde_json::Value::String(sha);
+        }
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn launcher_spec_has_no_game_overrides_and_parses() {
+        let (_envelope, root) = fixture_root();
+        let home = fixture_home(&["wine-ge-9-2"]);
+        let instance = launcher_fixture(&root, None);
+        let wiring = resolve_wiring(&instance).unwrap();
+        let launcher = wiring.launcher.clone().unwrap();
+        let runner = discover_runner(&dirs(&home), "wine", "latest").unwrap();
+        let spec = launcher_spec(
+            launcher.installer.as_ref().unwrap(),
+            &launcher.prefix.clone().unwrap(),
+            launcher.lutris.as_ref().unwrap(),
+            &runner,
+            &wiring,
+        )
+        .unwrap();
+        assert!(spec.dll_overrides.is_empty());
+        assert_eq!(spec.wine_arch, "win64");
+        let yml = render_entry_yml(&spec).unwrap();
+        let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
+        assert_eq!(
+            parsed["game"]["prefix"].as_str().unwrap(),
+            spec.prefix.as_deref().unwrap()
+        );
+        assert_eq!(parsed["wine"]["eac"].as_bool(), Some(false));
+        assert!(parsed["system"]["env"].get("WINEDLLOVERRIDES").is_none());
+    }
+
+    #[test]
+    fn register_launcher_creates_prefix_and_entry_then_noops() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        require_sqlite();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        wineboot_home(&home, "wine-ge-9-2");
+        lutris_home(home.path());
+        let instance = launcher_fixture(&root, None);
+        // Status reports the missing launcher entry before registration.
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .find(|i| i.name == "launcher-entry")
+                .unwrap()
+                .state,
+            ItemState::Missing
+        );
+        register_launcher("test", &instance, &dirs(&home), false).unwrap();
+        let yml_path = home
+            .path()
+            .join(".config/lutris/games/octowow-launcher-test.yml");
+        let yml_before = fs::read(&yml_path).unwrap();
+        assert!(db_dump(home.path()).contains("octowow-launcher-test|"));
+        assert!(
+            _envelope
+                .path()
+                .join("octowow-launcher-prefix/system.reg")
+                .exists()
+        );
+        // Effective entry verifies; repeat call is a full no-op.
+        let before_home = snapshot_tree(home.path());
+        let before_game = snapshot_tree(_envelope.path());
+        register_launcher("test", &instance, &dirs(&home), false).unwrap();
+        assert_eq!(fs::read(&yml_path).unwrap(), yml_before);
+        assert_eq!(snapshot_tree(home.path()), before_home);
+        assert_eq!(snapshot_tree(_envelope.path()), before_game);
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .find(|i| i.name == "launcher-entry")
+                .unwrap()
+                .state,
+            ItemState::Verified
+        );
+    }
+
+    #[test]
+    fn register_launcher_refuses_bad_installer_before_writes() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        require_sqlite();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        wineboot_home(&home, "wine-ge-9-2");
+        lutris_home(home.path());
+        // Wrong digest fails before prefix, yml, or row exist.
+        let instance = launcher_fixture(&root, Some("0".repeat(64)));
+        let err = register_launcher("test", &instance, &dirs(&home), false).unwrap_err();
+        assert!(format!("{err:#}").contains("digest"), "unexpected: {err:#}");
+        assert!(!_envelope.path().join("octowow-launcher-prefix").exists());
+        assert!(
+            !home
+                .path()
+                .join(".config/lutris/games/octowow-launcher-test.yml")
+                .exists()
+        );
+        // Missing installer file fails the same way (fixture recreates it;
+        // remove once for the missing case).
+        let instance = launcher_fixture(&root, None);
+        fs::remove_file(root.parent().unwrap().join("OctoLauncher_Installer.exe")).unwrap();
+        assert!(register_launcher("test", &instance, &dirs(&home), false).is_err());
+        assert!(!_envelope.path().join("octowow-launcher-prefix").exists());
+    }
+
+    #[test]
+    fn register_launcher_conflict_needs_adopt() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        require_sqlite();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        wineboot_home(&home, "wine-ge-9-2");
+        lutris_home(home.path());
+        let db = home.path().join(".local/share/lutris/pga.db");
+        sqlite3(&[
+            db.display().to_string(),
+            "INSERT INTO games (name, slug, runner, platform, directory, executable, configpath, installed) VALUES ('Other', 'octowow-launcher-test', 'wine', 'Linux', '/games/other', '/games/other/run.exe', 'octowow-launcher-test', 1);".into(),
+        ])
+        .unwrap();
+        let instance = launcher_fixture(&root, None);
+        let err = register_launcher("test", &instance, &dirs(&home), false).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("--adopt"),
+            "unexpected: {err:#}"
+        );
+        assert!(!_envelope.path().join("octowow-launcher-prefix").exists());
+        register_launcher("test", &instance, &dirs(&home), true).unwrap();
+        assert!(db_dump(home.path()).contains("octowow-launcher-test|"));
     }
 
     #[test]
