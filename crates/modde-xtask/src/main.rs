@@ -148,7 +148,7 @@ fn project() -> ProjectConfig {
         spec_file: Some(root.join("dist/rpm/modde.spec")),
         copr: Some(CoprConfig {
             source_archive_url_template:
-                "https://codeberg.org/caniko/rs-modde/archive/v{version}.tar.gz".into(),
+                "https://github.com/caniko/rs-modde/archive/v{version}.tar.gz".into(),
             srpm_dir: root.join("target/modde-release/root-artifacts/srpms"),
             vendor_tarball: root.join("target/modde-release/root-artifacts/vendor.tar.gz"),
         }),

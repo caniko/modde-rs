@@ -18,7 +18,7 @@ kind = "person"
 
 [[people.links]]
 label = "rs-modde source"
-href = "https://codeberg.org/caniko/rs-modde"
+href = "https://github.com/caniko/rs-modde"
 kind = "source"
 
 [[nav]]
@@ -39,7 +39,7 @@ href = "/comparison/"
 
 [[nav]]
 label = "Source"
-href = "https://codeberg.org/caniko/rs-modde"
+href = "https://github.com/caniko/rs-modde"
 
 [[footer_links]]
 label = "Docs"
@@ -47,15 +47,15 @@ href = "/docs/"
 
 [[footer_links]]
 label = "Repo"
-href = "https://codeberg.org/caniko/rs-modde"
+href = "https://github.com/caniko/rs-modde"
 
 [[footer_links]]
 label = "CHANGELOG"
-href = "https://codeberg.org/caniko/rs-modde/src/branch/trunk/CHANGELOG.md"
+href = "https://github.com/caniko/rs-modde/blob/trunk/CHANGELOG.md"
 
 [[footer_links]]
 label = "Issues"
-href = "https://codeberg.org/caniko/rs-modde/issues"
+href = "https://github.com/caniko/rs-modde/issues"
 
 [[assets]]
 source = "static/logo.svg"
@@ -193,7 +193,7 @@ command = "cargo install modde"
 label = "Build from source"
 audience = "Developers"
 href = "/docs/getting-started/installation.html#build-from-source"
-command = "git clone https://codeberg.org/caniko/rs-modde"
+command = "git clone https://github.com/caniko/rs-modde"
 
 [[pages.sections]]
 type = "screenshot_grid"
@@ -220,7 +220,7 @@ caption = "FOMOD wizard - stepping through a guided installer"
 type = "capability_matrix"
 id = "supported-games"
 heading = "Supported Games"
-intro_html = "Generated from the canonical <a href=\"https://codeberg.org/caniko/rs-modde/src/branch/trunk/docs/capability-matrix.toml\"><code>docs/capability-matrix.toml</code></a> source file."
+intro_html = "Generated from the canonical <a href=\"https://github.com/caniko/rs-modde/blob/trunk/docs/capability-matrix.toml\"><code>docs/capability-matrix.toml</code></a> source file."
 source = "../docs/capability-matrix.toml"
 
 [[pages]]

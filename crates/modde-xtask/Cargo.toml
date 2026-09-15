@@ -17,7 +17,7 @@ anyhow.workspace = true
 clap.workspace = true
 semver = "1"
 tracing-subscriber.workspace = true
-harbor-xtask = { git = "https://github.com/caniko/harbor-rs.git" }
+harbor-xtask = { git = "https://github.com/caniko/harbor-rs.git", rev = "7b6bee8bc1ff7503b9f147ca0ff723d4e4a37e23" }
 
 [lints]
 workspace = true

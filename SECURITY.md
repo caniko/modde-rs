@@ -96,7 +96,7 @@ provenance with `slsa-verifier`:
 ```sh
 slsa-verifier verify-artifact \
   --provenance-path modde-<version>-x86_64-linux.tar.gz.intoto.jsonl \
-  --source-uri codeberg.org/caniko/rs-modde \
+  --source-uri github.com/caniko/rs-modde \
   --source-tag <version> \
   modde-<version>-x86_64-linux.tar.gz
 ```

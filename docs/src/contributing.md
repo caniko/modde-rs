@@ -1,7 +1,7 @@
 # Contributing
 
 Development setup and broad contribution guidance live in the repository
-[CONTRIBUTING.md](https://codeberg.org/caniko/rs-modde/src/branch/trunk/CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/caniko/rs-modde/blob/trunk/CONTRIBUTING.md).
 This page records contributor-facing implementation notes that should stay
 visible in the rendered docs.
 

@@ -13,7 +13,7 @@ Thank you for your interest in contributing to modde!
 
 ```sh
 # Clone the repository
-git clone https://codeberg.org/caniko/rs-modde.git
+git clone https://github.com/caniko/rs-modde.git
 cd rs-modde
 
 # Enter the dev shell (provides all dependencies)
@@ -134,7 +134,7 @@ proptest targets (model after the proptest scaffolding above) rather than
 
 ## Reporting Issues
 
-Please file issues on the [Codeberg issue tracker](https://codeberg.org/caniko/rs-modde/issues).
+Please file issues on the [GitHub issue tracker](https://github.com/caniko/rs-modde/issues).
 
 Include:
 

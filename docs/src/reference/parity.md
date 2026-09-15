@@ -10,7 +10,7 @@ It is intentionally conservative:
 - **`Partial`** means core logic exists, but the UX, integration, or production safety is still incomplete.
 - **`Not shipped`** means the repository should not market it as available yet.
 
-The canonical status baseline lives in [`docs/capability-matrix.toml`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/docs/capability-matrix.toml).
+The canonical status baseline lives in [`docs/capability-matrix.toml`](https://github.com/caniko/rs-modde/blob/trunk/docs/capability-matrix.toml).
 The guardrail test `crates/modde-core/tests/repo_truth_tests.rs` fails the build if this page, the README, the
 [supported games table](../games/supported-games.md), and the landing-site comparison drift from that file.
 

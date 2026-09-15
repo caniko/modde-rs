@@ -6,7 +6,7 @@ set -euo pipefail
 
 VERSION="${VERSION:?VERSION must be set to the release tag}"
 RELEASE_DIR="${RELEASE_DIR:-release}"
-APT_REPO_REMOTE="${APT_REPO_REMOTE:-ssh://git@codeberg.org/caniko/apt-modde.git}"
+APT_REPO_REMOTE="${APT_REPO_REMOTE:-ssh://git@github.com/caniko/apt-modde.git}"
 work_dir="${APT_REPO_WORKDIR:-${MODDE_LOCAL_RELEASE_WORKDIR:-target/modde-release/work}/apt}"
 simit_bin="${SIMIT_BIN:-simit}"
 args=(

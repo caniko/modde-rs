@@ -64,7 +64,7 @@ zstd = { workspace = true }
 resolvo = { workspace = true }
 httpdate = "1"
 unrar = { package = "unrar-ng", version = "0.7.7", optional = true }
-memory-admission = { version = "0.1.6", git = "https://codeberg.org/caniko/rs-memory-admission.git", rev = "43c603e848ccc00af222a4ad2996b37a793385e2", default-features = false, features = [
+memory-admission = { version = "0.1.6", git = "https://github.com/caniko/rs-memory-admission.git", rev = "43c603e848ccc00af222a4ad2996b37a793385e2", default-features = false, features = [
   "async",
 ] }
 

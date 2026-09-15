@@ -11,9 +11,9 @@ preferences there and drive modde with the CLI). This page documents **every**
 option the module exposes, the validation assertions it enforces, the per-tool
 settings schemas, and several complete worked examples.
 
-The option source is [`nix/hm-module.nix`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/nix/hm-module.nix);
+The option source is [`nix/hm-module.nix`](https://github.com/caniko/rs-modde/blob/trunk/nix/hm-module.nix);
 the typed tool-settings schema is generated into
-[`nix/tool-schema.nix`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/nix/tool-schema.nix)
+[`nix/tool-schema.nix`](https://github.com/caniko/rs-modde/blob/trunk/nix/tool-schema.nix)
 by `modde dev export-tool-schema`. To import the module, see
 [Installation → Flake input + home-manager module](../getting-started/installation.md#flake-input--home-manager-module).
 
@@ -303,7 +303,7 @@ patchers = {
 
 Pins a downloaded release asset for a release-backed tool. Today **only
 `optiscaler` supports release pinning** (sourced from
-[`nix/release-supporting-tools.nix`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/nix/release-supporting-tools.nix));
+[`nix/release-supporting-tools.nix`](https://github.com/caniko/rs-modde/blob/trunk/nix/release-supporting-tools.nix));
 setting `release` on any other tool fails an assertion.
 
 | Option  | Type                     | Default | Description                                            |
@@ -336,7 +336,7 @@ tools.optiscaler.release = {
 
 Selects an OptiScaler per-game preset. This option exists **only** on the
 `optiscaler` tool. Its type is dynamic: if the game has registered presets (see
-[`nix/optiscaler-profiles.nix`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/nix/optiscaler-profiles.nix)),
+[`nix/optiscaler-profiles.nix`](https://github.com/caniko/rs-modde/blob/trunk/nix/optiscaler-profiles.nix)),
 the option becomes an `enum` of those presets; if the game has no registered
 presets, setting `profile` to a non-null value fails an assertion.
 
@@ -373,7 +373,7 @@ point straight at the offending option.
 
 The tables below enumerate every key in the typed and notable free-form tool
 schemas, generated from
-[`nix/tool-schema.nix`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/nix/tool-schema.nix).
+[`nix/tool-schema.nix`](https://github.com/caniko/rs-modde/blob/trunk/nix/tool-schema.nix).
 Every key defaults to `null` (unset → modde uses its own default), and each typed
 key is validated to its declared type during evaluation.
 

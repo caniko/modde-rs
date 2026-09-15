@@ -111,7 +111,7 @@ async fn fetch_latest_release() -> Result<UpdateCheckCache> {
         .context("failed to parse latest modde release response")?;
 
     let fallback_url = format!(
-        "https://codeberg.org/caniko/rs-modde/releases/tag/{}",
+        "https://github.com/caniko/rs-modde/releases/tag/{}",
         release.tag_name
     );
 

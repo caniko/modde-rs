@@ -19,7 +19,7 @@ resumable, and reproducible.
 
 A `.wabbajack` file is a ZIP archive. Inside it is a single JSON **manifest**
 (named `modlist` or `*.json`) plus inline patch/data blobs. modde reads the
-manifest into a [`WabbajackManifest`](https://codeberg.org/caniko/rs-modde)
+manifest into a [`WabbajackManifest`](https://github.com/caniko/rs-modde)
 with two top-level lists:
 
 - **`Archives`** — every external file the list needs, each identified by its

@@ -1590,7 +1590,7 @@ dependencies = [
 [[package]]
 name = "detritus-client"
 version = "0.1.0"
-source = "git+https://codeberg.org/caniko/rs-detritus.git?rev=b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e#b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e"
+source = "git+https://github.com/caniko/rs-detritus.git?rev=b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e#b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e"
 dependencies = [
  "chrono",
  "detritus-protocol",
@@ -1616,7 +1616,7 @@ dependencies = [
 [[package]]
 name = "detritus-protocol"
 version = "0.1.0"
-source = "git+https://codeberg.org/caniko/rs-detritus.git?rev=b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e#b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e"
+source = "git+https://github.com/caniko/rs-detritus.git?rev=b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e#b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e"
 dependencies = [
  "bytes",
  "chrono",
@@ -2072,7 +2072,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 [[package]]
 name = "fomod-oxide"
 version = "0.1.0"
-source = "git+https://codeberg.org/caniko/rs-fomod-oxide.git?rev=d1f53c4e61007a57c5ae5118e5937d4f592e1188#d1f53c4e61007a57c5ae5118e5937d4f592e1188"
+source = "git+https://github.com/caniko/rs-fomod-oxide.git?rev=d1f53c4e61007a57c5ae5118e5937d4f592e1188#d1f53c4e61007a57c5ae5118e5937d4f592e1188"
 dependencies = [
  "base64",
  "quick-xml 0.41.0",
@@ -2538,7 +2538,7 @@ dependencies = [
 [[package]]
 name = "harbor-xtask"
 version = "0.1.0"
-source = "git+https://github.com/caniko/harbor-rs.git#7b6bee8bc1ff7503b9f147ca0ff723d4e4a37e23"
+source = "git+https://github.com/caniko/harbor-rs.git?rev=7b6bee8bc1ff7503b9f147ca0ff723d4e4a37e23#7b6bee8bc1ff7503b9f147ca0ff723d4e4a37e23"
 dependencies = [
  "anyhow",
  "flate2",
@@ -2822,7 +2822,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.58.0",
 ]
 
 [[package]]
@@ -3777,7 +3777,7 @@ dependencies = [
 [[package]]
 name = "memory-admission"
 version = "0.1.6"
-source = "git+https://codeberg.org/caniko/rs-memory-admission.git?rev=43c603e848ccc00af222a4ad2996b37a793385e2#43c603e848ccc00af222a4ad2996b37a793385e2"
+source = "git+https://github.com/caniko/rs-memory-admission.git?rev=43c603e848ccc00af222a4ad2996b37a793385e2#43c603e848ccc00af222a4ad2996b37a793385e2"
 dependencies = [
  "tokio",
  "tracing",
@@ -3947,7 +3947,6 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
- "libc",
  "nix-manager-core",
  "serde",
  "serde_json",
@@ -4186,7 +4185,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 [[package]]
 name = "nix-manager-core"
 version = "0.3.0"
-source = "git+https://codeberg.org/caniko/nix-manager-core.git?branch=trunk#bca559b54dc9c4cea36a0fa1ca7dad8dded3d9ff"
+source = "git+https://github.com/caniko/nix-manager-core.git?branch=trunk#ef2ed19e4747eac70daaea338e147c972e5d5f75"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5221,7 +5220,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "once_cell",
@@ -5241,7 +5240,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn",

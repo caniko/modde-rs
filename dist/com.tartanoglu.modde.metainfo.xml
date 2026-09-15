@@ -18,10 +18,10 @@
   </description>
   <launchable type="desktop-id">com.tartanoglu.modde.desktop</launchable>
   <url type="homepage">https://modde.tartanoglu.com</url>
-  <url type="bugtracker">https://codeberg.org/caniko/rs-modde/issues</url>
-  <url type="vcs-browser">https://codeberg.org/caniko/rs-modde</url>
+  <url type="bugtracker">https://github.com/caniko/rs-modde/issues</url>
+  <url type="vcs-browser">https://github.com/caniko/rs-modde</url>
   <url type="help">https://modde.tartanoglu.com/docs/</url>
-  <url type="contact">https://codeberg.org/caniko/rs-modde/issues</url>
+  <url type="contact">https://github.com/caniko/rs-modde/issues</url>
   <branding>
     <color type="primary" scheme_preference="light">#B1130F</color>
     <color type="primary" scheme_preference="dark">#ED3427</color>

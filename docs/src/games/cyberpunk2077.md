@@ -9,7 +9,7 @@ after staging.
 The game id is **`cyberpunk2077`**. Use it verbatim with every CLI command and in
 home-manager profiles.
 
-[matrix]: https://codeberg.org/caniko/rs-modde/src/branch/trunk/docs/capability-matrix.toml
+[matrix]: https://github.com/caniko/rs-modde/blob/trunk/docs/capability-matrix.toml
 
 ## Engine and status
 

@@ -50,7 +50,7 @@
       "Bash(./target/debug/modde scan:*)",
       "Bash(modde\" | head -20)",
       "Bash(git config:*)",
-      "Bash(nix-prefetch-git --url https://codeberg.org/caniko/rs-modde --rev v0.1.0 --fetch-submodules)",
+      "Bash(nix-prefetch-git --url https://github.com/caniko/rs-modde --rev v0.1.0 --fetch-submodules)",
       "Bash(nix-build -A modde)",
       "Bash(tar tz:*)"
     ],

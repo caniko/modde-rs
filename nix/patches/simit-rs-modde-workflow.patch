@@ -238,8 +238,8 @@ index 64f008d..333f689 100644
          assert!(workflow.contains("wine \"$tmpdir/wingetcreate.exe\" update Caniko.Modde"));
          assert!(workflow.contains("/api/v1/statuses"));
          assert!(workflow.contains(
--            "nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://codeberg.org/caniko/simit -c simit dist chocolatey bump"
-+            "nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://codeberg.org/caniko/simit -c simit dist chocolatey bump"
+-            "nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit -c simit dist chocolatey bump"
++            "nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit -c simit dist chocolatey bump"
          ));
          // Checksum step uses runner-compatible Bash glob enumeration, not find/xargs.
          assert!(workflow.contains("add_matches '*.tar.gz'"));

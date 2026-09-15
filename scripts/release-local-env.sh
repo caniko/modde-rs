@@ -169,7 +169,7 @@ need_chocolatey_tool() {
   fi
 
   if command -v nix >/dev/null 2>&1 \
-    && nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://codeberg.org/caniko/simit -c command -v choco >/dev/null 2>&1; then
+    && nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit -c command -v choco >/dev/null 2>&1; then
     ok "tool choco via configured nix_tool"
     return
   fi

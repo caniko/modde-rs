@@ -54,7 +54,7 @@ yay -S modde-git   # track the development branch
 provide the `modde` and `modde-ui` binaries and conflict with one another. Release
 tags are signed by the maintainer GPG key
 `818D507F1E62139F8A17EAA64623DEA06FDACFE1`, also exported in
-[`keys/maintainers.gpg`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/keys/maintainers.gpg).
+[`keys/maintainers.gpg`](https://github.com/caniko/rs-modde/blob/trunk/keys/maintainers.gpg).
 
 ### Fedora / RHEL (COPR)
 
@@ -80,7 +80,7 @@ sudo apt install modde
 Planned channel. The repository is signed with a dedicated key (fingerprint
 `CCFE4A8461DF8778F5227684B6DB8F177A951E1B`), separate from the maintainer
 tag-signing key and the minisign release key. See
-[`SECURITY.md`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/SECURITY.md)
+[`SECURITY.md`](https://github.com/caniko/rs-modde/blob/trunk/SECURITY.md)
 for the signing-key policy and rotation procedure.
 
 The apt public key is a required release input. If `dist/apt/key.gpg.asc` is not
@@ -110,12 +110,12 @@ chmod +x modde-ui-<version>-x86_64.AppImage
 
 A CLI AppImage (`modde-<version>-x86_64.AppImage`) is published alongside the GUI
 one. Download both from the
-[releases page](https://codeberg.org/caniko/rs-modde/releases).
+[releases page](https://github.com/caniko/rs-modde/releases).
 
 ### Linux direct download
 
 Planned channel. Once release assets are published, grab the tarball for your
-architecture from the [releases page](https://codeberg.org/caniko/rs-modde/releases)
+architecture from the [releases page](https://github.com/caniko/rs-modde/releases)
 and extract it:
 
 ```bash
@@ -151,7 +151,7 @@ xattr -dr com.apple.quarantine modde modde-ui
 
 Subsequent runs work without further intervention. If you would prefer notarized
 binaries (Apple Developer ID, $99/yr),
-[open an issue](https://codeberg.org/caniko/rs-modde/issues) to fund or contribute
+[open an issue](https://github.com/caniko/rs-modde/issues) to fund or contribute
 it.
 
 ## Windows
@@ -166,7 +166,7 @@ Planned channel. Use only after the winget package is published.
 ### Scoop
 
 ```powershell
-scoop bucket add modde https://codeberg.org/caniko/scoop-modde
+scoop bucket add modde https://github.com/caniko/scoop-modde
 scoop install modde
 ```
 Planned channel. Use only after the Scoop bucket is published.
@@ -184,7 +184,7 @@ Each Windows package installs `modde.exe` and `modde-ui.exe` on your `PATH`.
 
 Experimental channel. Once a Windows zip is published, download
 `modde-<version>-x86_64-windows.zip` from the
-[releases page](https://codeberg.org/caniko/rs-modde/releases) and extract it.
+[releases page](https://github.com/caniko/rs-modde/releases) and extract it.
 The `.exe` artifacts are Authenticode-signed; verify the signature before running:
 
 ```powershell
@@ -224,7 +224,7 @@ wayland-devel libxkbcommon-devel vulkan-loader-devel`.
 ## Build from source
 
 ```bash
-git clone https://codeberg.org/caniko/rs-modde.git
+git clone https://github.com/caniko/rs-modde.git
 cd rs-modde
 nix develop . -c cargo build --release
 # Binaries at target/release/modde and target/release/modde-ui
@@ -358,7 +358,7 @@ The SLSA predicate records the source Git commit, the `flake.lock` digest, the
 release-workflow digest, and the Attic substituter trust root used for release
 builds. Each release also ships CycloneDX (`*.cdx.json`) and SPDX (`*.spdx.json`)
 SBOMs. See
-[`SECURITY.md`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/SECURITY.md)
+[`SECURITY.md`](https://github.com/caniko/rs-modde/blob/trunk/SECURITY.md)
 for SBOM scanning and the full signing-key policy.
 
 ## Troubleshooting
@@ -370,7 +370,7 @@ the explicit Git URL and make sure flakes are enabled:
 
 ```bash
 nix --extra-experimental-features 'nix-command flakes' \
-  run "git+https://codeberg.org/caniko/rs-modde"
+  run "git+https://github.com/caniko/rs-modde"
 ```
 
 ```nix
@@ -409,4 +409,4 @@ libraries listed under [Cargo](#cargo) — or just use the Nix shell.
 - [Your first profile](first-profile.md) — an end-to-end walkthrough
 - [Home-Manager module reference](../configuration/hm-module.md) — every option
 - [Settings file & environment](../configuration/settings-file.md) — the non-Nix config
-- [`SECURITY.md`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/SECURITY.md) — signing keys, SBOMs, and rotation policy
+- [`SECURITY.md`](https://github.com/caniko/rs-modde/blob/trunk/SECURITY.md) — signing keys, SBOMs, and rotation policy

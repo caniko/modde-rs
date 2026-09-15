@@ -12,8 +12,8 @@ build-dir = "book"
 site-url = "/docs/"
 default-theme = "coal"
 preferred-dark-theme = "coal"
-git-repository-url = "https://codeberg.org/caniko/rs-modde"
-edit-url-template = "https://codeberg.org/caniko/rs-modde/_edit/trunk/docs/{path}"
+git-repository-url = "https://github.com/caniko/rs-modde"
+edit-url-template = "https://github.com/caniko/rs-modde/_edit/trunk/docs/{path}"
 
 [output.html.search]
 limit-results = 20

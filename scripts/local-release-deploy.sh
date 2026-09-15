@@ -396,9 +396,9 @@ publish_homebrew() {
     --description 'Cross-platform game mod manager' \
     --homepage 'https://modde.tartanoglu.com' \
     --license GPL-3.0-only \
-    --archive "darwin_arm=https://codeberg.org/caniko/rs-modde/releases/download/${version}/modde-${version}-aarch64-darwin.tar.gz,$release_dir/modde-${version}-aarch64-darwin.tar.gz" \
-    --archive "linux_arm=https://codeberg.org/caniko/rs-modde/releases/download/${version}/modde-${version}-aarch64-linux.tar.gz,$release_dir/modde-${version}-aarch64-linux.tar.gz" \
-    --archive "linux_intel=https://codeberg.org/caniko/rs-modde/releases/download/${version}/modde-${version}-x86_64-linux.tar.gz,$release_dir/modde-${version}-x86_64-linux.tar.gz" \
+    --archive "darwin_arm=https://github.com/caniko/rs-modde/releases/download/${version}/modde-${version}-aarch64-darwin.tar.gz,$release_dir/modde-${version}-aarch64-darwin.tar.gz" \
+    --archive "linux_arm=https://github.com/caniko/rs-modde/releases/download/${version}/modde-${version}-aarch64-linux.tar.gz,$release_dir/modde-${version}-aarch64-linux.tar.gz" \
+    --archive "linux_intel=https://github.com/caniko/rs-modde/releases/download/${version}/modde-${version}-x86_64-linux.tar.gz,$release_dir/modde-${version}-x86_64-linux.tar.gz" \
     --binary modde \
     --binary modde-ui \
     --tap "$homebrew_tap"
@@ -548,8 +548,8 @@ publish_windows_packagers() {
     record_skipped "Chocolatey missing API key"
   fi
 
-  if require_local_secret_for_publish "Scoop" SCOOP_BUCKET_TOKEN 'export SCOOP_BUCKET_TOKEN for codeberg.org/caniko/scoop-modde' 'test -n "$SCOOP_BUCKET_TOKEN"'; then
-    args+=(--scoop --scoop-bucket-url "${SCOOP_BUCKET_URL:-https://codeberg.org/caniko/scoop-modde.git}" --scoop-bucket-token-env SCOOP_BUCKET_TOKEN)
+  if require_local_secret_for_publish "Scoop" SCOOP_BUCKET_TOKEN 'export SCOOP_BUCKET_TOKEN for github.com/caniko/scoop-modde' 'test -n "$SCOOP_BUCKET_TOKEN"'; then
+    args+=(--scoop --scoop-bucket-url "${SCOOP_BUCKET_URL:-https://github.com/caniko/scoop-modde.git}" --scoop-bucket-token-env SCOOP_BUCKET_TOKEN)
   else
     record_skipped "Scoop missing bucket token"
   fi

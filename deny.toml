@@ -38,7 +38,7 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
-  "https://codeberg.org/caniko/rs-fomod-oxide.git",
+  "https://github.com/caniko/rs-fomod-oxide.git",
   "https://github.com/caniko/harbor-rs.git",
-  "https://codeberg.org/caniko/rs-memory-admission.git",
+  "https://github.com/caniko/rs-memory-admission.git",
 ]

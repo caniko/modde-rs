@@ -2,7 +2,7 @@
   description = "modde — cross-platform game mod manager";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=891cf7c2827e61ed4b07e3caef6efe0543b0d5d0";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=05cc4f162b55fa904b687db1821e2463fa813e50";
     rs-harbor.follows = "harbor-rs";
 
     harbor-macos-sdk-pin.url = "git+https://github.com/caniko/harbor-macos-sdk-pin.git";
@@ -26,10 +26,11 @@
       inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
       inputs.crane.follows = "harbor-rs/crane";
       inputs.flake-utils.url = "github:numtide/flake-utils";
+      inputs.plinth.follows = "plinth";
     };
 
     plinth = {
-      url = "git+https://codeberg.org/caniko/plinth.git";
+      url = "git+https://github.com/caniko/plinth.git";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.crane.follows = "crane";
@@ -37,7 +38,7 @@
     };
 
     visual-rubric = {
-      url = "git+https://codeberg.org/caniko/visual-rubric.git";
+      url = "git+https://github.com/caniko/visual-rubric.git";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.crane.follows = "crane";
@@ -50,7 +51,7 @@
     };
 
     nix-manager-core = {
-      url = "git+https://codeberg.org/caniko/nix-manager-core.git?ref=trunk";
+      url = "git+https://github.com/caniko/nix-manager-core.git?ref=trunk";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rs-harbor.follows = "harbor-rs";
       inputs.rust-overlay.follows = "rust-overlay";
@@ -525,7 +526,7 @@
 
             flatpak-manifest = let
               flatpakAppId = "com.tartanoglu.modde";
-              releaseSourceUrl = "https://codeberg.org/caniko/rs-modde/releases/download/${moddeVersion}/rs-modde-${moddeVersion}.tar.gz";
+              releaseSourceUrl = "https://github.com/caniko/rs-modde/releases/download/${moddeVersion}/rs-modde-${moddeVersion}.tar.gz";
               flatpakManifest = {
                 "app-id" = flatpakAppId;
                 runtime = "org.freedesktop.Platform";
@@ -578,7 +579,7 @@
 
             homebrew-formula = let
               versionField = moddeVersion;
-              baseUrl = "https://codeberg.org/caniko/rs-modde/releases/download";
+              baseUrl = "https://github.com/caniko/rs-modde/releases/download";
               archiveUrl = arch: os: "${baseUrl}/${versionField}/modde-${versionField}-${arch}-${os}.tar.gz";
               formula = harbor-rs.lib.mkHomebrewFormula {
                 inherit pkgs;
@@ -2151,7 +2152,7 @@
           description = "Cross-platform game mod manager";
           project_url = "https://modde.tartanoglu.com";
           authors = "Can H. Tartanoglu";
-          license_url = "https://codeberg.org/caniko/rs-modde/raw/branch/trunk/LICENSE";
+          license_url = "https://raw.githubusercontent.com/caniko/rs-modde/trunk/LICENSE";
           archive_pattern = "modde-{version}-{arch}-windows.zip";
           # Interim: pull choco from the fork that ships the chocolatey package
           # (caniko/nixpkgs add-chocolatey-scoop). Drop the nixpkgs ref to
@@ -2162,7 +2163,7 @@
         };
         scoop = {
           name = "modde";
-          bucket_url = "https://codeberg.org/caniko/scoop-modde.git";
+          bucket_url = "https://github.com/caniko/scoop-modde.git";
           bucket_token_secret = "CODEBERG_TOKEN";
           download_repo = "caniko/rs-modde";
           description = "Cross-platform game mod manager";
@@ -2218,7 +2219,7 @@
           token_secret = "COPR_TOKEN";
         };
         apt = {
-          repo_url = "ssh://git@codeberg.org/caniko/apt-modde.git";
+          repo_url = "ssh://git@github.com/caniko/apt-modde.git";
           public_url = "https://apt.modde.tartanoglu.com/";
           pages = {
             provider = "codeberg-git-pages";

@@ -34,7 +34,7 @@ uses. See [Save tracking](#save-tracking) below and the
 other titles.
 
 > Status vocabulary follows the repository's
-> [`docs/capability-matrix.toml`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/docs/capability-matrix.toml)
+> [`docs/capability-matrix.toml`](https://github.com/caniko/rs-modde/blob/trunk/docs/capability-matrix.toml)
 > and the [parity audit](../reference/parity.md). `Done` means shipped end to
 > end and user-reachable; `Partial` means core logic exists but the surrounding
 > workflow is not yet fully trustworthy.

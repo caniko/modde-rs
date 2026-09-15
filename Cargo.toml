@@ -17,7 +17,7 @@ version = "0.7.0"
 edition = "2024"
 rust-version = "1.93"
 license = "GPL-3.0"
-repository = "https://codeberg.org/caniko/rs-modde"
+repository = "https://github.com/caniko/rs-modde"
 authors = ["Can H. Tartanoglu"]
 keywords = ["modding", "mod-manager", "nexus-mods", "wabbajack", "game-mods"]
 categories = ["command-line-utilities", "game-development"]
@@ -48,8 +48,8 @@ anyhow = "1"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-detritus = { package = "detritus-client", version = "0.1.0", git = "https://codeberg.org/caniko/rs-detritus.git", rev = "b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e", default-features = false }
-detritus-protocol = { version = "0.1.0", git = "https://codeberg.org/caniko/rs-detritus.git", rev = "b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e", default-features = false }
+detritus = { package = "detritus-client", version = "0.1.0", git = "https://github.com/caniko/rs-detritus.git", rev = "b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e", default-features = false }
+detritus-protocol = { version = "0.1.0", git = "https://github.com/caniko/rs-detritus.git", rev = "b23ab20e9d584c5c4fe04ac86b2ed4cad1b2486e", default-features = false }
 secrecy = "0.10"
 uuid = { version = "1.10", features = ["v4", "serde"] }
 
@@ -177,7 +177,7 @@ modde-sources = { version = "0.7.0", path = "crates/modde-sources" }
 modde-games = { version = "0.7.0", path = "crates/modde-games" }
 modde-ui = { version = "0.7.0", path = "crates/modde-ui" }
 modde-oracle-api = { version = "0.7.0", path = "crates/modde-oracle-api" }
-nix-manager-core = { git = "https://codeberg.org/caniko/nix-manager-core.git", branch = "trunk" }
+nix-manager-core = { git = "https://github.com/caniko/nix-manager-core.git", branch = "trunk" }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
@@ -229,4 +229,4 @@ codegen-units = 1
 strip = true
 
 [patch.crates-io]
-fomod-oxide = { git = "https://codeberg.org/caniko/rs-fomod-oxide.git", rev = "d1f53c4e61007a57c5ae5118e5937d4f592e1188" }
+fomod-oxide = { git = "https://github.com/caniko/rs-fomod-oxide.git", rev = "d1f53c4e61007a57c5ae5118e5937d4f592e1188" }

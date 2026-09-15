@@ -5,7 +5,7 @@ on the `Smapi` engine family, and unlike the Bethesda, REDengine, and Unreal gam
 it is a managed-content loader: mods are self-describing directories under `Mods/`
 rather than archives, plugins, or `.pak` overlays. This page documents exactly
 what modde knows about the title, sourced from
-[`crates/modde-games/src/stardew/`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/crates/modde-games/src/stardew).
+[`crates/modde-games/src/stardew/`](https://github.com/caniko/rs-modde/blob/trunk/crates/modde-games/src/stardew).
 
 ## Engine and overall status
 
@@ -28,7 +28,7 @@ classification, and save tracking — is implemented, but it has not been promot
 to `Done` the way the Bethesda Creation Engine titles and Cyberpunk 2077 have.
 Treat installer coverage and end-to-end UX as work in progress, not as a turnkey
 SMAPI manager. The canonical, test-coupled status baseline lives in
-[`docs/capability-matrix.toml`](https://codeberg.org/caniko/rs-modde/src/branch/trunk/docs/capability-matrix.toml).
+[`docs/capability-matrix.toml`](https://github.com/caniko/rs-modde/blob/trunk/docs/capability-matrix.toml).
 
 ## How modde detects the install
 
