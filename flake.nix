@@ -158,14 +158,14 @@
           });
 
         # Linux-specific dependencies for the native build
-        linuxBuildInputs = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+        linuxBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux (with pkgs; [
           dbus
           wayland
           libxkbcommon
           vulkan-loader
         ]);
 
-        linuxLdPath = lib.optionalString pkgs.stdenv.isLinux (
+        linuxLdPath = lib.optionalString pkgs.stdenv.hostPlatform.isLinux (
           pkgs.lib.makeLibraryPath (with pkgs; [
             wayland
             libxkbcommon
@@ -322,7 +322,7 @@
             postInstall = ''
               for bin in "$out"/bin/*; do
                 wrapProgram "$bin" \
-                  ${lib.optionalString pkgs.stdenv.isLinux "--prefix LD_LIBRARY_PATH : ${linuxLdPath} \\"}
+                  ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix LD_LIBRARY_PATH : ${linuxLdPath} \\"}
                   --set-default SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
                   --set-default NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               done
@@ -609,7 +609,7 @@
             in
               formula.formulaPath;
           }
-          // lib.optionalAttrs pkgs.stdenv.isLinux {
+          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             appimage-cli = harbor-rs.lib.mkAppImage {
               inherit system nix-appimage;
               program = "${modde}/bin/modde";
@@ -1654,7 +1654,7 @@
               ++ nativeBuildInputs
               ++ buildInputs;
 
-            extraEnv = lib.optionalAttrs pkgs.stdenv.isLinux {
+            extraEnv = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
               LD_LIBRARY_PATH = linuxLdPath;
             };
           })
@@ -1677,7 +1677,7 @@
                 ]
                 ++ nativeBuildInputs
                 ++ buildInputs;
-              shellHook = lib.optionalString pkgs.stdenv.isLinux ''
+              shellHook = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
                 export LD_LIBRARY_PATH="${linuxLdPath}"
               '';
             };
