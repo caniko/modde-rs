@@ -1134,6 +1134,21 @@ fn check_entry_yml(
             None => problems.push(format!("wine.{key} missing, want {want}")),
         }
     }
+    // The deployed wine version decides which library environment Lutris
+    // builds: system wine must run without the Lutris runtime (its `/lib`
+    // and `/usr/lib` resolve to the FHS glibc, breaking the host wrapper
+    // with a libc symbol lookup error); Lutris-managed runners keep theirs.
+    let yml_version = get(&["wine", "version"]).and_then(|v| v.as_str()).unwrap_or("");
+    let want_disable = yml_version == "system";
+    match get(&["system", "disable_runtime"]).and_then(|v| v.as_bool()) {
+        Some(have) if have == want_disable => {}
+        Some(have) => problems.push(format!(
+            "system.disable_runtime is {have}, want {want_disable} for wine version '{yml_version}'"
+        )),
+        None => problems.push(format!(
+            "system.disable_runtime missing, want {want_disable} for wine version '{yml_version}'"
+        )),
+    }
     let overrides = get(&["system", "env", "WINEDLLOVERRIDES"]).and_then(|v| v.as_str());
     match overrides {
         Some(have) => {
@@ -1858,10 +1873,21 @@ pub fn render_entry_yml(spec: &EntrySpec) -> Result<String> {
         ),
         (
             serde_yaml_ng::Value::String("system".into()),
-            serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter([(
-                serde_yaml_ng::Value::String("env".into()),
-                serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter(env)),
-            )])),
+            serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter([
+                (
+                    serde_yaml_ng::Value::String("disable_runtime".into()),
+                    // System wine is a host artifact: Lutris must not prepend
+                    // its runtime lib folders (`/lib`, `/usr/lib` resolve to
+                    // the FHS glibc, breaking the host wrapper with a libc
+                    // symbol lookup error). Lutris-managed runners keep the
+                    // runtime they were built against.
+                    serde_yaml_ng::Value::Bool(spec.runner_version == "system"),
+                ),
+                (
+                    serde_yaml_ng::Value::String("env".into()),
+                    serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter(env)),
+                ),
+            ])),
         ),
     ]);
     serde_yaml_ng::to_string(&serde_yaml_ng::Value::Mapping(doc)).context("render lutris yml")
@@ -2896,6 +2922,8 @@ mod tests {
         assert_eq!(parsed["wine"]["vkd3d"].as_bool(), Some(false));
         assert_eq!(parsed["wine"]["eac"].as_bool(), Some(false));
         assert_eq!(parsed["wine"]["battleye"].as_bool(), Some(false));
+        // Lutris-managed runner: the Lutris runtime stays enabled.
+        assert_eq!(parsed["system"]["disable_runtime"].as_bool(), Some(false));
         let prefix = wiring.prefix.as_ref().unwrap().path.display().to_string();
         assert_eq!(parsed["game"]["prefix"].as_str(), Some(prefix.as_str()));
         assert!(
@@ -2916,6 +2944,70 @@ mod tests {
             wiring.lutris.as_ref().unwrap(),
         );
         assert_eq!(checked.state, ItemState::Verified);
+    }
+
+    #[test]
+    fn system_runner_disables_lutris_runtime_and_check_enforces_it() {
+        let (_envelope, root) = fixture_root();
+        let home = fixture_home(&["wine-ge-9-2"]);
+        let instance = fixture_instance(&root);
+        let wiring = resolve_wiring(&instance).unwrap();
+        let entry = wiring.lutris.as_ref().unwrap();
+        let system = Runner {
+            path: PathBuf::from("/usr/bin/wine"),
+            version: "system".into(),
+        };
+        let yml = render_lutris_yml(&instance, entry, &system, &wiring).unwrap();
+        let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
+        assert_eq!(parsed["wine"]["version"].as_str(), Some("system"));
+        assert_eq!(parsed["system"]["disable_runtime"].as_bool(), Some(true));
+        // Recorded system selection: the rendered entry verifies.
+        let state = _envelope.path().join("octo-manager");
+        fs::create_dir_all(&state).unwrap();
+        fs::write(
+            state.join("wiring-runtime.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "version": "system",
+                "path": "/usr/bin/wine",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let dir = home.path().join(".config/lutris/games");
+        fs::create_dir_all(&dir).unwrap();
+        let yml_path = dir.join("octowow-test.yml");
+        fs::write(&yml_path, &yml).unwrap();
+        let checked = check_lutris_yml(&yml_path, &instance, &wiring, entry);
+        assert_eq!(checked.state, ItemState::Verified);
+        // Missing key (pre-fix yml): mismatched, not silently accepted.
+        let without: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
+        let mut map = without.as_mapping().unwrap().clone();
+        let system_key = serde_yaml_ng::Value::String("system".into());
+        let mut system_map = map
+            .remove(&system_key)
+            .unwrap()
+            .as_mapping()
+            .unwrap()
+            .clone();
+        system_map.remove(&serde_yaml_ng::Value::String("disable_runtime".into()));
+        map.insert(system_key, serde_yaml_ng::Value::Mapping(system_map));
+        fs::write(
+            &yml_path,
+            serde_yaml_ng::to_string(&serde_yaml_ng::Value::Mapping(map)).unwrap(),
+        )
+        .unwrap();
+        let checked = check_lutris_yml(&yml_path, &instance, &wiring, entry);
+        assert_eq!(checked.state, ItemState::Mismatched);
+        assert!(checked.detail.contains("disable_runtime"));
+        // Managed runner with the runtime disabled: mismatched the other way.
+        let managed = discover_runner(&dirs(&home), "wine", "latest").unwrap();
+        let managed_yml = render_lutris_yml(&instance, entry, &managed, &wiring).unwrap();
+        let flipped = managed_yml.replacen("disable_runtime: false", "disable_runtime: true", 1);
+        assert_ne!(managed_yml, flipped);
+        fs::write(&yml_path, &flipped).unwrap();
+        let checked = check_lutris_yml(&yml_path, &instance, &wiring, entry);
+        assert_eq!(checked.state, ItemState::Mismatched);
+        assert!(checked.detail.contains("disable_runtime"));
     }
 
     fn sqlite3_available() -> bool {
