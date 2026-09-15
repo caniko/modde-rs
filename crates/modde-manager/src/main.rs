@@ -53,6 +53,15 @@ enum CommandKind {
         #[arg(long)]
         destination: PathBuf,
     },
+    /// Verify a snapshot root against its manifest without changing anything.
+    VerifySnapshot {
+        #[arg(long)]
+        snapshot: PathBuf,
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        #[arg(long)]
+        expected_manifest_sha256: Option<String>,
+    },
     Capture,
 }
 
@@ -227,6 +236,15 @@ fn main() -> Result<()> {
             source,
             destination,
         } => transaction::snapshot(&config, &source, &destination),
+        CommandKind::VerifySnapshot {
+            snapshot,
+            manifest,
+            expected_manifest_sha256,
+        } => transaction::verify_snapshot(
+            &snapshot,
+            &manifest.unwrap_or_else(|| snapshot.join("manifest.json")),
+            expected_manifest_sha256.as_deref(),
+        ),
         CommandKind::Capture => capture_all(&config),
     }
 }

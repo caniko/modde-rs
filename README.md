@@ -233,7 +233,7 @@ inputs.modde.url = "codeberg:caniko/rs-modde";
 
 ## Declarative WoW Manager
 
-`modde-manager --config client.json check|plan|import|update|snapshot|apply` runs separately
+`modde-manager --config client.json check|plan|import|update|snapshot|verify-snapshot|apply` runs separately
 from Home Manager activation. Client kinds are `wow-wotlk` (default interface
 30300) and `wow-classic` (the original 1.12 client, default interface 11200,
 not modern Blizzard Classic). Classic addon declarations require explicit

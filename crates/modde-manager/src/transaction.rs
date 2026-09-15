@@ -559,6 +559,108 @@ pub fn snapshot(config: &Config, live: &Path, destination: &Path) -> Result<()> 
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SnapshotManifest {
+    version: u64,
+    source: PathBuf,
+    files: BTreeMap<String, ManifestEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestEntry {
+    bytes: u64,
+    sha256: String,
+}
+
+/// Read-only snapshot gate: the snapshot root must contain exactly `Account/`
+/// (with the two approved account namespaces) plus its manifest, and every
+/// file must match the manifest inventory and digests. Symlinks, unsupported
+/// objects and inspection errors fail via the anchored reader. An optional
+/// approved manifest digest binds the manifest itself to prior evidence.
+pub fn verify_snapshot(
+    snapshot: &Path,
+    manifest_path: &Path,
+    expected_manifest_sha256: Option<&str>,
+) -> Result<()> {
+    for path in [snapshot, manifest_path] {
+        if !path.is_absolute() {
+            bail!("snapshot paths must be absolute: {}", path.display());
+        }
+    }
+    if manifest_path.parent() != Some(snapshot) {
+        bail!("snapshot manifest must live at the snapshot root");
+    }
+    let manifest_bytes = match files::read_image(manifest_path, false)? {
+        Image::File(bytes) => bytes,
+        _ => bail!("snapshot manifest must be a regular file"),
+    };
+    if let Some(expected) = expected_manifest_sha256 {
+        if hex(&Sha256::digest(&manifest_bytes)) != expected.to_ascii_lowercase() {
+            bail!("snapshot manifest identity differs from approved digest");
+        }
+    }
+    let parsed: SnapshotManifest =
+        serde_json::from_slice(&manifest_bytes).context("parse snapshot manifest")?;
+    if parsed.version != 1 {
+        bail!("unsupported snapshot manifest version");
+    }
+    for (name, entry) in &parsed.files {
+        files::relative(Path::new(name))?;
+        if entry.sha256.len() != 64 || !entry.sha256.bytes().all(|c| c.is_ascii_hexdigit()) {
+            bail!("invalid digest in snapshot manifest for {name}");
+        }
+    }
+    let tree = source(snapshot, false)?;
+    let Image::Directory(top) = &tree else {
+        bail!("snapshot root must be a directory");
+    };
+    let manifest_name = manifest_path
+        .file_name()
+        .context("snapshot manifest needs a name")?
+        .to_string_lossy()
+        .into_owned();
+    if top.len() != 2
+        || !matches!(top.get("Account"), Some(Image::Directory(_)))
+        || top.get(&manifest_name) != Some(&Image::File(manifest_bytes.clone()))
+    {
+        bail!("snapshot root must contain only Account/ and its manifest");
+    }
+    let Image::Directory(accounts) = &top["Account"] else {
+        unreachable!()
+    };
+    if accounts.len() != 2
+        || !matches!(accounts.get("CANIKO"), Some(Image::Directory(_)))
+        || !matches!(accounts.get("DEJANICA"), Some(Image::Directory(_)))
+    {
+        bail!("snapshot must contain exactly the CANIKO and DEJANICA namespaces");
+    }
+    let mut actual = BTreeMap::new();
+    manifest(&top["Account"], Path::new("Account"), &mut actual);
+    if actual.len() != parsed.files.len() {
+        bail!("snapshot inventory differs from manifest");
+    }
+    for (name, entry) in &parsed.files {
+        let key = PathBuf::from(name);
+        let Some(value) = actual.get(&key) else {
+            bail!("snapshot file missing from manifest inventory: {name}");
+        };
+        if value.get("bytes").and_then(Value::as_u64) != Some(entry.bytes)
+            || value.get("sha256").and_then(Value::as_str) != Some(&entry.sha256)
+        {
+            bail!("snapshot file differs from manifest: {name}");
+        }
+    }
+    println!(
+        "verified snapshot {} from source {} ({} files)",
+        snapshot.display(),
+        parsed.source.display(),
+        parsed.files.len()
+    );
+    Ok(())
+}
+
 fn git_bytes(path: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = Command::new("git")
         .current_dir(path)
@@ -1117,6 +1219,74 @@ mod tests {
         let before = source(&destination, false).unwrap();
         assert!(snapshot(&config, &live, &destination).is_err());
         assert_eq!(source(&destination, false).unwrap(), before);
+    }
+
+    #[test]
+    fn verify_snapshot_accepts_clean_and_rejects_drift() {
+        let (dir, instance) = fixture();
+        let live = dir.path().join("live");
+        for account in ["CANIKO", "DEJANICA"] {
+            fs::create_dir_all(live.join("WTF/Account").join(account)).unwrap();
+            fs::write(
+                live.join("WTF/Account").join(account).join("saved.lua"),
+                account,
+            )
+            .unwrap();
+        }
+        let config = Config {
+            version: 1,
+            instances: BTreeMap::from([("test".into(), instance)]),
+        };
+        let destination = dir.path().join("snapshot");
+        snapshot(&config, &live, &destination).unwrap();
+        let manifest_path = destination.join("manifest.json");
+        let manifest_bytes = fs::read(&manifest_path).unwrap();
+        let manifest_digest = hex(&Sha256::digest(&manifest_bytes));
+        verify_snapshot(&destination, &manifest_path, None).unwrap();
+        verify_snapshot(&destination, &manifest_path, Some(&manifest_digest)).unwrap();
+        assert!(verify_snapshot(&destination, &manifest_path, Some(&"0".repeat(64))).is_err());
+        // Manifest outside the snapshot root is refused.
+        let elsewhere = dir.path().join("manifest-copy.json");
+        fs::write(&elsewhere, &manifest_bytes).unwrap();
+        assert!(verify_snapshot(&destination, &elsewhere, None).is_err());
+        let target = destination.join("Account/CANIKO/saved.lua");
+        let before = fs::read(&target).unwrap();
+        fs::write(&target, "tampered").unwrap();
+        assert!(verify_snapshot(&destination, &manifest_path, None).is_err());
+        fs::write(&target, &before).unwrap();
+        verify_snapshot(&destination, &manifest_path, None).unwrap();
+        let planted = destination.join("Account/CANIKO/planted.lua");
+        fs::write(&planted, "extra").unwrap();
+        assert!(verify_snapshot(&destination, &manifest_path, None).is_err());
+        fs::remove_file(&planted).unwrap();
+        fs::remove_file(&target).unwrap();
+        assert!(verify_snapshot(&destination, &manifest_path, None).is_err());
+        fs::write(&target, &before).unwrap();
+        std::os::unix::fs::symlink(
+            destination.join("Account/DEJANICA"),
+            destination.join("Account/CANIKO/dirlink"),
+        )
+        .unwrap();
+        assert!(verify_snapshot(&destination, &manifest_path, None).is_err());
+        fs::remove_file(destination.join("Account/CANIKO/dirlink")).unwrap();
+        fs::write(&manifest_path, "not json").unwrap();
+        assert!(verify_snapshot(&destination, &manifest_path, None).is_err());
+        fs::write(&manifest_path, &manifest_bytes).unwrap();
+        verify_snapshot(&destination, &manifest_path, None).unwrap();
+        // A snapshot missing one approved namespace is refused.
+        let partial = dir.path().join("partial");
+        fs::create_dir_all(partial.join("Account/CANIKO")).unwrap();
+        fs::write(partial.join("Account/CANIKO/saved.lua"), "CANIKO").unwrap();
+        let partial_manifest = partial.join("manifest.json");
+        fs::write(
+            &partial_manifest,
+            serde_json::to_vec(&serde_json::json!({"version": 1, "source": live,
+                "files": {"Account/CANIKO/saved.lua":
+                    {"bytes": 6, "sha256": hex(&Sha256::digest(b"CANIKO"))}}}))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(verify_snapshot(&partial, &partial_manifest, None).is_err());
     }
 
     #[test]
