@@ -1571,7 +1571,8 @@
             // {
               cargoArtifacts = managerCargoArtifacts;
               doCheck = true;
-              nativeBuildInputs = managerPackageArgs.nativeBuildInputs ++ [pkgs.procps pkgs.git];
+              nativeBuildInputs =
+                managerPackageArgs.nativeBuildInputs ++ [pkgs.procps pkgs.git pkgs.sqlite];
             });
           hm-module-tools-bad-profile = mkHmModuleFailureCheck {
             name = "bad-profile";
@@ -1948,7 +1949,7 @@
       });
   in
     {
-      lib.managerSchemaVersion = 2;
+      lib.managerSchemaVersion = 3;
       lib.mkManager = {
         pkgs,
         package,
@@ -1958,7 +1959,7 @@
           inherit pkgs config package;
           managerPackage = package;
           managerBinary = "modde-manager";
-          extraRuntimePackages = [pkgs.git pkgs.procps];
+          extraRuntimePackages = [pkgs.git pkgs.procps pkgs.sqlite];
         };
 
       linuxDistributionSupport = {

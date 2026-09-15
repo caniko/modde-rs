@@ -60,6 +60,7 @@ The canonical status baseline for these claims lives in `docs/capability-matrix.
 | `modde-sources` | Download backends (Nexus REST + GraphQL, Wabbajack, GitHub, Direct, Google Drive, MEGA, MediaFire), archive extraction (zip/7z/rar/BSA/BA2), FOMOD, and partial BAIN support |
 | `modde`         | 24+ top-level commands with 60+ subcommands covering detect, install, deploy, profiles, saves, tools, executables, and user-defined games           |
 | `modde-ui`      | Iced GUI with Mod List, Browse Nexus, Collections, Wabbajack, Downloads, Data Files, Diagnostics, Tools, Executables, FOMOD wizard, and Settings views |
+| `modde-manager` | Declarative post-setup reconciler: addon/seed/config reconciliation plus optional runtime `wiring` (Wine runner, prefix, Lutris entry) via `onboard status\|plan\|apply` |
 
 ## Usage
 

@@ -39,7 +39,7 @@ fn source(path: &Path, skip_git: bool) -> Result<Image> {
     Ok(image)
 }
 
-fn overlap(a: &Path, b: &Path) -> bool {
+pub(crate) fn overlap(a: &Path, b: &Path) -> bool {
     a.starts_with(b) || b.starts_with(a)
 }
 

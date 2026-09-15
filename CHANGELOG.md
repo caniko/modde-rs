@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Manager**: Add Classic/OctoWoW reconciliation, verified offline addon import,
   private account snapshots, seed-only account-tree merging, and recovery journals.
+- **Manager**: Add declarative runtime wiring (presence-tracking `wiring`
+  overlay plus a shared `preset = "octowow-hd"` expansion, schema v3) with
+  `onboard status|plan|apply`: numeric Wine-runner selection persisted
+  across review and execution (fail-closed record, `--reselect`,
+  `--expect-runner`), WoW.exe size/digest/LAA verification, HD patch
+  native-letter and rename-dodge checks over name-only directory scans,
+  endpoint assertions, launcher file proxies, anchored prefix validation
+  with symlink rejection, and owned Lutris registration (structural game
+  yml with declared prefix, exact runtime, DLL overrides and explicitly
+  disabled anti-cheat runtimes, plus the `pga.db` row).
+  A shared preparation step validates ownership, database presence and
+  runner before any write; apply is content-aware (repeat apply is a
+  no-op), restores the yml if the database step fails, keeps unique
+  WAL-safe backups, and owns only Wine prefix creation, the Lutris yml,
+  and the Lutris row.
 
 ### Changed
 

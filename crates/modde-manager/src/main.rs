@@ -19,6 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod files;
 mod transaction;
+mod wiring;
 
 #[derive(Parser)]
 #[command(name = "modde-manager", about = "Declarative post-setup game manager")]
@@ -62,7 +63,44 @@ enum CommandKind {
         #[arg(long)]
         expected_manifest_sha256: Option<String>,
     },
+    /// Declarative runtime onboarding (Wine prefix, Lutris entry).
+    Onboard {
+        #[command(subcommand)]
+        action: OnboardAction,
+    },
     Capture,
+}
+
+#[derive(Subcommand)]
+enum OnboardAction {
+    /// Read-only readiness report; never executes wine, Lutris, or the launcher.
+    Status {
+        #[arg(long)]
+        instance: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read-only wiring plan; never writes or executes anything.
+    Plan {
+        #[arg(long)]
+        instance: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create the Wine prefix, write the Lutris yml, register the Lutris row.
+    Apply {
+        #[arg(long)]
+        instance: String,
+        /// Take over an existing Lutris entry that points elsewhere.
+        #[arg(long)]
+        adopt: bool,
+        /// Re-resolve the runner even when a selection is recorded.
+        #[arg(long)]
+        reselect: bool,
+        /// Fail unless the executed runner version equals this value.
+        #[arg(long)]
+        expect_runner: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -102,6 +140,12 @@ struct Instance {
     lock_file: Option<PathBuf>,
     #[serde(default)]
     state_dir: Option<PathBuf>,
+    #[serde(default)]
+    wiring: Option<wiring::WiringPatch>,
+    /// Named preset expanded once in Rust (`octowow-hd`); user `wiring`
+    /// replaces preset lists, merges `tunings.env`, overrides scalars.
+    #[serde(default)]
+    preset: Option<String>,
 }
 
 fn default_client_kind() -> String {
@@ -245,6 +289,87 @@ fn main() -> Result<()> {
             &manifest.unwrap_or_else(|| snapshot.join("manifest.json")),
             expected_manifest_sha256.as_deref(),
         ),
+        CommandKind::Onboard { action } => {
+            let home = wiring::home_dir()?;
+            match action {
+                OnboardAction::Status { instance, json } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    let items = wiring::status(&instance, instance_config, &home)?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&items)?);
+                    } else if items
+                        .iter()
+                        .all(|item| item.state == wiring::ItemState::Verified)
+                    {
+                        println!("modde-manager: {instance} wiring ready");
+                    } else {
+                        for item in &items {
+                            println!(
+                                "{:?} {} — {}{}",
+                                item.state,
+                                item.name,
+                                item.detail,
+                                if item.fix.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" (fix: {})", item.fix)
+                                }
+                            );
+                        }
+                    }
+                    if items
+                        .iter()
+                        .any(|item| item.state != wiring::ItemState::Verified)
+                    {
+                        bail!("{instance}: wiring not ready");
+                    }
+                    Ok(())
+                }
+                OnboardAction::Plan { instance, json } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    let changes = wiring::plan(&instance, instance_config, &home)?;
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&changes)?);
+                    } else if changes.is_empty() {
+                        println!("modde-manager: no wiring changes");
+                    } else {
+                        for change in &changes {
+                            let kind = match change.kind {
+                                wiring::WiringChangeKind::Change => "change",
+                                wiring::WiringChangeKind::Blocker => "BLOCKER",
+                            };
+                            println!("[{kind}] {} — {}", change.resource, change.summary);
+                        }
+                    }
+                    Ok(())
+                }
+                OnboardAction::Apply {
+                    instance,
+                    adopt,
+                    reselect,
+                    expect_runner,
+                } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    wiring::apply(
+                        &instance,
+                        instance_config,
+                        &home,
+                        adopt,
+                        reselect,
+                        expect_runner.as_deref(),
+                    )
+                }
+            }
+        }
         CommandKind::Capture => capture_all(&config),
     }
 }

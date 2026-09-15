@@ -3947,9 +3947,11 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
+ "libc",
  "nix-manager-core",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "sha2 0.11.0",
  "tempfile",
 ]
