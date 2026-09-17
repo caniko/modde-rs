@@ -2928,6 +2928,25 @@ pub fn launch(
     }
 }
 
+/// The binary a desktop entry must invoke: argv[0] when it names an
+/// absolute regular file, else the current executable. The distinction
+/// matters because the deployed wrapper (a script injecting `--config`
+/// and `PATH`) execs the real binary: `current_exe` alone would bypass
+/// the wrapper and produce a broken entry.
+fn manager_invocation() -> Result<PathBuf> {
+    if let Some(argv0) = std::env::args().next() {
+        let candidate = PathBuf::from(&argv0);
+        if candidate.is_absolute() {
+            if let Ok(meta) = fs::symlink_metadata(&candidate) {
+                if meta.is_file() {
+                    return Ok(candidate);
+                }
+            }
+        }
+    }
+    std::env::current_exe().context("locate the manager binary for the desktop entry")
+}
+
 /// Render the desktop entry invoking the native game launch. The Lutris
 /// entries are untouched; this file is the normal action once native
 /// launch is proven, with Lutris kept as fallback.
@@ -2935,7 +2954,7 @@ fn render_desktop_entry(name: &str, display: &str) -> Result<String> {
     if name.contains(char::is_whitespace) || name.contains('"') {
         bail!("instance name is not desktop-entry safe: '{name}'");
     }
-    let exe = std::env::current_exe().context("locate the manager binary for the desktop entry")?;
+    let exe = manager_invocation()?;
     Ok(format!(
         "[Desktop Entry]\nType=Application\nVersion=1.0\nName={display}\nComment=Launch {display} natively via modde-manager (Lutris entry stays as fallback).\nExec=\"{}\" onboard launch --instance {name} --target game\nTerminal=false\nCategories=Game;\n",
         exe.display(),
@@ -5271,8 +5290,21 @@ mod tests {
     }
 
     #[test]
-    fn desktop_entry_writes_and_verifies() {
-        let _guard = APPLY_LOCK.lock().unwrap();
+    fn desktop_entry_render_quotes_invocation_and_args() {
+        let body = render_desktop_entry("test", "OctoWoW").unwrap();
+        let exec = body
+            .lines()
+            .find(|line| line.starts_with("Exec="))
+            .unwrap();
+        // Quoted binary (wrapper-safe: never split on spaces), then the
+        // exact native-launch arguments.
+        assert!(exec.starts_with("Exec=\""));
+        assert!(exec.ends_with("\" onboard launch --instance test --target game"));
+        assert!(render_desktop_entry("has space", "X").is_err());
+    }
+
+    #[test]
+    fn desktop_entry_writes_and_verifies() {        let _guard = APPLY_LOCK.lock().unwrap();
         let (_envelope, root) = fixture_root();
         let home = tempfile::tempdir().unwrap();
         let instance = fixture_instance(&root);
