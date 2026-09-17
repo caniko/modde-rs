@@ -3,17 +3,17 @@
   "description": "Cross-platform game mod manager",
   "homepage": "https://modde.tartanoglu.com",
   "license": "GPL-3.0-only",
-  "url": "https://github.com/caniko/rs-modde/releases/download/{{VERSION}}/modde-{{VERSION}}-x86_64-windows.zip",
+  "url": "https://github.com/caniko/modde-rs/releases/download/{{VERSION}}/modde-{{VERSION}}-x86_64-windows.zip",
   "hash": "{{SHA256}}",
   "bin": [
     "modde.exe",
     "modde-ui.exe"
   ],
   "checkver": {
-    "url": "https://github.com/caniko/rs-modde/releases",
+    "url": "https://github.com/caniko/modde-rs/releases",
     "regex": "tag/([\\d.]+)"
   },
   "autoupdate": {
-    "url": "https://github.com/caniko/rs-modde/releases/download/$version/modde-$version-x86_64-windows.zip"
+    "url": "https://github.com/caniko/modde-rs/releases/download/$version/modde-$version-x86_64-windows.zip"
   }
 }

@@ -23,7 +23,7 @@ repo_secret_names=""
 repo_variable_names=""
 
 . "$repo/scripts/release-local-env.sh"
-release_manifest_init "$version" "rs-modde release-local-check"
+release_manifest_init "$version" "modde-rs release-local-check"
 
 check_minisign_probe() {
   test -s keys/minisign.pub || missing+=("file:keys/minisign.pub")
@@ -40,7 +40,7 @@ check_minisign_probe() {
   trap 'rm -rf "$tmpdir"' RETURN
 
   printf '%s' "$MINISIGN_SECRET_KEY" > "$key"
-  printf 'rs-modde local release credentials probe\n' > "$probe"
+  printf 'modde-rs local release credentials probe\n' > "$probe"
   printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key" -m "$probe" -x "$sig" >/dev/null
   minisign -V -m "$probe" -x "$sig" -p keys/minisign.pub >/dev/null
   ok "minisign probe signs and verifies with keys/minisign.pub"
@@ -53,7 +53,7 @@ check_cosign_degrade() {
   predicate="$tmpdir/predicate.json"
   trap 'rm -rf "$tmpdir"' RETURN
 
-  printf 'rs-modde cosign local degrade probe\n' > "$artifact"
+  printf 'modde-rs cosign local degrade probe\n' > "$artifact"
   printf '{"_type":"https://in-toto.io/Statement/v1","subject":[],"predicateType":"https://slsa.dev/provenance/v1","predicate":{}}\n' > "$predicate"
 
   if env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u COSIGN_PRIVATE_KEY \

@@ -12,7 +12,7 @@ experimental CI outputs, and package-manager channels are staged until the
 installation guide marks them live.
 
 - **Project site:** <https://modde.tartanoglu.com/>
-- **Source:** <https://github.com/caniko/rs-modde>
+- **Source:** <https://github.com/caniko/modde-rs>
 
 ## What modde does
 

@@ -10,7 +10,7 @@ use tokio::fs;
 use crate::settings::AppSettings;
 
 const DEFAULT_RELEASE_URL: &str =
-    "https://codeberg.org/api/v1/repos/caniko/rs-modde/releases/latest";
+    "https://api.github.com/repos/caniko/modde-rs/releases/latest";
 const CACHE_TTL: Duration = Duration::from_hours(24);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,7 +111,7 @@ async fn fetch_latest_release() -> Result<UpdateCheckCache> {
         .context("failed to parse latest modde release response")?;
 
     let fallback_url = format!(
-        "https://github.com/caniko/rs-modde/releases/tag/{}",
+        "https://github.com/caniko/modde-rs/releases/tag/{}",
         release.tag_name
     );
 

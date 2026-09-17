@@ -54,17 +54,17 @@ yay -S modde-git   # track the development branch
 provide the `modde` and `modde-ui` binaries and conflict with one another. Release
 tags are signed by the maintainer GPG key
 `818D507F1E62139F8A17EAA64623DEA06FDACFE1`, also exported in
-[`keys/maintainers.gpg`](https://github.com/caniko/rs-modde/blob/trunk/keys/maintainers.gpg).
+[`keys/maintainers.gpg`](https://github.com/caniko/modde-rs/blob/trunk/keys/maintainers.gpg).
 
 ### Fedora / RHEL (COPR)
 
 ```bash
-sudo dnf copr enable caniko/rs-modde
+sudo dnf copr enable caniko/modde-rs
 sudo dnf install modde
 ```
 
 Planned channel. COPR builds RPMs from the signed release source. Prerelease
-builds are intended for the separate `caniko/rs-modde-testing` project.
+builds are intended for the separate `caniko/modde-rs-testing` project.
 
 ### Debian / Ubuntu (apt)
 
@@ -80,7 +80,7 @@ sudo apt install modde
 Planned channel. The repository is signed with a dedicated key (fingerprint
 `CCFE4A8461DF8778F5227684B6DB8F177A951E1B`), separate from the maintainer
 tag-signing key and the minisign release key. See
-[`SECURITY.md`](https://github.com/caniko/rs-modde/blob/trunk/SECURITY.md)
+[`SECURITY.md`](https://github.com/caniko/modde-rs/blob/trunk/SECURITY.md)
 for the signing-key policy and rotation procedure.
 
 The apt public key is a required release input. If `dist/apt/key.gpg.asc` is not
@@ -110,12 +110,12 @@ chmod +x modde-ui-<version>-x86_64.AppImage
 
 A CLI AppImage (`modde-<version>-x86_64.AppImage`) is published alongside the GUI
 one. Download both from the
-[releases page](https://github.com/caniko/rs-modde/releases).
+[releases page](https://github.com/caniko/modde-rs/releases).
 
 ### Linux direct download
 
 Planned channel. Once release assets are published, grab the tarball for your
-architecture from the [releases page](https://github.com/caniko/rs-modde/releases)
+architecture from the [releases page](https://github.com/caniko/modde-rs/releases)
 and extract it:
 
 ```bash
@@ -151,7 +151,7 @@ xattr -dr com.apple.quarantine modde modde-ui
 
 Subsequent runs work without further intervention. If you would prefer notarized
 binaries (Apple Developer ID, $99/yr),
-[open an issue](https://github.com/caniko/rs-modde/issues) to fund or contribute
+[open an issue](https://github.com/caniko/modde-rs/issues) to fund or contribute
 it.
 
 ## Windows
@@ -184,7 +184,7 @@ Each Windows package installs `modde.exe` and `modde-ui.exe` on your `PATH`.
 
 Experimental channel. Once a Windows zip is published, download
 `modde-<version>-x86_64-windows.zip` from the
-[releases page](https://github.com/caniko/rs-modde/releases) and extract it.
+[releases page](https://github.com/caniko/modde-rs/releases) and extract it.
 The `.exe` artifacts are Authenticode-signed; verify the signature before running:
 
 ```powershell
@@ -224,8 +224,8 @@ wayland-devel libxkbcommon-devel vulkan-loader-devel`.
 ## Build from source
 
 ```bash
-git clone https://github.com/caniko/rs-modde.git
-cd rs-modde
+git clone https://github.com/caniko/modde-rs.git
+cd modde-rs
 nix develop . -c cargo build --release
 # Binaries at target/release/modde and target/release/modde-ui
 ```
@@ -252,10 +252,10 @@ lets you **declare your mod profiles as code**.
 
 ```bash
 # Run without installing
-nix run codeberg:caniko/rs-modde
+nix run github:caniko/modde-rs
 
 # Install into your profile (both modde and modde-ui)
-nix profile install codeberg:caniko/rs-modde
+nix profile install github:caniko/modde-rs
 ```
 
 The Nix build wraps each binary with a CA-certificate bundle, so HTTPS downloads
@@ -268,7 +268,7 @@ Add modde to your flake inputs:
 ```nix
 {
   inputs.modde = {
-    url = "codeberg:caniko/rs-modde";
+    url = "github:caniko/modde-rs";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 }
@@ -308,7 +308,7 @@ environment.systemPackages = [ inputs.modde.packages.x86_64-linux.modde ];
 ### Development shell
 
 ```bash
-nix develop codeberg:caniko/rs-modde
+nix develop github:caniko/modde-rs
 # ...or, in a checkout:
 nix develop
 ```
@@ -342,14 +342,14 @@ maintainer-controlled channel before trusting it.
 ```bash
 cosign verify-blob \
   --bundle modde-<version>-x86_64-linux.tar.gz.cosign.bundle \
-  --certificate-identity-regexp '.*caniko/rs-modde.*' \
+  --certificate-identity-regexp '.*caniko/modde-rs.*' \
   --certificate-oidc-issuer-regexp '.*' \
   modde-<version>-x86_64-linux.tar.gz
 
 cosign verify-blob-attestation \
   --bundle modde-<version>-x86_64-linux.tar.gz.intoto.bundle \
   --type slsaprovenance1 \
-  --certificate-identity-regexp '.*caniko/rs-modde.*' \
+  --certificate-identity-regexp '.*caniko/modde-rs.*' \
   --certificate-oidc-issuer-regexp '.*' \
   modde-<version>-x86_64-linux.tar.gz
 ```
@@ -358,19 +358,19 @@ The SLSA predicate records the source Git commit, the `flake.lock` digest, the
 release-workflow digest, and the Attic substituter trust root used for release
 builds. Each release also ships CycloneDX (`*.cdx.json`) and SPDX (`*.spdx.json`)
 SBOMs. See
-[`SECURITY.md`](https://github.com/caniko/rs-modde/blob/trunk/SECURITY.md)
+[`SECURITY.md`](https://github.com/caniko/modde-rs/blob/trunk/SECURITY.md)
 for SBOM scanning and the full signing-key policy.
 
 ## Troubleshooting
 
-### `error: cannot find flake 'codeberg:caniko/rs-modde'`
+### `error: cannot find flake 'github:caniko/modde-rs'`
 
 `codeberg:` is a flake-registry shorthand. On older Nix or a trimmed registry, use
 the explicit Git URL and make sure flakes are enabled:
 
 ```bash
 nix --extra-experimental-features 'nix-command flakes' \
-  run "git+https://github.com/caniko/rs-modde"
+  run "git+https://github.com/caniko/modde-rs"
 ```
 
 ```nix
@@ -385,7 +385,7 @@ imported. Confirm both halves are present and that `inputs` is threaded into the
 module (via `extraSpecialArgs`/`specialArgs`):
 
 ```nix
-inputs.modde.url = "codeberg:caniko/rs-modde";
+inputs.modde.url = "github:caniko/modde-rs";
 # ...and in your home-manager configuration:
 imports = [ inputs.modde.homeManagerModules.modde ];
 ```
@@ -409,4 +409,4 @@ libraries listed under [Cargo](#cargo) — or just use the Nix shell.
 - [Your first profile](first-profile.md) — an end-to-end walkthrough
 - [Home-Manager module reference](../configuration/hm-module.md) — every option
 - [Settings file & environment](../configuration/settings-file.md) — the non-Nix config
-- [`SECURITY.md`](https://github.com/caniko/rs-modde/blob/trunk/SECURITY.md) — signing keys, SBOMs, and rotation policy
+- [`SECURITY.md`](https://github.com/caniko/modde-rs/blob/trunk/SECURITY.md) — signing keys, SBOMs, and rotation policy

@@ -15,7 +15,7 @@ need jq
 need timeout
 
 manifest="$(find_one "$RELEASE_DIR" "com.tartanoglu.modde.json" "Build release artifacts flatpak-manifest output")"
-source_tarball="$(find_one "$RELEASE_DIR" "rs-modde-${VERSION}.tar.gz" "Build SRPM for COPR source archive copy into release/")"
+source_tarball="$(find_one "$RELEASE_DIR" "modde-rs-${VERSION}.tar.gz" "Build SRPM for COPR source archive copy into release/")"
 cargo_sources="$(find_one "$RELEASE_DIR" "cargo-sources.json" "flatpak-cargo-generator output")"
 
 tmpdir="$(mktemp -d)"
@@ -27,7 +27,7 @@ cp "$cargo_sources" "$tmpdir/cargo-sources.json"
 
 jq --arg source_uri "$source_uri" '
   .modules[0].sources |= map(
-    if type == "object" and .type == "archive" and (.url | test("rs-modde-.*[.]tar[.]gz$"))
+    if type == "object" and .type == "archive" and (.url | test("modde-rs-.*[.]tar[.]gz$"))
     then .url = $source_uri
     else .
     end

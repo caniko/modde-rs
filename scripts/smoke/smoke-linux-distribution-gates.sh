@@ -73,7 +73,7 @@ warn_missing_glob "${RELEASE_DIR}/modde-${VERSION}-x86_64.AppImage" "Build relea
 warn_missing_glob "${RELEASE_DIR}/modde-ui-${VERSION}-x86_64.AppImage" "Build release artifacts appimage-ui output"
 assert_optional_glob "${RELEASE_DIR}/com.tartanoglu.modde.json" "Build release artifacts flatpak-manifest output"
 assert_optional_glob "${RELEASE_DIR}/cargo-sources.json" "flatpak-cargo-generator output"
-assert_optional_glob "${RELEASE_DIR}/rs-modde-${VERSION}.tar.gz" "Build release artifacts source archive"
+assert_optional_glob "${RELEASE_DIR}/modde-rs-${VERSION}.tar.gz" "Build release artifacts source archive"
 
 debs=()
 collect_glob debs "${RELEASE_DIR}/*.deb"

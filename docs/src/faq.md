@@ -122,7 +122,7 @@ with that feature, no data is transmitted unless you explicitly configure the
 relevant endpoint and opt-in environment variables.
 
 Crash telemetry and compatibility reporting are separate. Crash telemetry uses
-`RS_MODDE_TELEMETRY_ENDPOINT` plus `RS_MODDE_TELEMETRY_TOKEN` for modde process
+`MODDE_TELEMETRY_ENDPOINT` plus `MODDE_TELEMETRY_TOKEN` (legacy `RS_MODDE_TELEMETRY_*` names still work) for modde process
 crash capture. Compatibility oracle reporting uses
 `MODDE_COMPAT_ORACLE_OPT_IN=1` plus `MODDE_COMPAT_ORACLE_ENDPOINT`, and uploads
 only derived hashes from local crash correlation: game id, coarse platform,

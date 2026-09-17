@@ -68,7 +68,7 @@ plinth-project serve --config website/plinth-project.toml --out website/public -
 ```
 
 The reusable serving and reload implementation lives in `plinth-project`;
-rs-modde only owns the modde-specific site data.
+modde-rs only owns the modde-specific site data.
 `--watch` rerenders and reloads browser tabs when the capability matrix or
 static assets change. Rust generator or renderer edits still require restarting
 the command.

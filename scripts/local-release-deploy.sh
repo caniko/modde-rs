@@ -118,13 +118,13 @@ build_release_artifacts() {
   local existing_srpms=("$srpm_dir"/*.src.rpm)
   shopt -u nullglob
   if [ "${#existing_srpms[@]}" -eq 0 ]; then
-    local source_tarball="$work_dir/rs-modde-v${version}.tar.gz"
-    git archive --format=tar.gz --prefix=rs-modde/ -o "$source_tarball" HEAD
+    local source_tarball="$work_dir/modde-rs-v${version}.tar.gz"
+    git archive --format=tar.gz --prefix=modde-rs/ -o "$source_tarball" HEAD
     tmp_vendor="$(mktemp -d "$work_dir/vendor.XXXXXX")"
     trap 'rm -rf "$tmp_vendor"' RETURN
     tar xf "$source_tarball" -C "$tmp_vendor"
-    (cd "$tmp_vendor/rs-modde" && cargo vendor vendor > "$work_dir/cargo-vendor-config.toml")
-    tar czf "$work_dir/vendor.tar.gz" -C "$tmp_vendor/rs-modde" vendor
+    (cd "$tmp_vendor/modde-rs" && cargo vendor vendor > "$work_dir/cargo-vendor-config.toml")
+    tar czf "$work_dir/vendor.tar.gz" -C "$tmp_vendor/modde-rs" vendor
     local spec_dir spec
     spec_dir="$(mktemp -d "$work_dir/spec.XXXXXX")"
     spec="${spec_dir}/dist/rpm/modde.spec"
@@ -201,11 +201,11 @@ build_release_artifacts() {
     cp "$work_dir/appimage-cli-result" "$release_dir/modde-${version}-x86_64.AppImage"
   fi
 
-  if ! have_artifact "$release_dir/rs-modde-${version}.tar.gz"; then
-    git archive --format=tar.gz --prefix=rs-modde/ -o "$release_dir/rs-modde-${version}.tar.gz" HEAD
+  if ! have_artifact "$release_dir/modde-rs-${version}.tar.gz"; then
+    git archive --format=tar.gz --prefix=modde-rs/ -o "$release_dir/modde-rs-${version}.tar.gz" HEAD
   fi
   if ! have_artifact "$release_dir/com.tartanoglu.modde.json"; then
-    source_sha256="$(sha256sum "$release_dir/rs-modde-${version}.tar.gz" | awk '{print $1}')"
+    source_sha256="$(sha256sum "$release_dir/modde-rs-${version}.tar.gz" | awk '{print $1}')"
     nix build .#flatpak-manifest --out-link "$work_dir/flatpak-result"
     cp "$work_dir/flatpak-result" "$release_dir/com.tartanoglu.modde.json"
     sed -i "s/@SOURCE_TARBALL_SHA256@/${source_sha256}/" "$release_dir/com.tartanoglu.modde.json"
@@ -290,7 +290,7 @@ build_release_artifacts() {
   else
     record_skipped "cosign unavailable locally; minisign checksums are authoritative for local deploy"
   fi
-  release_manifest_collect_release_files "rs-modde-local-build"
+  release_manifest_collect_release_files "modde-rs-local-build"
 
   if [ -z "${FLATHUB_TOKEN:-}" ]; then
     MODDE_FLATPAK_MANIFEST_ONLY=1 run_release_smoke
@@ -396,9 +396,9 @@ publish_homebrew() {
     --description 'Cross-platform game mod manager' \
     --homepage 'https://modde.tartanoglu.com' \
     --license GPL-3.0-only \
-    --archive "darwin_arm=https://github.com/caniko/rs-modde/releases/download/${version}/modde-${version}-aarch64-darwin.tar.gz,$release_dir/modde-${version}-aarch64-darwin.tar.gz" \
-    --archive "linux_arm=https://github.com/caniko/rs-modde/releases/download/${version}/modde-${version}-aarch64-linux.tar.gz,$release_dir/modde-${version}-aarch64-linux.tar.gz" \
-    --archive "linux_intel=https://github.com/caniko/rs-modde/releases/download/${version}/modde-${version}-x86_64-linux.tar.gz,$release_dir/modde-${version}-x86_64-linux.tar.gz" \
+    --archive "darwin_arm=https://github.com/caniko/modde-rs/releases/download/${version}/modde-${version}-aarch64-darwin.tar.gz,$release_dir/modde-${version}-aarch64-darwin.tar.gz" \
+    --archive "linux_arm=https://github.com/caniko/modde-rs/releases/download/${version}/modde-${version}-aarch64-linux.tar.gz,$release_dir/modde-${version}-aarch64-linux.tar.gz" \
+    --archive "linux_intel=https://github.com/caniko/modde-rs/releases/download/${version}/modde-${version}-x86_64-linux.tar.gz,$release_dir/modde-${version}-x86_64-linux.tar.gz" \
     --binary modde \
     --binary modde-ui \
     --tap "$homebrew_tap"
@@ -438,7 +438,7 @@ publish_aur() {
   require_tool_for_publish "AUR" makepkg || return 0
   local makepkg_conf source_sha bin_sha
   makepkg_conf="$(dirname "$(dirname "$(command -v makepkg)")")/etc/makepkg.conf"
-  source_sha="$(artifact_sha "rs-modde-${version}.tar.gz")"
+  source_sha="$(artifact_sha "modde-rs-${version}.tar.gz")"
   bin_sha="$(artifact_sha "modde-${version}-x86_64-linux.tar.gz")"
   test -n "$source_sha"
   test -n "$bin_sha"
@@ -503,8 +503,8 @@ token = ${COPR_TOKEN}
 copr_url = https://copr.fedorainfracloud.org
 EOF
   chmod 600 "$copr_config/copr"
-  copr_name="${COPR_PROJECT_NAME:-rs-modde}"
-  is_prerelease && copr_name="${COPR_PROJECT_NAME:-rs-modde-testing}"
+  copr_name="${COPR_PROJECT_NAME:-modde-rs}"
+  is_prerelease && copr_name="${COPR_PROJECT_NAME:-modde-rs-testing}"
   project="${COPR_USERNAME}/${copr_name}"
 
   if ! XDG_CONFIG_HOME="$copr_config" nix run .#copr-cli -- get "$project" >/dev/null 2>&1; then
@@ -515,7 +515,7 @@ EOF
     XDG_CONFIG_HOME="$copr_config" nix run .#copr-cli -- create "$copr_name" \
       "${chroot_args[@]}" \
       --description 'modde release builds' \
-      --instructions 'Install with: sudo dnf copr enable caniko/rs-modde && sudo dnf install modde'
+      --instructions 'Install with: sudo dnf copr enable caniko/modde-rs && sudo dnf install modde'
   fi
 
   XDG_CONFIG_HOME="$copr_config" nix run .#copr-cli -- build --nowait "$project" "$srpm_dir"/*.src.rpm
@@ -530,7 +530,7 @@ publish_windows_packagers() {
   local simit_bin
   simit_bin="${SIMIT_BIN:-simit}"
   if ! "$simit_bin" dist windows publish --help | grep -q -- '--force-resubmit'; then
-    printf 'Windows package publishing requires a simit binary with `dist windows publish`; set SIMIT_BIN to the fixed simit binary or update the rs-modde simit flake input.\n' >&2
+    printf 'Windows package publishing requires a simit binary with `dist windows publish`; set SIMIT_BIN to the fixed simit binary or update the modde-rs simit flake input.\n' >&2
     return 1
   fi
 

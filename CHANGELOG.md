@@ -299,7 +299,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Homebrew**: Tap available at `brew tap caniko/modde https://codeberg.org/caniko/homebrew-modde.git`.
-- **Release ops**: Release CI supports `rc`, `beta`, and `alpha` prerelease tags, marks Codeberg prereleases correctly, skips stable-only publish channels for prereleases, and routes prerelease COPR builds to `caniko/rs-modde-testing`.
+- **Release ops**: Release CI supports `rc`, `beta`, and `alpha` prerelease tags, marks Codeberg prereleases correctly, skips stable-only publish channels for prereleases, and routes prerelease COPR builds to `caniko/modde-rs-testing`.
 - **Release ops**: Stable releases can announce to Mastodon and Matrix with the release URL and a short changelog excerpt.
 - **CLI/UI**: `modde update check` can check for a newer modde release, and the GUI shows a non-modal update banner when one is available.
 
@@ -347,14 +347,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Diagnostics**: Form 43 detection, missing master detection, shadowed mod detection, load order validation
 - **Nix**: Flake with binary, docs, and website outputs; home-manager module for declarative configuration
 
-[Unreleased]: https://codeberg.org/caniko/rs-modde/compare/0.7.0...HEAD
-[0.7.0]: https://codeberg.org/caniko/rs-modde/compare/0.6.0...0.7.0
-[0.6.0]: https://codeberg.org/caniko/rs-modde/compare/0.5.0...0.6.0
-[0.5.0]: https://codeberg.org/caniko/rs-modde/compare/0.4.0...0.5.0
-[0.4.0]: https://codeberg.org/caniko/rs-modde/compare/0.3.8...0.4.0
-[0.3.4]: https://codeberg.org/caniko/rs-modde/compare/0.3.3...0.3.4
-[0.3.3]: https://codeberg.org/caniko/rs-modde/compare/0.3.2...0.3.3
-[0.3.2]: https://codeberg.org/caniko/rs-modde/compare/0.3.1...0.3.2
-[0.3.1]: https://codeberg.org/caniko/rs-modde/compare/0.3.0...0.3.1
-[0.3.0]: https://codeberg.org/caniko/rs-modde/compare/0.2.1...0.3.0
-[0.2.1]: https://codeberg.org/caniko/rs-modde/compare/0.2.0...0.2.1
+[Unreleased]: https://github.com/caniko/modde-rs/compare/0.7.0...HEAD
+[0.7.0]: https://github.com/caniko/modde-rs/compare/0.6.0...0.7.0
+[0.6.0]: https://github.com/caniko/modde-rs/compare/0.5.0...0.6.0
+[0.5.0]: https://github.com/caniko/modde-rs/compare/0.4.0...0.5.0
+[0.4.0]: https://github.com/caniko/modde-rs/compare/0.3.8...0.4.0
+[0.3.4]: https://github.com/caniko/modde-rs/compare/0.3.3...0.3.4
+[0.3.3]: https://github.com/caniko/modde-rs/compare/0.3.2...0.3.3
+[0.3.2]: https://github.com/caniko/modde-rs/compare/0.3.1...0.3.2
+[0.3.1]: https://github.com/caniko/modde-rs/compare/0.3.0...0.3.1
+[0.3.0]: https://github.com/caniko/modde-rs/compare/0.2.1...0.3.0
+[0.2.1]: https://github.com/caniko/modde-rs/compare/0.2.0...0.2.1

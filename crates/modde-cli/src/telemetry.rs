@@ -22,7 +22,7 @@ pub fn persistent_install_id() -> anyhow::Result<Uuid> {
 
 fn data_dir() -> anyhow::Result<PathBuf> {
     dirs::data_local_dir()
-        .map(|dir| dir.join("rs-modde"))
+        .map(|dir| dir.join("modde-rs"))
         .context("could not determine local data directory for telemetry install id")
 }
 

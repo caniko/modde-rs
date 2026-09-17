@@ -13,10 +13,10 @@ If you use Nix, you can additionally declare profiles as code through the
 runtime, not a replacement for the settings file.
 
 The authoritative sources are
-[`crates/modde-core/src/settings.rs`](https://github.com/caniko/rs-modde/blob/trunk/crates/modde-core/src/settings.rs),
-[`crates/modde-core/src/paths.rs`](https://github.com/caniko/rs-modde/blob/trunk/crates/modde-core/src/paths.rs),
+[`crates/modde-core/src/settings.rs`](https://github.com/caniko/modde-rs/blob/trunk/crates/modde-core/src/settings.rs),
+[`crates/modde-core/src/paths.rs`](https://github.com/caniko/modde-rs/blob/trunk/crates/modde-core/src/paths.rs),
 and
-[`crates/modde-core/src/instance.rs`](https://github.com/caniko/rs-modde/blob/trunk/crates/modde-core/src/instance.rs).
+[`crates/modde-core/src/instance.rs`](https://github.com/caniko/modde-rs/blob/trunk/crates/modde-core/src/instance.rs).
 
 ## `settings.toml`
 
@@ -198,8 +198,8 @@ modde honors the following environment variables:
 A few more variables exist for niche purposes: `MODDE_HEAP_PROFILE` (write a DHAT
 heap profile; requires the `heap-profile` feature), `MODDE_CHROMIUM` (path to a
 Chromium binary used by the Wabbajack login flow), and, only when modde is built
-with the optional `remote-telemetry` feature, `RS_MODDE_TELEMETRY_ENDPOINT` /
-`RS_MODDE_TELEMETRY_TOKEN`. These are not part of normal configuration.
+with the optional `remote-telemetry` feature, `MODDE_TELEMETRY_ENDPOINT` /
+`MODDE_TELEMETRY_TOKEN` (legacy `RS_MODDE_TELEMETRY_*` names still work). These are not part of normal configuration.
 
 The global `--data-dir` CLI flag (backed by `MODDE_DATA_DIR`) overrides the data
 directory for a single invocation, for example:
@@ -270,7 +270,7 @@ The effective data directory is chosen in this order (first match wins):
 
 When modde needs a Nexus API key it walks this chain and uses the first source
 that yields a non-empty key (from
-[`crates/modde-sources/src/nexus/auth.rs`](https://github.com/caniko/rs-modde/blob/trunk/crates/modde-sources/src/nexus/auth.rs)):
+[`crates/modde-sources/src/nexus/auth.rs`](https://github.com/caniko/modde-rs/blob/trunk/crates/modde-sources/src/nexus/auth.rs)):
 
 1. **OAuth token** — a non-expired token from `modde nexus auth` OAuth login.
 2. **modde config file** — `<config_dir>/modde/nexus_api_key`, written by

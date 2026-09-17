@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "rs-modde tooling CLI (cargo xtask)"
+description = "modde-rs tooling CLI (cargo xtask)"
 publish = false
 
 [[bin]]

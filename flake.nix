@@ -92,7 +92,7 @@
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
         simitPackage = simit.packages.${system}.default.overrideAttrs (old: {
-          patches = (old.patches or []) ++ [./nix/patches/simit-rs-modde-workflow.patch];
+          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch];
         });
         plinthProject = plinth.packages.${system}.plinth-project;
         visualRubric = visual-rubric.packages.${system}.default;
@@ -524,7 +524,7 @@
 
             flatpak-manifest = let
               flatpakAppId = "com.tartanoglu.modde";
-              releaseSourceUrl = "https://github.com/caniko/rs-modde/releases/download/${moddeVersion}/rs-modde-${moddeVersion}.tar.gz";
+              releaseSourceUrl = "https://github.com/caniko/modde-rs/releases/download/${moddeVersion}/modde-rs-${moddeVersion}.tar.gz";
               flatpakManifest = {
                 "app-id" = flatpakAppId;
                 runtime = "org.freedesktop.Platform";
@@ -577,7 +577,7 @@
 
             homebrew-formula = let
               versionField = moddeVersion;
-              baseUrl = "https://github.com/caniko/rs-modde/releases/download";
+              baseUrl = "https://github.com/caniko/modde-rs/releases/download";
               archiveUrl = arch: os: "${baseUrl}/${versionField}/modde-${versionField}-${arch}-${os}.tar.gz";
               formula = harbor-rs.lib.mkHomebrewFormula {
                 inherit pkgs;
@@ -1987,7 +1987,7 @@
             enabled = true;
             families = ["arch" "manjaro" "endeavouros" "cachyos"];
             architectures = ["x86_64"];
-            artifacts = ["modde-{version}-x86_64-linux.tar.gz" "rs-modde-{version}.tar.gz"];
+            artifacts = ["modde-{version}-x86_64-linux.tar.gz" "modde-rs-{version}.tar.gz"];
             publish_gate = "stable-tags-only";
           };
           nix = {
@@ -2100,8 +2100,8 @@
               nix build .#appimage-cli --out-link target/modde-release/root-artifacts/appimage-cli-result
               cp target/modde-release/root-artifacts/appimage-cli-result "target/modde-release/root-artifacts/release/modde-''${VERSION}-x86_64.AppImage"
 
-              git archive --format=tar.gz --prefix=rs-modde/ -o "target/modde-release/root-artifacts/release/rs-modde-''${VERSION}.tar.gz" HEAD
-              source_sha256="$(sha256sum "target/modde-release/root-artifacts/release/rs-modde-''${VERSION}.tar.gz" | awk '{print $1}')"
+              git archive --format=tar.gz --prefix=modde-rs/ -o "target/modde-release/root-artifacts/release/modde-rs-''${VERSION}.tar.gz" HEAD
+              source_sha256="$(sha256sum "target/modde-release/root-artifacts/release/modde-rs-''${VERSION}.tar.gz" | awk '{print $1}')"
               nix build .#flatpak-manifest --out-link target/modde-release/root-artifacts/flatpak-result
               cp target/modde-release/root-artifacts/flatpak-result target/modde-release/root-artifacts/release/com.tartanoglu.modde.json
               sed -i "s/@SOURCE_TARBALL_SHA256@/''${source_sha256}/" target/modde-release/root-artifacts/release/com.tartanoglu.modde.json
@@ -2113,7 +2113,7 @@
         release.attic = {
           cache = "canix";
           url = "https://attic.candee.baby";
-          token_name = "rs-modde";
+          token_name = "modde-rs";
           result_links = ["target/modde-release/root-artifacts/linux-result" "target/modde-release/root-artifacts/aarch64-linux-result" "target/modde-release/root-artifacts/windows-result" "target/modde-release/root-artifacts/darwin-arm-result" "target/modde-release/root-artifacts/appimage-ui-result" "target/modde-release/root-artifacts/appimage-cli-result" "target/modde-release/root-artifacts/flatpak-result"];
         };
         release.announce = {};
@@ -2131,13 +2131,13 @@
         };
         winget = {
           package_id = "Caniko.Modde";
-          download_repo = "caniko/rs-modde";
+          download_repo = "caniko/modde-rs";
           zip_archive = "modde-{version}-x86_64-windows.zip";
         };
         homebrew = {
           name = "modde";
           tap_url = "https://codeberg.org/caniko/homebrew-modde.git";
-          download_repo = "caniko/rs-modde";
+          download_repo = "caniko/modde-rs";
           binaries = ["modde" "modde-ui"];
           description = "Cross-platform game mod manager";
           homepage = "https://modde.tartanoglu.com";
@@ -2147,11 +2147,11 @@
         };
         chocolatey = {
           name = "modde";
-          download_repo = "caniko/rs-modde";
+          download_repo = "caniko/modde-rs";
           description = "Cross-platform game mod manager";
           project_url = "https://modde.tartanoglu.com";
           authors = "Can H. Tartanoglu";
-          license_url = "https://raw.githubusercontent.com/caniko/rs-modde/trunk/LICENSE";
+          license_url = "https://raw.githubusercontent.com/caniko/modde-rs/trunk/LICENSE";
           archive_pattern = "modde-{version}-{arch}-windows.zip";
           # Interim: pull choco from the fork that ships the chocolatey package
           # (caniko/nixpkgs add-chocolatey-scoop). Drop the nixpkgs ref to
@@ -2164,7 +2164,7 @@
           name = "modde";
           bucket_url = "https://github.com/caniko/scoop-modde.git";
           bucket_token_secret = "CODEBERG_TOKEN";
-          download_repo = "caniko/rs-modde";
+          download_repo = "caniko/modde-rs";
           description = "Cross-platform game mod manager";
           homepage = "https://modde.tartanoglu.com";
           license = "GPL-3.0-only";
@@ -2200,7 +2200,7 @@
               dest = "usr/share/metainfo/com.tartanoglu.modde.metainfo.xml";
             }
           ];
-          download_repo = "caniko/rs-modde";
+          download_repo = "caniko/modde-rs";
         };
         copr = {
           name = "modde";
@@ -2208,11 +2208,11 @@
           summary = "Cross-platform game mod manager";
           description = "modde is a cross-platform game mod manager with CLI and GUI interfaces.\nIt supports Nexus Mods, Wabbajack modlists, FOMOD installers, and BAIN\npackages for games like Skyrim, Fallout, Starfield, and Cyberpunk 2077.";
           license = "GPL-3.0-only";
-          download_repo = "caniko/rs-modde";
+          download_repo = "caniko/modde-rs";
           nix_tool = ".#copr-cli";
           build_requires = ["rust >= 1.93" "cargo" "gcc" "pkg-config" "openssl-devel" "dbus-devel" "wayland-devel" "libxkbcommon-devel" "vulkan-loader-devel"];
           binaries = ["modde" "modde-ui"];
-          project = "caniko/rs-modde";
+          project = "caniko/modde-rs";
           login_secret = "COPR_LOGIN";
           username_secret = "COPR_USERNAME";
           token_secret = "COPR_TOKEN";

@@ -124,7 +124,7 @@ is marked live.
 yay -S modde-bin
 
 # Planned Fedora / RHEL (COPR)
-sudo dnf copr enable caniko/rs-modde
+sudo dnf copr enable caniko/modde-rs
 sudo dnf install modde
 
 # Planned Debian / Ubuntu (apt)
@@ -196,8 +196,8 @@ per-distro package lists.
 ### From source
 
 ```bash
-git clone https://github.com/caniko/rs-modde.git
-cd rs-modde
+git clone https://github.com/caniko/modde-rs.git
+cd modde-rs
 nix develop . -c cargo build --release
 # Binaries at target/release/modde and target/release/modde-ui
 ```
@@ -214,13 +214,13 @@ It's one option among many, not required and not "the" way in.
 
 ```bash
 # Run directly
-nix run codeberg:caniko/rs-modde#modde
+nix run github:caniko/modde-rs#modde
 
 # Install to profile (both modde and modde-ui)
-nix profile install codeberg:caniko/rs-modde#modde
+nix profile install github:caniko/modde-rs#modde
 
 # Development shell
-nix develop codeberg:caniko/rs-modde
+nix develop github:caniko/modde-rs
 ```
 
 To wire the flake into your own config and declare profiles, add it as a flake
@@ -229,7 +229,7 @@ Module](#home-manager-module) below):
 
 ```nix
 # In your flake.nix inputs:
-inputs.modde.url = "codeberg:caniko/rs-modde";
+inputs.modde.url = "github:caniko/modde-rs";
 ```
 
 ## Privacy
@@ -241,8 +241,9 @@ and off by default in published builds. Normal builds send nothing.
 
 When built with `remote-telemetry`, two independent remote paths can exist:
 
-- Crash telemetry through `RS_MODDE_TELEMETRY_ENDPOINT` and
-  `RS_MODDE_TELEMETRY_TOKEN`, used only for modde process crash capture.
+- Crash telemetry through `MODDE_TELEMETRY_ENDPOINT` and
+  `MODDE_TELEMETRY_TOKEN` (legacy `RS_MODDE_TELEMETRY_*` names still work),
+  used only for modde process crash capture.
 - Compatibility oracle reporting through `MODDE_COMPAT_ORACLE_OPT_IN=1` and
   `MODDE_COMPAT_ORACLE_ENDPOINT`, used only after local crash-log correlation.
 
@@ -304,7 +305,7 @@ Add the module to your home-manager imports from the flake:
 
 ```nix
 # In your flake.nix inputs:
-inputs.modde.url = "codeberg:caniko/rs-modde";
+inputs.modde.url = "github:caniko/modde-rs";
 
 # In your home-manager config:
 imports = [ inputs.modde.homeManagerModules.modde ];
@@ -364,9 +365,9 @@ config, capability matrix, or static assets change. Rust generator or renderer
 edits still require restarting the command.
 
 Publish with `nix run .#deploy-pages`. Because this site uses a custom domain,
-keep the legacy Codeberg Pages model: build `.#site`, force-push the generated
+keep the custom-domain Pages flow: build `.#site`, force-push the generated
 output to the `pages` branch, include `.domains`, and point DNS at
-`rs-modde.caniko.codeberg.page`.
+`caniko.github.io`.
 
 ## Contributing
 
@@ -380,4 +381,4 @@ See [SECURITY.md](SECURITY.md) for the security policy.
 
 GPL-3.0-only
 
-[issues]: https://github.com/caniko/rs-modde/issues
+[issues]: https://github.com/caniko/modde-rs/issues

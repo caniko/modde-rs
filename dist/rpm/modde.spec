@@ -6,8 +6,8 @@ Release:        1%{?dist}
 Summary:        Cross-platform game mod manager
 
 License:        GPL-3.0-only
-URL:            https://github.com/caniko/rs-modde
-Source0:        %{url}/archive/v%{version}.tar.gz#/rs-modde-v%{version}.tar.gz
+URL:            https://github.com/caniko/modde-rs
+Source0:        %{url}/archive/v%{version}.tar.gz#/modde-rs-v%{version}.tar.gz
 Source1:        vendor.tar.gz
 
 BuildRequires:  rust >= 1.93
@@ -26,7 +26,7 @@ It supports Nexus Mods, Wabbajack modlists, FOMOD installers, and BAIN
 packages for games like Skyrim, Fallout, Starfield, and Cyberpunk 2077.
 
 %prep
-%autosetup -n rs-modde -p1
+%autosetup -n modde-rs -p1
 tar xf %{SOURCE1}
 mkdir -p .cargo
 cat > .cargo/config.toml << 'EOF'

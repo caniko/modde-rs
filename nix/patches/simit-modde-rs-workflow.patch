@@ -206,7 +206,7 @@ index 64f008d..333f689 100644
 +                "nix run .#copr-cli -- build --nowait \"${COPR_PROJECT}\" target/modde-release/root-artifacts/srpms/*.src.rpm"
              )
          );
-         assert!(workflow.contains("COPR_PROJECT=\"caniko/rs-modde\""));
+         assert!(workflow.contains("COPR_PROJECT=\"caniko/modde-rs\""));
 @@ -2661,7 +2630,14 @@ mod tests {
          assert!(workflow.contains(
              "require_credential 'global/user secret' 'AUR_SSH_KEY' \"${AUR_SSH_KEY:-}\""

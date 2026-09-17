@@ -13,8 +13,8 @@ Thank you for your interest in contributing to modde!
 
 ```sh
 # Clone the repository
-git clone https://github.com/caniko/rs-modde.git
-cd rs-modde
+git clone https://github.com/caniko/modde-rs.git
+cd modde-rs
 
 # Enter the dev shell (provides all dependencies)
 nix develop
@@ -134,7 +134,7 @@ proptest targets (model after the proptest scaffolding above) rather than
 
 ## Reporting Issues
 
-Please file issues on the [GitHub issue tracker](https://github.com/caniko/rs-modde/issues).
+Please file issues on the [GitHub issue tracker](https://github.com/caniko/modde-rs/issues).
 
 Include:
 
@@ -157,9 +157,9 @@ table below; there is no separate COPR release document in this repository.
 - Stable tags must match `X.Y.Z`. Prerelease tags must match `X.Y.Z-rc.N`, `X.Y.Z-beta.N`, or `X.Y.Z-alpha.N`.
 - Every tag must have a matching `## [X.Y.Z] - YYYY-MM-DD` or `## [X.Y.Z-rc.N] - YYYY-MM-DD` heading in `CHANGELOG.md` before CI will build.
 - Prerelease tags run the full build, signing, smoke, Codeberg release, Attic push, and COPR upload, but Codeberg marks them as prereleases. Stable-only channels are skipped: crates.io, Homebrew, AUR `modde-bin`, winget, Scoop, and Flathub.
-- COPR prereleases publish to `caniko/rs-modde-testing`; create that COPR project before the first RC tag.
+- COPR prereleases publish to `caniko/modde-rs-testing`; create that COPR project before the first RC tag.
 - Keep the `## [Unreleased]` heading in `CHANGELOG.md` exactly as-is so simit can update it.
-- rs-modde does not run `simit init-ci --check` or `simit init-flake --check`.
+- modde-rs does not run `simit init-ci --check` or `simit init-flake --check`.
 - Those checks would treat this repo's bespoke `atlas` workflows and harbor-rs-driven flake as drift.
 - The rationale, revisit conditions, and other non-obvious choices live in the [Architecture reference](https://modde.tartanoglu.com/docs/reference/architecture.html) (see its "Release, packaging, and tooling decisions" section).
 
@@ -177,7 +177,7 @@ release should treat such a skip as a release blocker for that channel.
 | Codeberg release | tarballs, AppImages, SRPM, SBOMs, signatures | always (stable + prerelease) | Live |
 | Nix flake / home-manager | flake outputs | n/a (consumed directly from the repo) | Live |
 | Attic cache | `https://attic.candee.baby/canix` | always | Live |
-| Fedora COPR | SRPM upload | always; prereleases land in `caniko/rs-modde-testing` | Wired, not publicly discoverable |
+| Fedora COPR | SRPM upload | always; prereleases land in `caniko/modde-rs-testing` | Wired, not publicly discoverable |
 | Debian/Ubuntu APT | `.deb` via Simit's APT publisher to `caniko/apt-modde` | stable only; `modde_apt_repo_ssh_key` | Bootstrapped; deploy key pending |
 | Arch AUR | `modde`, `modde-bin`, `modde-git` PKGBUILDs | stable only; `AUR_SSH_KEY` | Staged, not pushed |
 | Flathub | `com.tartanoglu.modde` manifest PR | stable only; `FLATHUB_TOKEN` | Staged, submission not accepted |
@@ -198,7 +198,7 @@ Channel notes worth remembering across releases:
   run the full build, sign, smoke, Codeberg release, and Attic push, are marked
   `prerelease: true` on Codeberg, and skip every stable-only channel
   (crates.io, Homebrew, AUR, winget, Scoop, Flathub, APT). COPR still builds
-  but lands in `caniko/rs-modde-testing`.
+  but lands in `caniko/modde-rs-testing`.
 - **Windows binaries are repackaged as `.zip`** alongside the `.tar.gz` for
   winget and Scoop, which do not accept `.tar.gz`. The Scoop `hash` matches the
   downloaded `.zip`, not the binaries inside it.
@@ -234,8 +234,8 @@ Codeberg Pages split:
   exactly `modde.tartanoglu.com`, and `.forgejo/workflows/pages.yml` publishes
   that output with `nix run .#deploy-pages`.
 - Declare DNS in canix, not by hand in the Cloudflare UI. Codeberg Pages custom
-  domains use an unproxied CNAME, currently `modde -> rs-modde.caniko.codeberg.page`
-  in `/data/nvme0/can/Projects/canix/root/hosts/thething/server/cloudflare/zones/tartanoglu.nix`.
+  domains use an unproxied CNAME, currently `modde -> caniko.github.io`
+  in `/data/nvme0/can/canix/lib/topology/Domains.pkl`.
 - After DNS changes, run the canix DNS checks and plan/apply from
   `/data/nvme0/can/Projects/canix`:
   `nix build --no-link .#checks.x86_64-linux.dns-cloudflare-ddns-proxied-expression`,
@@ -302,7 +302,7 @@ VERSION=0.2.1
 - winget: comment `Withdrawn: modde ${VERSION}` on the generated PR and close it. If merged, open a removal/revert PR in `microsoft/winget-pkgs`.
 - Scoop: revert the bucket manifest bump in `caniko/scoop-modde` and push.
 - Flathub: close the release PR if unmerged. If merged, open a `revert/${VERSION}` PR against `flathub/com.tartanoglu.modde`.
-- COPR: find the build id with `copr-cli list-builds caniko/rs-modde --output-format json`, then run `copr-cli delete-build <build-id>`. Use `caniko/rs-modde-testing` for prerelease builds.
+- COPR: find the build id with `copr-cli list-builds caniko/modde-rs --output-format json`, then run `copr-cli delete-build <build-id>`. Use `caniko/modde-rs-testing` for prerelease builds.
 
 After rollback, add a `CHANGELOG.md` note under `Unreleased` that names the
 withdrawn version and points to the fixed follow-up release.

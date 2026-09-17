@@ -71,14 +71,14 @@ SLSA provenance:
 ```sh
 cosign verify-blob \
   --bundle modde-<version>-x86_64-linux.tar.gz.cosign.bundle \
-  --certificate-identity-regexp '.*caniko/rs-modde.*' \
+  --certificate-identity-regexp '.*caniko/modde-rs.*' \
   --certificate-oidc-issuer-regexp '.*' \
   modde-<version>-x86_64-linux.tar.gz
 
 cosign verify-blob-attestation \
   --bundle modde-<version>-x86_64-linux.tar.gz.intoto.bundle \
   --type slsaprovenance1 \
-  --certificate-identity-regexp '.*caniko/rs-modde.*' \
+  --certificate-identity-regexp '.*caniko/modde-rs.*' \
   --certificate-oidc-issuer-regexp '.*' \
   modde-<version>-x86_64-linux.tar.gz
 ```
@@ -96,7 +96,7 @@ provenance with `slsa-verifier`:
 ```sh
 slsa-verifier verify-artifact \
   --provenance-path modde-<version>-x86_64-linux.tar.gz.intoto.jsonl \
-  --source-uri github.com/caniko/rs-modde \
+  --source-uri github.com/caniko/modde-rs \
   --source-tag <version> \
   modde-<version>-x86_64-linux.tar.gz
 ```

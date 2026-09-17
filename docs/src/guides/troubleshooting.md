@@ -541,7 +541,7 @@ signal.
 ```bash
 nix develop . -c cargo build --release
 # or, against the remote flake:
-nix develop codeberg:caniko/rs-modde
+nix develop github:caniko/modde-rs
 ```
 
 Inside `nix develop`, OpenSSL, SQLite, the GUI system libraries, and the external

@@ -4,11 +4,11 @@ PackageVersion: ${VERSION}
 PackageLocale: en-US
 Publisher: Caniko
 PublisherUrl: https://codeberg.org/caniko
-PublisherSupportUrl: https://github.com/caniko/rs-modde/issues
+PublisherSupportUrl: https://github.com/caniko/modde-rs/issues
 PackageName: modde
 PackageUrl: https://modde.tartanoglu.com
 License: GPL-3.0-only
-LicenseUrl: https://github.com/caniko/rs-modde/blob/trunk/LICENSE
+LicenseUrl: https://github.com/caniko/modde-rs/blob/trunk/LICENSE
 ShortDescription: Cross-platform game mod manager.
 Description: modde is a cross-platform game mod manager with a command-line interface and GUI for managing mod profiles.
 Moniker: modde

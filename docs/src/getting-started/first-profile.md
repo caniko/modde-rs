@@ -37,7 +37,7 @@ download, Cargo, or, if you use Nix, the flake. Every channel ships both the
 yay -S modde-bin
 
 # Fedora / RHEL (COPR)
-sudo dnf copr enable caniko/rs-modde && sudo dnf install modde
+sudo dnf copr enable caniko/modde-rs && sudo dnf install modde
 
 # Debian / Ubuntu (apt) — see Installation for the keyring setup
 sudo apt install modde
@@ -53,8 +53,8 @@ winget install Caniko.Modde
 cargo install modde
 ```
 
-If you use Nix, modde is also a flake — `nix run codeberg:caniko/rs-modde -- detect`
-to try it without installing, or `nix profile install codeberg:caniko/rs-modde`
+If you use Nix, modde is also a flake — `nix run github:caniko/modde-rs -- detect`
+to try it without installing, or `nix profile install github:caniko/modde-rs`
 to add both binaries to your profile. The home-manager module additionally lets
 you declare your profiles as code.
 

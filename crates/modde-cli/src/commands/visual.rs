@@ -157,7 +157,7 @@ pub fn run(args: VisualArgs) -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     let manifest = json!({
         "schema_version": 3,
-        "target": "rs-modde/application",
+        "target": "modde-rs/application",
         "revision": revision,
         "dirty": dirty,
         "environment": {
@@ -206,7 +206,7 @@ pub fn run(args: VisualArgs) -> Result<()> {
 
     let report = json!({
         "schema_version": 3,
-        "target": "rs-modde/application",
+        "target": "modde-rs/application",
         "git": {"sha": revision, "dirty": dirty},
         "capture_manifest": manifest_path.strip_prefix(&root).unwrap_or(&manifest_path),
         "cells": cells,
@@ -315,7 +315,7 @@ fn coverage_contract(revision: &str, specs: &[CaptureSpec]) -> Value {
         .collect::<Vec<_>>();
     json!({
         "schema_version": 1,
-        "target": "rs-modde/application",
+        "target": "modde-rs/application",
         "revision": revision,
         "surfaces": surfaces,
         "transitions": [{
@@ -329,7 +329,7 @@ fn coverage_contract(revision: &str, specs: &[CaptureSpec]) -> Value {
         "exclusions": [{
             "id": "interactive/desktop",
             "reason": "The producer renders static in-memory demo states and does not drive the live event loop.",
-            "owner": "rs-modde visual producer",
+            "owner": "modde-rs visual producer",
             "review_after": "2026-10-01",
         }],
     })

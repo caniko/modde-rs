@@ -13,7 +13,7 @@ use harbor_xtask::{
 use semver::Version;
 
 #[derive(Parser)]
-#[command(name = "modde-xtask", version, about = "rs-modde tooling CLI")]
+#[command(name = "modde-xtask", version, about = "modde-rs tooling CLI")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -148,7 +148,7 @@ fn project() -> ProjectConfig {
         spec_file: Some(root.join("dist/rpm/modde.spec")),
         copr: Some(CoprConfig {
             source_archive_url_template:
-                "https://github.com/caniko/rs-modde/archive/v{version}.tar.gz".into(),
+                "https://github.com/caniko/modde-rs/archive/v{version}.tar.gz".into(),
             srpm_dir: root.join("target/modde-release/root-artifacts/srpms"),
             vendor_tarball: root.join("target/modde-release/root-artifacts/vendor.tar.gz"),
         }),

@@ -113,16 +113,23 @@ struct RemoteTelemetryConfig {
 
 #[cfg(feature = "remote-telemetry")]
 fn remote_telemetry_config() -> Result<Option<RemoteTelemetryConfig>> {
-    let Some(endpoint) = env::var("RS_MODDE_TELEMETRY_ENDPOINT").ok() else {
+    // ponytail: legacy RS_MODDE_* names kept as fallback until 0.8.0; then drop.
+    let Some(endpoint) = env::var("MODDE_TELEMETRY_ENDPOINT")
+        .or_else(|_| env::var("RS_MODDE_TELEMETRY_ENDPOINT"))
+        .ok()
+    else {
         return Ok(None);
     };
-    let Some(token) = env::var("RS_MODDE_TELEMETRY_TOKEN").ok() else {
+    let Some(token) = env::var("MODDE_TELEMETRY_TOKEN")
+        .or_else(|_| env::var("RS_MODDE_TELEMETRY_TOKEN"))
+        .ok()
+    else {
         return Ok(None);
     };
 
-    let endpoint = url::Url::parse(&endpoint).context("invalid RS_MODDE_TELEMETRY_ENDPOINT")?;
+    let endpoint = url::Url::parse(&endpoint).context("invalid MODDE_TELEMETRY_ENDPOINT")?;
     let source = detritus::SourceId {
-        project: "rs-modde".to_owned(),
+        project: "modde-rs".to_owned(),
         platform: target_platform(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         install_id: telemetry::persistent_install_id()?,
