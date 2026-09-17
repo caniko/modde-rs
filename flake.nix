@@ -3,11 +3,9 @@
 
   inputs = {
     harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=05cc4f162b55fa904b687db1821e2463fa813e50";
-    rs-harbor.follows = "harbor-rs";
 
     harbor-macos-sdk-pin.url = "git+https://github.com/caniko/harbor-macos-sdk-pin.git";
 
-    rs-harbor-macos-sdk-pin.follows = "harbor-macos-sdk-pin";
 
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
@@ -21,7 +19,7 @@
 
     simit = {
       url = "git+https://github.com/caniko/simit?ref=refs/tags/0.17.10";
-      inputs.rs-harbor.follows = "harbor-rs";
+      inputs.harbor-rs.follows = "harbor-rs";
       inputs.nixpkgs.follows = "harbor-rs/nixpkgs";
       inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
       inputs.crane.follows = "harbor-rs/crane";
@@ -53,7 +51,7 @@
     nix-manager-core = {
       url = "git+https://github.com/caniko/nix-manager-core.git?ref=trunk";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.rs-harbor.follows = "harbor-rs";
+      inputs.harbor-rs.follows = "harbor-rs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.crane.follows = "crane";
     };
