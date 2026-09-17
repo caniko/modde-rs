@@ -23,16 +23,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     env:
-      # impure-env carries SCCACHE_DIR into the sandbox. /build is the
-      # sandbox's writable scratch dir; sccache uses it as a throwaway
-      # local cache. Public runners have no managed cache transport, and
-      # without a writable SCCACHE_DIR the harbor-rs wrapper refuses the
-      # build. Converge into simit config once the pages renderer
-      # supports extra_env.
-      NIX_CONFIG: |
-        experimental-features = nix-command flakes configurable-impure-env
-        impure-env = [ "SCCACHE_DIR" ]
-      SCCACHE_DIR: "/build"
+      NIX_CONFIG: "experimental-features = nix-command flakes"
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -40,20 +31,20 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
         with:
-          # Daemon-side config: NIX_CONFIG env never reaches nix-daemon,
-          # so impure-env must be installed here to carry SCCACHE_DIR
-          # into sandboxed builders.
+          # Bind-mount a host sccache dir into sandboxed builders. The
+          # harbor-rs wrapper requires an admissible shared cache root
+          # (/var/cache/sccache, mode 1777) and otherwise refuses public
+          # builds; with the bind-mount it falls back to a local
+          # uncached build. Converge into simit config once the pages
+          # renderer supports this shape.
           extra_nix_config: |
-            experimental-features = nix-command flakes configurable-impure-env
-            impure-env = [ "SCCACHE_DIR" ]
+            extra-sandbox-paths = /var/cache/sccache
+
+      - name: Prepare sccache cache root
+        run: sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
-      - name: Probe builder environment
-        # TEMPORARY diagnostic; remove once green.
-        run: |
-          out=$(nix build --impure --no-link --print-out-paths --expr 'derivation { name = "sccache-probe"; system = builtins.currentSystem; builder = "/bin/sh"; args = [ "-c" "printf ''SCCACHE_DIR=<%s>\\n'' \"$SCCACHE_DIR\"; for d in /build \"$SCCACHE_DIR\"; do if test -d \"$d\"; then echo \"DIR-OK $d\"; else echo \"DIR-MISSING $d\"; fi; if test -w \"$d\"; then echo \"W-OK $d\"; else echo \"W-NO $d\"; fi; done; : > $out" ]; }') || true
-          nix log "$out" 2>/dev/null | grep -E 'SCCACHE_DIR|DIR-|W-' || true
       - name: Build Pages site
         run: |
           nix build .#site --out-link result-pages-site
