@@ -39,6 +39,12 @@ jobs:
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
+        with:
+          # Daemon-side config: NIX_CONFIG env never reaches nix-daemon,
+          # so impure-env must be installed here to carry SCCACHE_DIR
+          # into sandboxed builders.
+          extra_nix_config: |
+            impure-env = [ "SCCACHE_DIR" ]
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
