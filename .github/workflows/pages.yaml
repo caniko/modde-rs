@@ -23,18 +23,19 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     env:
-      NIX_CONFIG: "experimental-features = nix-command flakes"
-      # Public runners have no managed sccache transport; a writable
-      # SCCACHE_DIR lets the harbor-rs wrapper fall back to a local
-      # uncached build instead of refusing. Converge into simit config
-      # once the pages renderer supports extra_env.
-      SCCACHE_DIR: "/tmp/.sccache"
+      # impure-env carries SCCACHE_DIR into the sandbox. /build is the
+      # sandbox's writable scratch dir; sccache uses it as a throwaway
+      # local cache. Public runners have no managed cache transport, and
+      # without a writable SCCACHE_DIR the harbor-rs wrapper refuses the
+      # build. Converge into simit config once the pages renderer
+      # supports extra_env.
+      NIX_CONFIG: |
+        experimental-features = nix-command flakes
+        impure-env = [ "SCCACHE_DIR" ]
+      SCCACHE_DIR: "/build"
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - name: Prepare sccache directory
-        run: mkdir -p /tmp/.sccache
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
