@@ -2034,10 +2034,9 @@
           homebrew = "staged";
         };
         release.smoke.command = "nix run .#release-smoke --";
-        release.codeberg = {
-          repo = "caniko/rs-modde";
+        release.github = {
+          repo = "caniko/modde-rs";
           target_branch = "trunk";
-          token_secret = "CODEBERG_TOKEN";
         };
         release.artifacts = {
           version_attr = "modde";
