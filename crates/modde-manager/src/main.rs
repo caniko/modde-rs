@@ -466,7 +466,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
-                    wiring::desktop_entry(&instance, instance_config, &dirs)
+                    wiring::desktop_entry(&instance, instance_config, &dirs, &cli.config)
                 }
             }
         }

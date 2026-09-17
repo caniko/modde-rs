@@ -2928,42 +2928,31 @@ pub fn launch(
     }
 }
 
-/// The binary a desktop entry must invoke: argv[0] when it names an
-/// absolute regular file, else the current executable. The distinction
-/// matters because the deployed wrapper (a script injecting `--config`
-/// and `PATH`) execs the real binary: `current_exe` alone would bypass
-/// the wrapper and produce a broken entry.
-fn manager_invocation() -> Result<PathBuf> {
-    if let Some(argv0) = std::env::args().next() {
-        let candidate = PathBuf::from(&argv0);
-        if candidate.is_absolute() {
-            if let Ok(meta) = fs::symlink_metadata(&candidate) {
-                if meta.is_file() {
-                    return Ok(candidate);
-                }
-            }
-        }
-    }
-    std::env::current_exe().context("locate the manager binary for the desktop entry")
-}
-
 /// Render the desktop entry invoking the native game launch. The Lutris
 /// entries are untouched; this file is the normal action once native
-/// launch is proven, with Lutris kept as fallback.
-fn render_desktop_entry(name: &str, display: &str) -> Result<String> {
+/// launch is proven, with Lutris kept as fallback. The entry embeds the
+/// explicit `--config`: the deployed wrapper replaces argv[0] with the
+/// raw binary on exec, so neither argv[0] nor the bare command name would
+/// reproduce a working invocation.
+fn render_desktop_entry(name: &str, display: &str, exe: &Path, config: &Path) -> Result<String> {
     if name.contains(char::is_whitespace) || name.contains('"') {
         bail!("instance name is not desktop-entry safe: '{name}'");
     }
-    let exe = manager_invocation()?;
     Ok(format!(
-        "[Desktop Entry]\nType=Application\nVersion=1.0\nName={display}\nComment=Launch {display} natively via modde-manager (Lutris entry stays as fallback).\nExec=\"{}\" onboard launch --instance {name} --target game\nTerminal=false\nCategories=Game;\n",
+        "[Desktop Entry]\nType=Application\nVersion=1.0\nName={display}\nComment=Launch {display} natively via modde-manager (Lutris entry stays as fallback).\nExec=\"{}\" --config \"{}\" onboard launch --instance {name} --target game\nTerminal=false\nCategories=Game;\n",
         exe.display(),
+        config.display(),
     ))
 }
 
 /// Write (or refresh) the desktop entry for native game launch. Self
 /// verifying: the file is read back and compared after every write.
-pub fn desktop_entry(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<()> {
+pub fn desktop_entry(
+    name: &str,
+    instance: &Instance,
+    dirs: &HomeDirs,
+    config: &Path,
+) -> Result<()> {
     let wiring = resolve_wiring(instance)?;
     let root_anchor = Anchor::open(&instance.root)?;
     let _lease = root_anchor.lock()?;
@@ -2978,7 +2967,8 @@ pub fn desktop_entry(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result
         .map(|entry| entry.slug.clone())
         .unwrap_or_else(|| name.to_owned());
     validate_slug(&slug)?;
-    let body = render_desktop_entry(name, &display)?;
+    let exe = std::env::current_exe().context("locate the manager binary for the desktop entry")?;
+    let body = render_desktop_entry(name, &display, &exe, config)?;
     let dir = dirs.data.join("applications");
     fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
     let target = dir.join(format!("{slug}-modde.desktop"));
@@ -5291,16 +5281,26 @@ mod tests {
 
     #[test]
     fn desktop_entry_render_quotes_invocation_and_args() {
-        let body = render_desktop_entry("test", "OctoWoW").unwrap();
+        let body = render_desktop_entry(
+            "test",
+            "OctoWoW",
+            Path::new("/games/modde-manager"),
+            Path::new("/games/manager-config.json"),
+        )
+        .unwrap();
         let exec = body
             .lines()
             .find(|line| line.starts_with("Exec="))
             .unwrap();
-        // Quoted binary (wrapper-safe: never split on spaces), then the
-        // exact native-launch arguments.
-        assert!(exec.starts_with("Exec=\""));
-        assert!(exec.ends_with("\" onboard launch --instance test --target game"));
-        assert!(render_desktop_entry("has space", "X").is_err());
+        // Quoted binary and config (never split on spaces), then the exact
+        // native-launch arguments — a working invocation without the wrapper.
+        assert_eq!(
+            exec,
+            "Exec=\"/games/modde-manager\" --config \"/games/manager-config.json\" onboard launch --instance test --target game"
+        );
+        assert!(
+            render_desktop_entry("has space", "X", Path::new("/b"), Path::new("/c")).is_err()
+        );
     }
 
     #[test]
@@ -5308,7 +5308,9 @@ mod tests {
         let (_envelope, root) = fixture_root();
         let home = tempfile::tempdir().unwrap();
         let instance = fixture_instance(&root);
-        desktop_entry("test", &instance, &dirs(&home)).unwrap();
+        let config = _envelope.path().join("manager-config.json");
+        fs::write(&config, "{}").unwrap();
+        desktop_entry("test", &instance, &dirs(&home), &config).unwrap();
         let target = home
             .path()
             .join(".local/share/applications/octowow-test-modde.desktop");
@@ -5319,7 +5321,7 @@ mod tests {
         // Repeat is a full no-op.
         let before_home = snapshot_tree(home.path());
         let before_game = snapshot_tree(_envelope.path());
-        desktop_entry("test", &instance, &dirs(&home)).unwrap();
+        desktop_entry("test", &instance, &dirs(&home), &config).unwrap();
         assert_eq!(fs::read(&target).unwrap().as_slice(), body.as_bytes());
         assert_eq!(snapshot_tree(home.path()), before_home);
         assert_eq!(snapshot_tree(_envelope.path()), before_game);
