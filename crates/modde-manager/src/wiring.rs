@@ -1750,6 +1750,23 @@ fn is_deferred_hd_item(item: &StatusItem) -> bool {
     item.state == ItemState::Missing && item.name.starts_with("hd-patch:")
 }
 
+/// Items apply neither owns nor gates on. The launcher lifecycle
+/// (entry, stored client folder, launcher prefix, tweak proxies) belongs
+/// to register-launcher and the launcher itself — apply never touches it.
+/// Absent external artifacts (HD payloads, the bootstrap installer) never
+/// gate registration either; they stay visible and, for HD, journaled as
+/// deferred. Everything else non-verified blocks registration or fails
+/// verification — notably a digest-mismatched installer and
+/// present-but-wrong HD state.
+fn is_apply_exempt(item: &StatusItem) -> bool {
+    item.name == "launcher-entry"
+        || item.name == "launcher-client-dir"
+        || item.name == "launcher-prefix"
+        || item.name.starts_with("tweak:")
+        || (item.state == ItemState::Missing
+            && (item.name == "launcher-installer" || is_deferred_hd_item(item)))
+}
+
 /// Items onboard apply owns; everything else non-verified is an external
 /// blocker (client install, launcher maintenance) that must resolve first.
 /// Absent HD payloads stay visible as blockers in plan output but never
@@ -2350,18 +2367,12 @@ pub fn prepare(
     // Client/HD prerequisites are external maintenance (launcher updates,
     // client install): anything apply does not own must already verify, or
     // no mutation happens at all. Same observations status/plan report.
-    // The launcher entry and its stored client folder are owned by
-    // register-launcher, never by apply. Absent HD payloads never gate
-    // registration (a valid vanilla entry must not wait for HD).
+    // The launcher lifecycle is owned by register-launcher and absent HD
+    // payloads never gate registration (a valid vanilla entry must not
+    // wait for either).
     let blockers: Vec<_> = status(name, instance, dirs)?
         .into_iter()
-        .filter(|item| {
-            item.state != ItemState::Verified
-                && !is_ownable(&item.name)
-                && item.name != "launcher-entry"
-                && item.name != "launcher-client-dir"
-                && !is_deferred_hd_item(item)
-        })
+        .filter(|item| item.state != ItemState::Verified && !is_ownable(&item.name) && !is_apply_exempt(item))
         .collect();
     if !blockers.is_empty() {
         bail!(
@@ -2543,11 +2554,19 @@ pub fn apply(
         .into_iter()
         .filter(|item| item.state != ItemState::Verified)
         .collect();
-    // Absent HD payloads stay visible but never fail registration; anything
-    // else unverified is a real failure with retained evidence.
-    let (deferred, fatal): (Vec<_>, Vec<_>) = bad
-        .into_iter()
-        .partition(|item| is_deferred_hd_item(item));
+    // Absent HD payloads stay visible but never fail registration, and
+    // register-owned launcher items are verified by register-launcher, not
+    // here; anything else unverified is a real failure with retained
+    // evidence.
+    let fatal: Vec<_> = bad
+        .iter()
+        .filter(|item| !is_apply_exempt(item))
+        .collect();
+    let hd_deferred: Vec<_> = bad
+        .iter()
+        .filter(|item| is_deferred_hd_item(item))
+        .map(|item| item.name.clone())
+        .collect();
     if !fatal.is_empty() {
         journal_event(
             instance,
@@ -2563,7 +2582,6 @@ pub fn apply(
                 .join(", ")
         );
     }
-    let hd_deferred: Vec<_> = deferred.iter().map(|item| item.name.clone()).collect();
     // A repeat apply stays a literal no-op: the journal records mutations
     // and failures only, never routine verifications — the deferral notice
     // below is stdout only.
@@ -5004,6 +5022,55 @@ mod tests {
         apply("test", &instance, &dirs(&home), false, false, None).unwrap();
         assert_eq!(snapshot_tree(home.path()), before_home);
         assert_eq!(snapshot_tree(_envelope.path()), before_game);
+    }
+
+    #[test]
+    fn apply_ignores_register_owned_launcher_items() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        require_sqlite();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        wineboot_home(&home, "wine-ge-9-2");
+        lutris_home(home.path());
+        // Game block is fully satisfiable, but the declared launcher was
+        // never registered: its entry, prefix, and settings stay missing.
+        // Apply must still register the vanilla game entry — the launcher
+        // lifecycle belongs to register-launcher, which is verified here
+        // to have touched nothing.
+        let mut instance = apply_fixture(&root, home.path());
+        let launcher = serde_json::json!({
+            "installer": {"path": root.parent().unwrap().join("OctoLauncher_Installer.exe")},
+            "prefix": root.parent().unwrap().join("octowow-launcher-prefix"),
+            "lutris": {"slug": "octowow-launcher-test", "name": "OctoWoW Launcher"},
+        });
+        fs::write(
+            root.parent().unwrap().join("OctoLauncher_Installer.exe"),
+            "fake-installer-bytes",
+        )
+        .unwrap();
+        instance.wiring.as_mut().unwrap().launcher =
+            serde_json::from_value(launcher).unwrap();
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        assert!(home
+            .path()
+            .join(".config/lutris/games/octowow-test.yml")
+            .is_file());
+        assert!(db_dump(home.path()).contains("octowow-test|"));
+        assert!(!_envelope.path().join("octowow-launcher-prefix").exists());
+        assert!(!home
+            .path()
+            .join(".config/lutris/games/octowow-launcher-test.yml")
+            .exists());
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        let state_of = |name: &str| {
+            items
+                .iter()
+                .find(|item| item.name == name)
+                .unwrap_or_else(|| panic!("no item {name}"))
+                .state
+        };
+        assert_eq!(state_of("launcher-entry"), ItemState::Missing);
+        assert_eq!(state_of("launcher-client-dir"), ItemState::Missing);
     }
 
     /// Fake wine that answers wineboot like `wineboot_home` and otherwise
