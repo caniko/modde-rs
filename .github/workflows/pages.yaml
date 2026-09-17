@@ -49,6 +49,10 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - name: Probe builder environment
+        # TEMPORARY diagnostic; remove once green.
+        run: |
+          nix build --impure --no-link --print-out-paths --expr 'derivation { name = "sccache-probe"; system = builtins.currentSystem; builder = "/bin/sh"; args = [ "-c" "printf ''SCCACHE_DIR=<%s>\\n'' \"$SCCACHE_DIR\"; for d in /build \"$SCCACHE_DIR\"; do if test -d \"$d\"; then echo \"DIR-OK $d\"; else echo \"DIR-MISSING $d\"; fi; if test -w \"$d\"; then echo \"W-OK $d\"; else echo \"W-NO $d\"; fi; done; : > $out" ]; }' || true
       - name: Build Pages site
         run: |
           nix build .#site --out-link result-pages-site
