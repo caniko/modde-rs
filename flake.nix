@@ -19,7 +19,6 @@
 
     simit = {
       url = "git+https://github.com/caniko/simit?ref=refs/tags/0.17.10";
-      inputs.harbor-rs.follows = "harbor-rs";
       inputs.nixpkgs.follows = "harbor-rs/nixpkgs";
       inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
       inputs.crane.follows = "harbor-rs/crane";
@@ -32,14 +31,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.crane.follows = "crane";
-      inputs.flake-utils.follows = "flake-utils";
     };
 
     visual-rubric = {
       url = "git+https://github.com/caniko/visual-rubric.git";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-overlay.follows = "rust-overlay";
-      inputs.crane.follows = "crane";
       inputs.flake-utils.follows = "flake-utils";
     };
 
@@ -51,7 +48,6 @@
     nix-manager-core = {
       url = "git+https://github.com/caniko/nix-manager-core.git?ref=trunk";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.harbor-rs.follows = "harbor-rs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.crane.follows = "crane";
     };
