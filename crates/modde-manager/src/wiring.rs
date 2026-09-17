@@ -1738,8 +1738,22 @@ pub struct WiringChange {
     pub summary: String,
 }
 
+/// HD payload presence items (`hd-patch:<letter>` Missing) never gate
+/// registration: an absent optional payload is not a broken vanilla
+/// client, and registration readiness must not wait for HD maintenance.
+/// Present-but-wrong HD state (`hd-patch-letters` rename dodges,
+/// `hd-patch-A` identity mismatch) still blocks, as does everything else.
+/// The exemption matches the per-letter presence items only: neither the
+/// `hd-patch-letters` dodge detector nor the `hd-patch-A` identity check
+/// carries the `hd-patch:` prefix.
+fn is_deferred_hd_item(item: &StatusItem) -> bool {
+    item.state == ItemState::Missing && item.name.starts_with("hd-patch:")
+}
+
 /// Items onboard apply owns; everything else non-verified is an external
 /// blocker (client install, launcher maintenance) that must resolve first.
+/// Absent HD payloads stay visible as blockers in plan output but never
+/// gate registration (see `is_deferred_hd_item`).
 fn is_ownable(name: &str) -> bool {
     name == "prefix" || name.starts_with("lutris-") || name == "runner-pinned"
 }
@@ -2337,7 +2351,8 @@ pub fn prepare(
     // client install): anything apply does not own must already verify, or
     // no mutation happens at all. Same observations status/plan report.
     // The launcher entry and its stored client folder are owned by
-    // register-launcher, never by apply.
+    // register-launcher, never by apply. Absent HD payloads never gate
+    // registration (a valid vanilla entry must not wait for HD).
     let blockers: Vec<_> = status(name, instance, dirs)?
         .into_iter()
         .filter(|item| {
@@ -2345,6 +2360,7 @@ pub fn prepare(
                 && !is_ownable(&item.name)
                 && item.name != "launcher-entry"
                 && item.name != "launcher-client-dir"
+                && !is_deferred_hd_item(item)
         })
         .collect();
     if !blockers.is_empty() {
@@ -2435,9 +2451,11 @@ fn create_prefix(prefix: &Path, runner: &Runner, wiring: &Wiring) -> Result<Stri
 /// Execute a prepared plan. The root lease is held across validation,
 /// execution, verification, and recovery; a second lock on the Lutris data
 /// dir serializes concurrent onboard runs for other instances. Owns prefix
-/// creation, the Lutris yml, and the pga.db row — nothing else. Partial
-/// state is retained with journaled evidence on failure, never deleted;
-/// pre-existing content is restored from retained backups.
+/// creation, the Lutris yml, and the pga.db row — nothing else. Absent HD
+/// payloads never gate registration (they stay visible in status/plan and
+/// are journaled as deferred); present-but-wrong HD state still blocks.
+/// Partial state is retained with journaled evidence on failure, never
+/// deleted; pre-existing content is restored from retained backups.
 pub fn apply(
     name: &str,
     instance: &Instance,
@@ -2525,7 +2543,12 @@ pub fn apply(
         .into_iter()
         .filter(|item| item.state != ItemState::Verified)
         .collect();
-    if !bad.is_empty() {
+    // Absent HD payloads stay visible but never fail registration; anything
+    // else unverified is a real failure with retained evidence.
+    let (deferred, fatal): (Vec<_>, Vec<_>) = bad
+        .into_iter()
+        .partition(|item| is_deferred_hd_item(item));
+    if !fatal.is_empty() {
         journal_event(
             instance,
             name,
@@ -2533,25 +2556,422 @@ pub fn apply(
         );
         bail!(
             "post-apply verification failed: {}",
-            bad.iter()
+            fatal
+                .iter()
                 .map(|item| format!("{}={:?}", item.name, item.state))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
     }
+    let hd_deferred: Vec<_> = deferred.iter().map(|item| item.name.clone()).collect();
+    // A repeat apply stays a literal no-op: the journal records mutations
+    // and failures only, never routine verifications — the deferral notice
+    // below is stdout only.
     if mutated {
         journal_event(
             instance,
             name,
-            serde_json::json!({"op": "apply-done", "runner": prepared.runner.version}),
+            serde_json::json!({"op": "apply-done", "runner": prepared.runner.version, "hd_deferred": hd_deferred}),
+        );
+    }
+    if !hd_deferred.is_empty() {
+        println!(
+            "{name}: HD deferred (still missing: {}); vanilla entry registered",
+            hd_deferred.join(", ")
         );
     }
     println!("{name}: onboard apply complete");
     Ok(())
 }
 
-/// Locate the OctoLauncher `settings.json` inside a launcher prefix: exactly
-/// one `drive_c/users/*/AppData/Roaming/octo-launcher/settings.json` must
+/// What a native launch runs: game, installed maintenance launcher, or the
+/// installer as an explicit bootstrap operation. Separate values because
+/// each has its own executable, working directory, and prefix — never one
+/// evolving entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeTarget {
+    Game,
+    Launcher,
+    Installer,
+}
+
+/// Launch mode: vanilla runs the declared client as-is; HD additionally
+/// requires the full HD set verified. Missing HD never blocks vanilla —
+/// and never silently downgrades an HD request either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchMode {
+    Vanilla,
+    Hd,
+}
+
+/// A resolved native launch: executable, working directory, Wine prefix,
+/// and client DLL overrides. The environment comes from the declared
+/// tunings through `resolve_launch_env`, mirroring the Lutris render.
+pub struct LaunchTarget {
+    pub exe: PathBuf,
+    pub dir: PathBuf,
+    pub prefix: PathBuf,
+    pub dll_overrides: Vec<String>,
+}
+
+/// Single-descriptor file check shared by registration and native launch:
+/// no symlinks, regular file, streaming digest when the declaration pins
+/// one.
+fn validate_descriptor_file(path: &Path, sha256: Option<&str>, what: &str) -> Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = match fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
+            bail!("{what} is a symlink: {}", path.display())
+        }
+        Err(e) => return Err(e).context(format!("{what} unreadable")),
+    };
+    if !file.metadata()?.is_file() {
+        bail!("{what} is not a file: {}", path.display());
+    }
+    if let Some(digest) = sha256 {
+        let (_, actual) = stream_digest_file(&mut file)?;
+        if actual != digest.to_ascii_lowercase() {
+            bail!("{what} digest mismatch");
+        }
+    }
+    Ok(())
+}
+
+/// The executable a native launch will run: must exist as a regular file.
+/// Symlinks fail closed (resolved at registration; never followed here).
+fn launch_exe(path: &Path, what: &str) -> Result<PathBuf> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            bail!("{what} is a symlink: {}", path.display())
+        }
+        Ok(meta) if meta.is_file() => Ok(path.to_owned()),
+        Ok(_) => bail!("{what} is not a regular file: {}", path.display()),
+        Err(e) => Err(e).context(format!("{what} unreadable: {}", path.display())),
+    }
+}
+
+/// Installed launcher executable checks shared by registration and native
+/// launch: absolute, under its own prefix (never an arbitrary host
+/// executable a launcher entry would then run), regular file, no symlinks.
+fn validate_launcher_executable(executable: &Path, prefix: &Path) -> Result<()> {
+    if !executable.is_absolute() {
+        bail!("launcher executable path must be absolute");
+    }
+    if !executable.starts_with(prefix) {
+        bail!(
+            "launcher executable must live under the launcher prefix: {}",
+            executable.display()
+        );
+    }
+    launch_exe(executable, "launcher executable")?;
+    Ok(())
+}
+
+/// Resolve what a native launch runs. Prefixes must already exist (prepare
+/// and register-launcher own creation); launch itself creates nothing and
+/// reconciles nothing.
+fn resolve_launch_target(
+    instance: &Instance,
+    wiring: &Wiring,
+    target: NativeTarget,
+) -> Result<LaunchTarget> {
+    match target {
+        NativeTarget::Game => {
+            let prefix = wiring.prefix.as_ref().context("no game prefix declared")?;
+            validated_prefix(&prefix.path, &instance.root, wiring)?.with_context(|| {
+                format!(
+                    "game prefix absent: {}; run onboard prepare first",
+                    prefix.path.display()
+                )
+            })?;
+            let rel = existing_name(&instance.root, &[&wiring.launch.executable])?.with_context(|| {
+                format!(
+                    "game executable '{}' missing from {}; install/verify the client first",
+                    wiring.launch.executable,
+                    instance.root.display()
+                )
+            })?;
+            let exe = launch_exe(&instance.root.join(&rel), "game executable")?;
+            Ok(LaunchTarget {
+                dir: instance.root.clone(),
+                exe,
+                prefix: prefix.path.clone(),
+                dll_overrides: wiring.dll_overrides.clone(),
+            })
+        }
+        NativeTarget::Launcher => {
+            let launcher = wiring.launcher.as_ref().context("no launcher block declared")?;
+            let prefix = launcher.prefix.as_ref().context("no launcher prefix declared")?;
+            validated_prefix(prefix, &instance.root, wiring)?.with_context(|| {
+                format!(
+                    "launcher prefix absent: {}; run onboard register-launcher first",
+                    prefix.display()
+                )
+            })?;
+            let executable = launcher.executable.as_ref().context(
+                "no installed launcher executable declared; declare it after installation (the installer stays bootstrap-only)",
+            )?;
+            validate_launcher_executable(executable, prefix)?;
+            let dir = executable
+                .parent()
+                .context("launcher executable needs a parent directory")?
+                .to_owned();
+            Ok(LaunchTarget {
+                exe: executable.clone(),
+                dir,
+                prefix: prefix.clone(),
+                // Non-game process: no game-client DLL overrides (mirrors
+                // the launcher Lutris entry).
+                dll_overrides: Vec::new(),
+            })
+        }
+        NativeTarget::Installer => {
+            let launcher = wiring.launcher.as_ref().context("no launcher block declared")?;
+            let installer = launcher
+                .installer
+                .as_ref()
+                .context("no installer declared in launcher block")?;
+            if !installer.path.is_absolute() {
+                bail!("installer path must be absolute");
+            }
+            validate_descriptor_file(&installer.path, installer.sha256.as_deref(), "installer")?;
+            let prefix = launcher.prefix.as_ref().context("no launcher prefix declared")?;
+            validated_prefix(prefix, &instance.root, wiring)?.with_context(|| {
+                format!(
+                    "launcher prefix absent: {}; run onboard register-launcher first",
+                    prefix.display()
+                )
+            })?;
+            let dir = installer
+                .path
+                .parent()
+                .context("installer needs a parent directory")?
+                .to_owned();
+            Ok(LaunchTarget {
+                exe: installer.path.clone(),
+                dir,
+                prefix: prefix.clone(),
+                dll_overrides: Vec::new(),
+            })
+        }
+    }
+}
+
+/// Native launch environment: the scrubbed Wine base (same helper as
+/// prefix creation) plus the declared tunings, mirroring the Lutris render
+/// exactly — the typed `dll_overrides` win over an `extra_env`
+/// `WINEDLLOVERRIDES`, structural `WINEPREFIX`/`WINEARCH` win over tunings,
+/// and a declared `WINEDEBUG` wins over the scrubbed default. Pure for
+/// testability; returns (removals, assignments).
+fn resolve_launch_env(
+    wiring: &Wiring,
+    prefix: &Path,
+    dll_overrides: &[String],
+) -> (
+    Vec<std::ffi::OsString>,
+    Vec<(std::ffi::OsString, std::ffi::OsString)>,
+) {
+    let (remove, set) = scrub_wine_env(std::env::vars_os().collect(), prefix, &wiring.runtime.arch);
+    let mut merged: std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString> =
+        set.into_iter().collect();
+    for (key, value) in &wiring.tunings.env {
+        if key == "WINEPREFIX" || key == "WINEARCH" || key == "WINEDLLOVERRIDES" {
+            continue;
+        }
+        merged.insert(key.into(), value.into());
+    }
+    if !dll_overrides.is_empty() {
+        merged.insert("WINEDLLOVERRIDES".into(), dll_overrides.join(";").into());
+    }
+    (remove, merged.into_iter().collect())
+}
+
+/// Native runtime preparation without any Lutris touch: resolve and record
+/// the runner, ensure the game prefix. No yml, no database row, no Lutris
+/// process checks — this works with Lutris never installed. The launcher
+/// prefix stays owned by register-launcher.
+pub fn prepare_native(name: &str, instance: &Instance, dirs: &HomeDirs, reselect: bool) -> Result<()> {
+    let wiring = resolve_wiring(instance)?;
+    let root_anchor = Anchor::open(&instance.root)?;
+    let _lease = root_anchor.lock()?;
+    // Discovery only: runner search dirs are read, nothing Lutris-owned is
+    // written here.
+    let (runner, _) =
+        select_runner(dirs, instance, &wiring, reselect).context("cannot prepare without a resolved runner")?;
+    let mut mutated = false;
+    if record_runner(instance, &runner)? {
+        mutated = true;
+        println!("{name}: runtime selection recorded");
+    }
+    if let Some(prefix) = wiring.prefix.as_ref() {
+        match validated_prefix(&prefix.path, &instance.root, &wiring)? {
+            Some(arch) => println!("{name}: prefix already present ({arch})"),
+            None => match create_prefix(&prefix.path, &runner, &wiring) {
+                Ok(arch) => {
+                    mutated = true;
+                    println!("{name}: prefix created ({arch})");
+                }
+                Err(error) => {
+                    journal_event(
+                        instance,
+                        name,
+                        serde_json::json!({"op": "prepare-failed", "step": "prefix", "error": format!("{error:#}")}),
+                    );
+                    return Err(error);
+                }
+            },
+        }
+    }
+    if mutated {
+        journal_event(
+            instance,
+            name,
+            serde_json::json!({"op": "prepare-done", "runner": runner.version}),
+        );
+    }
+    println!("{name}: onboard prepare complete");
+    Ok(())
+}
+
+/// Launch natively without Lutris: the game, the installed maintenance
+/// launcher, or the installer as an explicit bootstrap. Reads the recorded
+/// runner (prepare first), resolves the target, and execs it with the
+/// declared environment — then waits and propagates the exit status.
+/// Never installs, updates, reconciles, records, or falls back: a failure
+/// surfaces instead of starting something else. In HD mode the full HD set
+/// must verify first; vanilla mode never waits for HD.
+pub fn launch(
+    name: &str,
+    instance: &Instance,
+    dirs: &HomeDirs,
+    target: NativeTarget,
+    mode: LaunchMode,
+) -> Result<()> {
+    let wiring = resolve_wiring(instance)?;
+    let root_anchor = Anchor::open(&instance.root)?;
+    let _lease = root_anchor.lock()?;
+    // Quiescence covers every backend at once (game, launcher, Lutris):
+    // either side runs alone, never concurrently into one client.
+    super::assert_stopped(instance)?;
+    // Recorded runner only: launching never resolves or records, so the
+    // executed artifact is always the reviewed one.
+    let recorded = read_recorded(instance)?.with_context(|| {
+        format!("no recorded runner for '{name}'; run onboard prepare first")
+    })?;
+    if !is_executable(&recorded.path) {
+        bail!(
+            "recorded runner '{}' no longer executes; run onboard prepare --reselect",
+            recorded.path.display()
+        );
+    }
+    let runner = Runner {
+        path: recorded.path,
+        version: recorded.version,
+    };
+    if mode == LaunchMode::Hd {
+        let mut missing = Vec::new();
+        for item in status(name, instance, dirs)? {
+            if item.name.starts_with("hd-patch") && item.state != ItemState::Verified {
+                missing.push(format!("{}={:?}", item.name, item.state));
+            }
+        }
+        if !missing.is_empty() {
+            bail!(
+                "HD not ready (re-run without HD mode for the base client): {}",
+                missing.join(", ")
+            );
+        }
+    }
+    let lt = resolve_launch_target(instance, &wiring, target)?;
+    let mut cmd = Command::new(&runner.path);
+    cmd.arg(&lt.exe).current_dir(&lt.dir);
+    let (remove, set) = resolve_launch_env(&wiring, &lt.prefix, &lt.dll_overrides);
+    for key in remove {
+        cmd.env_remove(key);
+    }
+    for (key, value) in set {
+        cmd.env(key, value);
+    }
+    println!("{name}: launching {} ...", lt.exe.display());
+    match cmd
+        .status()
+        .with_context(|| format!("launch {}", lt.exe.display()))?
+    {
+        status if status.success() => {
+            println!("{name}: process exited {status}");
+            Ok(())
+        }
+        status => bail!("{name}: process exited with {status}"),
+    }
+}
+
+/// Render the desktop entry invoking the native game launch. The Lutris
+/// entries are untouched; this file is the normal action once native
+/// launch is proven, with Lutris kept as fallback.
+fn render_desktop_entry(name: &str, display: &str) -> Result<String> {
+    if name.contains(char::is_whitespace) || name.contains('"') {
+        bail!("instance name is not desktop-entry safe: '{name}'");
+    }
+    let exe = std::env::current_exe().context("locate the manager binary for the desktop entry")?;
+    Ok(format!(
+        "[Desktop Entry]\nType=Application\nVersion=1.0\nName={display}\nComment=Launch {display} natively via modde-manager (Lutris entry stays as fallback).\nExec=\"{}\" onboard launch --instance {name} --target game\nTerminal=false\nCategories=Game;\n",
+        exe.display(),
+    ))
+}
+
+/// Write (or refresh) the desktop entry for native game launch. Self
+/// verifying: the file is read back and compared after every write.
+pub fn desktop_entry(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<()> {
+    let wiring = resolve_wiring(instance)?;
+    let root_anchor = Anchor::open(&instance.root)?;
+    let _lease = root_anchor.lock()?;
+    let display = wiring
+        .lutris
+        .as_ref()
+        .map(|entry| entry.name.clone())
+        .unwrap_or_else(|| name.to_owned());
+    let slug = wiring
+        .lutris
+        .as_ref()
+        .map(|entry| entry.slug.clone())
+        .unwrap_or_else(|| name.to_owned());
+    validate_slug(&slug)?;
+    let body = render_desktop_entry(name, &display)?;
+    let dir = dirs.data.join("applications");
+    fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+    let target = dir.join(format!("{slug}-modde.desktop"));
+    let (changed, _) = write_yml(&target, &body)?;
+    let actual =
+        fs::read_to_string(&target).with_context(|| format!("verify {}", target.display()))?;
+    if actual != body {
+        bail!("desktop entry failed verification: {}", target.display());
+    }
+    if changed {
+        journal_event(
+            instance,
+            name,
+            serde_json::json!({"op": "desktop-entry-done", "path": target.display().to_string()}),
+        );
+    }
+    println!(
+        "{name}: desktop entry {}",
+        if changed {
+            target.display().to_string()
+        } else {
+            "unchanged".into()
+        }
+    );
+    Ok(())
+}
+
+/// Locate the OctoLauncher `settings.json` inside a launcher prefix and
+/// return its prefix-relative path: exactly one
+/// `drive_c/users/*/AppData/Roaming/octo-launcher/settings.json` must
 /// exist. Zero means the launcher never ran (external step, never
 /// fabricated); more than one is ambiguous and fails closed. Reads are
 /// no-follow throughout, so symlinks fail instead of escaping the prefix.
@@ -2600,7 +3020,7 @@ fn find_launcher_settings(prefix: &Path) -> Result<Option<PathBuf>> {
             Image::Directory(_) => {
                 bail!("launcher settings is a directory: {}", rel.display())
             }
-            Image::File(_) => found.push(prefix.join(rel)),
+            Image::File(_) => found.push(rel),
         }
     }
     if found.len() > 1 {
@@ -2652,107 +3072,269 @@ fn read_launcher_client_dirs(body: &str) -> Result<(Option<String>, Option<Strin
     Ok((get("clientDir")?, get("activeClientDir")?))
 }
 
-/// Splice new values into the two client-directory string literals,
-/// preserving every other byte. A full JSON rewrite would reorder keys and
-/// reformat launcher-owned state; this touches only the two literals.
-fn set_launcher_client_dirs(body: &str, want: &str) -> Result<(String, bool)> {
-    let mut out = body.to_owned();
-    let mut changed = false;
-    for key in ["clientDir", "activeClientDir"] {
-        let Some(span) = json_string_span(&out, key)? else {
-            bail!("launcher settings has no '{key}'; set the client folder in the launcher once")
-        };
-        // The span covers the inner literal; the serialized replacement
-        // carries its own quotes, so splice the inner text only.
-        let replacement = serde_json::to_string(want)?;
-        let inner = replacement
-            .strip_prefix('"')
-            .and_then(|s| s.strip_suffix('"'))
-            .context("serialized client path is not a JSON string")?;
-        if &out[span.clone()] != inner {
-            out.replace_range(span, inner);
-            changed = true;
-        }
+/// Splice a new value into a top-level string literal, preserving every
+/// other byte. A full JSON rewrite would reorder keys and reformat
+/// launcher-owned state; this touches only the located literal.
+fn splice_json_string(
+    out: &mut String,
+    span: std::ops::Range<usize>,
+    want: &str,
+    changed: &mut bool,
+) -> Result<()> {
+    // The span covers the inner literal; the serialized replacement
+    // carries its own quotes, so splice the inner text only.
+    let replacement = serde_json::to_string(want)?;
+    let inner = replacement
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .context("serialized client path is not a JSON string")?;
+    if &out[span.clone()] != inner {
+        out.replace_range(span, inner);
+        *changed = true;
     }
-    Ok((out, changed))
+    Ok(())
 }
 
-/// Byte span of the string value for a top-level JSON key: finds `"key"`,
-/// skips whitespace and the colon, then scans the string literal honoring
-/// escapes. Fails closed on anything unexpected instead of guessing.
-fn json_string_span(body: &str, key: &str) -> Result<Option<std::ops::Range<usize>>> {
-    let token = format!("\"{key}\"");
-    let Some(key_at) = body.find(&token) else {
-        return Ok(None);
-    };
-    let mut pos = key_at + token.len();
+/// Byte span of the inner text of a top-level string member in a JSON
+/// object document. Tracks nesting and string escapes structurally, so a
+/// same-named key nested inside (e.g. under `mods`) is never mistaken for
+/// the top-level setting. Duplicate top-level keys, non-object documents,
+/// and malformed input fail closed instead of guessing.
+fn json_top_level_string_span(body: &str, key: &str) -> Result<Option<std::ops::Range<usize>>> {
     let bytes = body.as_bytes();
-    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+    // Parse a string literal at `pos` (pointing at the opening quote);
+    // returns the inner span and the position past the closing quote.
+    fn string_at(bytes: &[u8], mut pos: usize) -> Result<(std::ops::Range<usize>, usize)> {
         pos += 1;
+        let start = pos;
+        while pos < bytes.len() {
+            match bytes[pos] {
+                b'\\' => {
+                    pos += 1;
+                    if pos >= bytes.len() {
+                        break;
+                    }
+                    if bytes[pos] == b'u' {
+                        pos += 1;
+                        for _ in 0..4 {
+                            if pos < bytes.len() && bytes[pos].is_ascii_hexdigit() {
+                                pos += 1;
+                            } else {
+                                bail!("launcher settings has a malformed string escape");
+                            }
+                        }
+                    } else {
+                        pos += 1;
+                    }
+                }
+                b'"' => return Ok((start..pos, pos + 1)),
+                _ => pos += 1,
+            }
+        }
+        bail!("launcher settings has an unterminated string")
     }
-    if bytes.get(pos) != Some(&b':') {
-        bail!("launcher settings key '{key}' is malformed");
-    }
-    pos += 1;
-    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
-        pos += 1;
-    }
-    if bytes.get(pos) != Some(&b'"') {
-        bail!("launcher settings key '{key}' is not a string");
-    }
-    pos += 1;
-    let start = pos;
-    while pos < bytes.len() {
+    // Skip one balanced value starting at `pos`; returns the position past it.
+    fn skip_value(bytes: &[u8], mut pos: usize) -> Result<usize> {
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            bail!("launcher settings ends mid-value");
+        }
         match bytes[pos] {
-            b'\\' => pos += 2,
-            b'"' => return Ok(Some(start..pos)),
-            _ => pos += 1,
+            b'"' => Ok(string_at(bytes, pos)?.1),
+            b'{' | b'[' => {
+                let mut depth = 0usize;
+                while pos < bytes.len() {
+                    match bytes[pos] {
+                        b'"' => pos = string_at(bytes, pos)?.1,
+                        b'{' | b'[' => {
+                            depth += 1;
+                            pos += 1;
+                        }
+                        b'}' | b']' => {
+                            depth -= 1;
+                            pos += 1;
+                            if depth == 0 {
+                                return Ok(pos);
+                            }
+                        }
+                        _ => pos += 1,
+                    }
+                }
+                bail!("launcher settings has unbalanced brackets")
+            }
+            _ => {
+                while pos < bytes.len() && !matches!(bytes[pos], b',' | b'}' | b']') {
+                    pos += 1;
+                }
+                Ok(pos)
+            }
         }
     }
-    bail!("launcher settings key '{key}' has an unterminated string")
+    let mut pos = 0;
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    if bytes.get(pos) != Some(&b'{') {
+        bail!("launcher settings is not a JSON object");
+    }
+    pos += 1;
+    let mut found: Option<std::ops::Range<usize>> = None;
+    loop {
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            bail!("launcher settings ends inside its top-level object");
+        }
+        if bytes[pos] == b'}' {
+            pos += 1;
+            while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+                pos += 1;
+            }
+            if pos != bytes.len() {
+                bail!("launcher settings has trailing data");
+            }
+            return Ok(found);
+        }
+        if bytes[pos] != b'"' {
+            bail!("launcher settings has a malformed member");
+        }
+        let (name_span, after_key) = string_at(bytes, pos)?;
+        let name = &body[name_span];
+        pos = after_key;
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if bytes.get(pos) != Some(&b':') {
+            bail!("launcher settings has a malformed member");
+        }
+        pos += 1;
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if name == key {
+            if found.is_some() {
+                bail!("launcher settings has a duplicate top-level key '{key}'");
+            }
+            if pos >= bytes.len() || bytes[pos] != b'"' {
+                bail!("launcher settings key '{key}' is not a string");
+            }
+            let (span, after) = string_at(bytes, pos)?;
+            found = Some(span);
+            pos = after;
+        } else {
+            pos = skip_value(bytes, pos)?;
+        }
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos < bytes.len() && bytes[pos] == b',' {
+            pos += 1;
+        } else if pos >= bytes.len() || bytes[pos] != b'}' {
+            bail!("launcher settings has a malformed member separator");
+        }
+    }
+}
+
+/// Reconcile the two client-directory keys with the declared root.
+/// `clientDir` always follows the root. `activeClientDir` follows only
+/// when it was tracking the previous selection: the installed bundle
+/// writes both on folder selection but treats a mismatch as stale sync
+/// context, so a foreign value means another folder's sync state and is
+/// left alone (reported, never reassigned). Returns the edited body,
+/// whether it changed, and a note when the active key was deferred.
+fn set_launcher_client_dirs(
+    body: &str,
+    want: &str,
+    client_old: &str,
+    active_old: Option<&str>,
+) -> Result<(String, bool, Option<String>)> {
+    let mut out = body.to_owned();
+    let mut changed = false;
+    let Some(span) = json_top_level_string_span(&out, "clientDir")? else {
+        bail!("launcher settings has no 'clientDir'; set the client folder in the launcher once")
+    };
+    splice_json_string(&mut out, span, want, &mut changed)?;
+    let mut note = None;
+    match active_old {
+        // Tracking the selection (or already correct): follow it.
+        Some(active) if active == client_old || active == want => {
+            if let Some(span) = json_top_level_string_span(&out, "activeClientDir")? {
+                splice_json_string(&mut out, span, want, &mut changed)?;
+            }
+        }
+        Some(active) => {
+            note = Some(format!(
+                "activeClientDir tracks '{active}', not the declared client"
+            ));
+        }
+        None => {}
+    }
+    Ok((out, changed, note))
 }
 
 /// Reconcile the launcher's stored client folder with the declared client
-/// root. Returns (settings path, changed), or None when there are no
+/// root. Returns the settings path, whether it changed, and a note when
+/// the active key was deliberately left alone — or None when there are no
 /// settings to reconcile (the launcher writes them on first run; status
 /// tracks that absence separately). Never creates settings, never touches
 /// sync hashes or anything else in the file; the previous content is
-/// retained under a unique backup on change.
+/// retained under a unique backup on change. The read, backup, and commit
+/// all go through the anchored prefix with no-follow opens, and the parent
+/// is revalidated before the commit lands.
 fn reconcile_launcher_client_dir(
     instance: &Instance,
     prefix: &Path,
-) -> Result<Option<(PathBuf, bool)>> {
-    let Some(path) = find_launcher_settings(prefix)? else {
+) -> Result<Option<(PathBuf, bool, Option<String>)>> {
+    let anchor = Anchor::open(prefix)?;
+    let Some(rel) = find_launcher_settings(prefix)? else {
         return Ok(None);
     };
-    let current = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+    let (parent, target) = anchor.target(&rel, false, &mut Vec::new())?;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&target)
+        .with_context(|| format!("read {}", target.display()))?;
+    if !file.metadata()?.is_file() {
+        bail!("launcher settings changed type during read");
+    }
+    let mut current = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut current)?;
+    drop(file);
     let body =
         String::from_utf8(current.clone()).context("launcher settings is not UTF-8")?;
     let (client_dir, active_dir) = read_launcher_client_dirs(&body)?;
     let want = wine_client_dir(prefix, &instance.root)?;
-    if client_dir.as_deref() == Some(want.as_str())
-        && active_dir.as_deref() == Some(want.as_str())
-    {
-        return Ok(Some((path, false)));
+    let Some(client_old) = client_dir.as_deref() else {
+        bail!("launcher settings has no 'clientDir'; set the client folder in the launcher once")
+    };
+    if client_old == want && active_dir.as_deref() == Some(want.as_str()) {
+        return Ok(Some((prefix.join(&rel), false, None)));
     }
-    let (updated, changed) = set_launcher_client_dirs(&body, &want)?;
+    let (updated, changed, note) =
+        set_launcher_client_dirs(&body, &want, client_old, active_dir.as_deref())?;
     if !changed {
-        return Ok(Some((path, false)));
+        return Ok(Some((prefix.join(&rel), false, note)));
     }
-    let backup = backup_name(&path, "launcher-settings");
+    let backup = backup_name(&target, "launcher-settings");
     {
         use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
+        let mut backup_file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(0o600)
             .open(&backup)?;
         use std::io::Write;
-        file.write_all(&current)?;
-        file.sync_all()?;
+        backup_file.write_all(&current)?;
+        backup_file.sync_all()?;
     }
-    atomic_write_0600(&path, updated.as_bytes())?;
-    Ok(Some((path, true)))
+    anchor.revalidate_parent(&rel, &parent)?;
+    atomic_write_0600(&target, updated.as_bytes())?;
+    Ok(Some((prefix.join(&rel), true, note)))
 }
 
 /// Read-only observation of the launcher's stored client folder against the
@@ -2784,7 +3366,8 @@ fn launcher_client_dir_item(instance: &Instance, wiring: &Wiring, prefix: &Path)
                 "launcher settings absent".into(),
                 "run the launcher once, then run: onboard register-launcher".into(),
             ),
-            Ok(Some(path)) => {
+            Ok(Some(rel)) => {
+                let path = prefix.join(&rel);
                 let body = match fs::read_to_string(&path) {
                     Ok(body) => body,
                     Err(e) => {
@@ -2824,6 +3407,20 @@ fn launcher_client_dir_item(instance: &Instance, wiring: &Wiring, prefix: &Path)
                             ItemState::Verified,
                             path.display().to_string(),
                             String::new(),
+                        )
+                    }
+                    Ok((client_dir, active_dir)) if client_dir.as_deref() == Some(want.as_str()) => {
+                        item(
+                            "launcher-client-dir",
+                            ItemState::Mismatched,
+                            match active_dir.as_deref() {
+                                Some(active) => format!(
+                                    "activeClientDir tracks '{active}', not the declared client"
+                                ),
+                                None => "activeClientDir absent".into(),
+                            },
+                            "resolve the foreign sync in the launcher, then run: onboard register-launcher"
+                                .into(),
                         )
                     }
                     Ok((client_dir, _)) => item(
@@ -2876,64 +3473,12 @@ pub fn register_launcher(
     if !installer.path.is_absolute() {
         bail!("installer path must be absolute");
     }
-    // Single descriptor: no symlinks, regular file, streaming digest when
-    // the declaration pins one.
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = match fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&installer.path)
-        {
-            Ok(file) => file,
-            Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
-                bail!("installer is a symlink: {}", installer.path.display())
-            }
-            Err(e) => return Err(e).context("installer unreadable"),
-        };
-        if !file.metadata()?.is_file() {
-            bail!("installer is not a file: {}", installer.path.display());
-        }
-        if let Some(digest) = &installer.sha256 {
-            let (_, actual) = stream_digest_file(&mut file)?;
-            if actual != digest.to_ascii_lowercase() {
-                bail!("installer digest mismatch");
-            }
-        }
-    }
+    validate_descriptor_file(&installer.path, installer.sha256.as_deref(), "installer")?;
     // Installed launcher executable: same single-descriptor discipline as
     // the installer, and it must live under the launcher prefix (never an
-    // arbitrary host executable Lutris would then run).
+    // arbitrary host executable an entry would then run).
     if let Some(executable) = &launcher.executable {
-        if !executable.is_absolute() {
-            bail!("launcher executable path must be absolute");
-        }
-        if !executable.starts_with(&prefix) {
-            bail!(
-                "launcher executable must live under the launcher prefix: {}",
-                executable.display()
-            );
-        }
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            let file = match fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(executable)
-            {
-                Ok(file) => file,
-                Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
-                    bail!("launcher executable is a symlink: {}", executable.display())
-                }
-                Err(e) => return Err(e).context("launcher executable unreadable"),
-            };
-            if !file.metadata()?.is_file() {
-                bail!(
-                    "launcher executable is not a file: {}",
-                    executable.display()
-                );
-            }
-        }
+        validate_launcher_executable(executable, &prefix)?;
     }
     validate_slug(&entry.slug)?;
     if lutris_running()? {
@@ -3002,7 +3547,7 @@ pub fn register_launcher(
         // exit and would clobber this edit.
         match reconcile_launcher_client_dir(instance, &prefix) {
             Ok(None) => println!("{name}: launcher client folder pending (run the launcher once)"),
-            Ok(Some((path, changed))) => {
+            Ok(Some((path, changed, note))) => {
                 mutated |= changed;
                 settings_reconciled = true;
                 println!(
@@ -3013,6 +3558,14 @@ pub fn register_launcher(
                         "unchanged".into()
                     }
                 );
+                if let Some(note) = note {
+                    println!("{name}: launcher client folder note: {note}");
+                    journal_event(
+                        instance,
+                        name,
+                        serde_json::json!({"op": "register-launcher-note", "step": "launcher-settings", "note": note}),
+                    );
+                }
             }
             Err(error) => {
                 journal_event(
@@ -3837,7 +4390,10 @@ mod tests {
         std::os::unix::fs::symlink(users.join("testuser"), users.join("steamuser")).unwrap();
         std::os::unix::fs::symlink("/nonexistent-templates", users.join("Templates")).unwrap();
         let found = find_launcher_settings(prefix.path()).unwrap().unwrap();
-        assert_eq!(found, users.join(settings));
+        assert_eq!(
+            found,
+            Path::new("drive_c/users/testuser/AppData/Roaming/octo-launcher/settings.json")
+        );
     }
 
     #[test]
@@ -3864,18 +4420,88 @@ mod tests {
     #[test]
     fn launcher_settings_edit_touches_only_the_two_keys() {
         let before = "{\n  \"server\": \"live\",\n  \"clientDir\": \"Z:\\\\old\",\n  \"activeClientDir\": \"Z:\\\\old\",\n  \"mods\": {\"dxvk\": {\"enabled\": true}}\n}\n";
-        let (after, changed) = set_launcher_client_dirs(before, "Z:\\new").unwrap();
+        let (after, changed, note) =
+            set_launcher_client_dirs(before, "Z:\\new", "Z:\\old", Some("Z:\\old")).unwrap();
         assert!(changed);
+        assert!(note.is_none());
         assert!(after.contains("\"clientDir\": \"Z:\\\\new\""));
         assert!(after.contains("\"activeClientDir\": \"Z:\\\\new\""));
         // Unrelated state survives byte-identical.
         assert!(after.contains("\"server\": \"live\""));
         assert!(after.contains("\"mods\": {\"dxvk\": {\"enabled\": true}}"));
         // Already reconciled: no change.
-        let (_, changed) = set_launcher_client_dirs(&after, "Z:\\new").unwrap();
+        let (_, changed, _) =
+            set_launcher_client_dirs(&after, "Z:\\new", "Z:\\new", Some("Z:\\new")).unwrap();
         assert!(!changed);
-        // Missing key fails closed instead of inventing placement.
-        assert!(set_launcher_client_dirs("{\"a\": 1}", "Z:\\new").is_err());
+        // Missing client key fails closed instead of inventing placement.
+        assert!(set_launcher_client_dirs("{\"a\": 1}", "Z:\\new", "Z:\\old", None).is_err());
+    }
+
+    #[test]
+    fn launcher_settings_edit_ignores_nested_same_name_keys() {
+        let before = "{\n  \"mods\": {\"clientDir\": \"Z:\\\\nested\"},\n  \"clientDir\": \"Z:\\\\old\",\n  \"activeClientDir\": \"Z:\\\\old\"\n}\n";
+        let (after, changed, _) =
+            set_launcher_client_dirs(before, "Z:\\new", "Z:\\old", Some("Z:\\old")).unwrap();
+        assert!(changed);
+        assert!(after.contains("\"mods\": {\"clientDir\": \"Z:\\\\nested\"}"));
+        assert!(after.contains("\"clientDir\": \"Z:\\\\new\""));
+        assert!(after.contains("\"activeClientDir\": \"Z:\\\\new\""));
+    }
+
+    #[test]
+    fn launcher_settings_edit_rejects_duplicates_and_malformed() {
+        // Duplicate top-level key: ambiguous, fail closed.
+        assert!(set_launcher_client_dirs(
+            "{\"clientDir\": \"Z:\\\\a\", \"clientDir\": \"Z:\\\\b\", \"activeClientDir\": \"Z:\\\\a\"}",
+            "Z:\\new",
+            "Z:\\a",
+            Some("Z:\\a"),
+        )
+        .is_err());
+        // Unterminated strings and malformed \u escapes fail closed
+        // (unknown backslash escapes stay lenient here; the serde parse
+        // upstream rejects invalid JSON before editing starts).
+        assert!(set_launcher_client_dirs(
+            "{\"clientDir\": \"Z:\\\\old",
+            "Z:\\new",
+            "Z:\\old",
+            None,
+        )
+        .is_err());
+        assert!(set_launcher_client_dirs(
+            "{\"clientDir\": \"Z:\\\\x\\u12zz\", \"activeClientDir\": \"Z:\\\\x\"}",
+            "Z:\\new",
+            "Z:\\x",
+            Some("Z:\\x"),
+        )
+        .is_err());
+        // Non-object document fails closed.
+        assert!(set_launcher_client_dirs("[\"clientDir\"]", "Z:\\new", "Z:\\old", None).is_err());
+        // Trailing data fails closed.
+        assert!(set_launcher_client_dirs(
+            "{\"clientDir\": \"Z:\\\\old\", \"activeClientDir\": \"Z:\\\\old\"} trailing",
+            "Z:\\new",
+            "Z:\\old",
+            Some("Z:\\old"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn launcher_settings_edit_defers_foreign_active_dir() {
+        // activeClientDir tracks another folder's sync state: clientDir
+        // still follows the root, but the foreign value is reported, never
+        // reassigned.
+        let before = "{\n  \"clientDir\": \"Z:\\\\old\",\n  \"activeClientDir\": \"Z:\\\\elsewhere\"\n}\n";
+        let (after, changed, note) =
+            set_launcher_client_dirs(before, "Z:\\new", "Z:\\old", Some("Z:\\elsewhere")).unwrap();
+        assert!(changed);
+        assert!(after.contains("\"clientDir\": \"Z:\\\\new\""));
+        assert!(after.contains("\"activeClientDir\": \"Z:\\\\elsewhere\""));
+        assert_eq!(
+            note.as_deref(),
+            Some("activeClientDir tracks 'Z:\\elsewhere', not the declared client")
+        );
     }
 
     #[test]
@@ -4330,6 +4956,274 @@ mod tests {
                 .iter()
                 .all(|item| item.state == ItemState::Verified)
         );
+    }
+
+    #[test]
+    fn apply_registers_entry_with_missing_hd_payloads() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        require_sqlite();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        wineboot_home(&home, "wine-ge-9-2");
+        lutris_home(home.path());
+        let mut instance = apply_fixture(&root, home.path());
+        // A second HD letter with no payload: registration must not wait
+        // for HD maintenance, while the absence stays visible.
+        instance
+            .wiring
+            .as_mut()
+            .unwrap()
+            .data_patches
+            .as_mut()
+            .unwrap()
+            .native_letters
+            .push("B".into());
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        // The vanilla entry is registered...
+        assert!(home
+            .path()
+            .join(".config/lutris/games/octowow-test.yml")
+            .is_file());
+        assert!(db_dump(home.path()).contains("octowow-test|"));
+        // ...the HD absence stays visible and journaled as deferred...
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.name == "hd-patch:B")
+                .unwrap()
+                .state,
+            ItemState::Missing
+        );
+        let journal =
+            fs::read_to_string(_envelope.path().join("octo-manager/wiring-journal.jsonl")).unwrap();
+        assert!(journal.contains("apply-done") && journal.contains("hd-patch:B"));
+        // ...and a repeat apply is still a full no-op.
+        let before_home = snapshot_tree(home.path());
+        let before_game = snapshot_tree(_envelope.path());
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        assert_eq!(snapshot_tree(home.path()), before_home);
+        assert_eq!(snapshot_tree(_envelope.path()), before_game);
+    }
+
+    /// Fake wine that answers wineboot like `wineboot_home` and otherwise
+    /// logs argv, working directory, and Wine environment, then exits 0.
+    fn logging_wine(home: &tempfile::TempDir, version: &str, log: &Path) {
+        let bin = home
+            .path()
+            .join(format!(".local/share/lutris/runners/wine/{version}/bin"));
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(
+            bin.join("wine"),
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = \"wineboot\" ]; then printf '#arch=win64\\n' > \"$WINEPREFIX/system.reg\"; exit 0; fi\n{{ printf 'pwd=%s\\n' \"$PWD\"; printf 'arg=%s\\n' \"$@\"; printenv | grep -E '^(WINE|WINEDLLO)' | sort; }} >> \"{}\" 2>/dev/null || true\n",
+                log.display(),
+            ),
+        )
+        .unwrap();
+        fs::write(bin.join("wineserver"), "#!/bin/sh\nexit 0\n").unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for binary in ["wine", "wineserver"] {
+                fs::set_permissions(bin.join(binary), fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn launch_env_mirrors_lutris_render_rules() {
+        let (_envelope, root) = fixture_root();
+        let instance = fixture_instance(&root);
+        let wiring = resolve_wiring(&instance).unwrap();
+        let prefix = root.parent().unwrap().join("octowow-prefix");
+        let (_, set) = resolve_launch_env(&wiring, &prefix, &wiring.dll_overrides);
+        let map: std::collections::BTreeMap<String, String> = set
+            .into_iter()
+            .map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))
+            .collect();
+        assert_eq!(map["WINEPREFIX"], prefix.display().to_string());
+        assert_eq!(map["WINEDEBUG"], "-all");
+        assert_eq!(map["WINEDLLOVERRIDES"], "d3d9=n,b");
+        // Structural keys win over tunings; the typed overrides win over
+        // the extra_env impostor; other tunings pass through.
+        let mut tuned = wiring.clone();
+        tuned.tunings.env.insert("WINEPREFIX".into(), "/evil".into());
+        tuned.tunings.env.insert("WINEDEBUG".into(), "+relay".into());
+        tuned
+            .tunings
+            .env
+            .insert("WINEDLLOVERRIDES".into(), "d3d11=n".into());
+        tuned.tunings.env.insert("FOO".into(), "bar".into());
+        let (_, set) = resolve_launch_env(&tuned, &prefix, &[]);
+        let map: std::collections::BTreeMap<String, String> = set
+            .into_iter()
+            .map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))
+            .collect();
+        assert_eq!(map["WINEPREFIX"], prefix.display().to_string());
+        assert_eq!(map["WINEDEBUG"], "+relay");
+        assert!(!map.contains_key("WINEDLLOVERRIDES"));
+        assert_eq!(map["FOO"], "bar");
+    }
+
+    #[test]
+    fn prepare_needs_no_lutris_database() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        // Deliberately no lutris_home: no pga.db anywhere.
+        let home = tempfile::tempdir().unwrap();
+        let log = home.path().join("wine.log");
+        logging_wine(&home, "wine-ge-9-2", &log);
+        let instance = apply_fixture(&root, home.path());
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        // Prefix created, runner recorded, Lutris never touched.
+        assert!(_envelope.path().join("octowow-prefix/system.reg").is_file());
+        let record: serde_json::Value = serde_json::from_slice(
+            &fs::read(_envelope.path().join("octo-manager/wiring-runtime.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record["version"], "wine-ge-9-2");
+        assert!(!home.path().join(".local/share/lutris/pga.db").exists());
+        assert!(!home.path().join(".config/lutris").exists());
+        // Repeat prepare is a full no-op.
+        let before_home = snapshot_tree(home.path());
+        let before_game = snapshot_tree(_envelope.path());
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        assert_eq!(snapshot_tree(home.path()), before_home);
+        assert_eq!(snapshot_tree(_envelope.path()), before_game);
+    }
+
+    #[test]
+    fn launch_runs_game_with_declared_environment() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        let log = home.path().join("wine.log");
+        logging_wine(&home, "wine-ge-9-2", &log);
+        let instance = apply_fixture(&root, home.path());
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        launch("test", &instance, &dirs(&home), NativeTarget::Game, LaunchMode::Vanilla).unwrap();
+        let logged = fs::read_to_string(&log).unwrap();
+        let prefix = root.parent().unwrap().join("octowow-prefix");
+        assert!(logged.contains(&format!("pwd={}", root.display())));
+        assert!(logged.contains(&format!("arg={}", root.join("VanillaFixes.exe").display())));
+        assert!(logged.contains(&format!("WINEPREFIX={}", prefix.display())));
+        assert!(logged.contains("WINEDEBUG=-all"));
+        assert!(logged.contains("WINEDLLOVERRIDES=d3d9=n,b"));
+    }
+
+    #[test]
+    fn launch_requires_preparation_first() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        logging_wine(&home, "wine-ge-9-2", &home.path().join("wine.log"));
+        let instance = apply_fixture(&root, home.path());
+        // No prepare ran: no recorded runner, no prefix.
+        let err = launch(
+            "test",
+            &instance,
+            &dirs(&home),
+            NativeTarget::Game,
+            LaunchMode::Vanilla,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("prepare first"),
+            "unexpected: {err:#}"
+        );
+    }
+
+    #[test]
+    fn launch_hd_mode_requires_patches_but_vanilla_does_not() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        logging_wine(&home, "wine-ge-9-2", &home.path().join("wine.log"));
+        let instance = apply_fixture(&root, home.path());
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        // patch-A.mpq is present in the fixture: HD launches.
+        launch("test", &instance, &dirs(&home), NativeTarget::Game, LaunchMode::Hd).unwrap();
+        // Without the payload, HD fails closed while vanilla still runs.
+        fs::remove_file(root.join("Data/patch-A.mpq")).unwrap();
+        let err = launch("test", &instance, &dirs(&home), NativeTarget::Game, LaunchMode::Hd)
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("HD not ready") && format!("{err:#}").contains("hd-patch:A"),
+            "unexpected: {err:#}"
+        );
+        launch(
+            "test",
+            &instance,
+            &dirs(&home),
+            NativeTarget::Game,
+            LaunchMode::Vanilla,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn launch_missing_executable_fails_before_exec() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        logging_wine(&home, "wine-ge-9-2", &home.path().join("wine.log"));
+        let instance = apply_fixture(&root, home.path());
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        fs::remove_file(root.join("VanillaFixes.exe")).unwrap();
+        let err = launch(
+            "test",
+            &instance,
+            &dirs(&home),
+            NativeTarget::Game,
+            LaunchMode::Vanilla,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("missing"),
+            "unexpected: {err:#}"
+        );
+    }
+
+    #[test]
+    fn resolve_launch_target_separates_installer_and_launcher() {
+        let (_envelope, root) = fixture_root();
+        let home = fixture_home(&["wine-ge-9-2"]);
+        let instance = launcher_fixture(&root, None, true, true);
+        let wiring = resolve_wiring(&instance).unwrap();
+        // The fixture prefix exists (win64 marker), so both resolve.
+        let installer = resolve_launch_target(&instance, &wiring, NativeTarget::Installer).unwrap();
+        let installer_path = root.parent().unwrap().join("OctoLauncher_Installer.exe");
+        assert_eq!(installer.exe, installer_path);
+        assert_eq!(installer.dir, root.parent().unwrap().to_path_buf());
+        assert!(installer.dll_overrides.is_empty());
+        let launcher = resolve_launch_target(&instance, &wiring, NativeTarget::Launcher).unwrap();
+        let exe = wiring.launcher.as_ref().unwrap().executable.clone().unwrap();
+        assert_eq!(launcher.exe, exe);
+        assert_eq!(launcher.dir, exe.parent().unwrap().to_path_buf());
+        assert!(launcher.dll_overrides.is_empty());
+    }
+
+    #[test]
+    fn desktop_entry_writes_and_verifies() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        let instance = fixture_instance(&root);
+        desktop_entry("test", &instance, &dirs(&home)).unwrap();
+        let target = home
+            .path()
+            .join(".local/share/applications/octowow-test-modde.desktop");
+        let body = fs::read_to_string(&target).unwrap();
+        assert!(body.contains("[Desktop Entry]"));
+        assert!(body.contains("Name=OctoWoW"));
+        assert!(body.contains("onboard launch --instance test --target game"));
+        // Repeat is a full no-op.
+        let before_home = snapshot_tree(home.path());
+        let before_game = snapshot_tree(_envelope.path());
+        desktop_entry("test", &instance, &dirs(&home)).unwrap();
+        assert_eq!(fs::read(&target).unwrap().as_slice(), body.as_bytes());
+        assert_eq!(snapshot_tree(home.path()), before_home);
+        assert_eq!(snapshot_tree(_envelope.path()), before_game);
     }
 
     #[test]

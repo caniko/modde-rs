@@ -63,7 +63,7 @@ enum CommandKind {
         #[arg(long)]
         expected_manifest_sha256: Option<String>,
     },
-    /// Declarative runtime onboarding (Wine prefix, Lutris entry).
+    /// Declarative runtime onboarding (Wine prefix, Lutris entry, native launch).
     Onboard {
         #[command(subcommand)]
         action: OnboardAction,
@@ -110,6 +110,49 @@ enum OnboardAction {
         #[arg(long)]
         adopt: bool,
     },
+    /// Resolve/record the runner and ensure the game prefix. No Lutris
+    /// writes of any kind — the native path works with Lutris absent.
+    Prepare {
+        #[arg(long)]
+        instance: String,
+        /// Re-resolve the runner even when a selection is recorded.
+        #[arg(long)]
+        reselect: bool,
+    },
+    /// Launch natively without Lutris and wait for exit. Never installs,
+    /// updates, reconciles, records, or falls back — failures surface.
+    Launch {
+        #[arg(long)]
+        instance: String,
+        #[arg(long, value_enum)]
+        target: NativeTargetArg,
+        /// Vanilla runs the declared client as-is; HD requires the full
+        /// HD set verified first.
+        #[arg(long, value_enum, default_value = "vanilla")]
+        mode: LaunchModeArg,
+    },
+    /// Write the desktop entry invoking the native game launch. The Lutris
+    /// entries are untouched.
+    DesktopEntry {
+        #[arg(long)]
+        instance: String,
+    },
+}
+
+/// Native launch target: the game, the installed maintenance launcher, or
+/// the installer as an explicit bootstrap operation.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum NativeTargetArg {
+    Game,
+    Launcher,
+    Installer,
+}
+
+/// Launch mode: vanilla never waits for HD; HD requires it verified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum LaunchModeArg {
+    Vanilla,
+    Hd,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -386,6 +429,44 @@ fn main() -> Result<()> {
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
                     wiring::register_launcher(&instance, instance_config, &dirs, adopt)
+                }
+                OnboardAction::Prepare { instance, reselect } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    wiring::prepare_native(&instance, instance_config, &dirs, reselect)
+                }
+                OnboardAction::Launch {
+                    instance,
+                    target,
+                    mode,
+                } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    wiring::launch(
+                        &instance,
+                        instance_config,
+                        &dirs,
+                        match target {
+                            NativeTargetArg::Game => wiring::NativeTarget::Game,
+                            NativeTargetArg::Launcher => wiring::NativeTarget::Launcher,
+                            NativeTargetArg::Installer => wiring::NativeTarget::Installer,
+                        },
+                        match mode {
+                            LaunchModeArg::Vanilla => wiring::LaunchMode::Vanilla,
+                            LaunchModeArg::Hd => wiring::LaunchMode::Hd,
+                        },
+                    )
+                }
+                OnboardAction::DesktopEntry { instance } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    wiring::desktop_entry(&instance, instance_config, &dirs)
                 }
             }
         }
