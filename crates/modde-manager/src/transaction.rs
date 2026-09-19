@@ -470,6 +470,137 @@ fn repository(addon: &AddonRepo) -> String {
         .unwrap_or_else(|| format!("https://github.com/Ascension-Addons/{}.git", addon.id))
 }
 
+/// One entry of the compiled-in addon catalog (`addons.json`): the GitHub
+/// repository, the branch to follow, and the reviewed commit hash that is
+/// the source of the addon. `follow: false` marks a pin-only entry whose
+/// origin is gone — importable from a matching local checkout, never
+/// updated.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogEntry {
+    id: String,
+    repository: String,
+    branch: String,
+    revision: String,
+    #[serde(default)]
+    directories: Vec<AddonDirectory>,
+    follow: bool,
+}
+
+/// Parse and validate the compiled-in catalog. Fails closed on duplicate
+/// ids, non-HTTPS or non-GitHub repositories, malformed revisions, empty
+/// branches, and entries with no directory mapping.
+pub fn addon_catalog() -> Result<BTreeMap<String, CatalogEntry>> {
+    #[derive(Deserialize)]
+    struct Catalog {
+        version: u32,
+        addons: Vec<CatalogEntry>,
+    }
+    let catalog: Catalog = serde_json::from_str(include_str!("../addons.json"))
+        .context("parse compiled-in addon catalog")?;
+    if catalog.version != 1 {
+        bail!("unsupported addon catalog version: {}", catalog.version);
+    }
+    validate_catalog(catalog.addons)
+}
+
+fn validate_catalog(addons: Vec<CatalogEntry>) -> Result<BTreeMap<String, CatalogEntry>> {
+    let mut map = BTreeMap::new();
+    for entry in addons {
+        if entry.id.is_empty() {
+            bail!("addon catalog has an empty id");
+        }
+        if !entry.repository.starts_with("https://github.com/") {
+            bail!("addon catalog entry '{}' is not an https GitHub URL", entry.id);
+        }
+        if entry.branch.is_empty() {
+            bail!("addon catalog entry '{}' has no branch", entry.id);
+        }
+        if entry.revision.len() != 40
+            || !entry.revision.bytes().all(|c| c.is_ascii_hexdigit())
+        {
+            bail!("addon catalog entry '{}' has no full commit SHA-1", entry.id);
+        }
+        if entry.directories.is_empty() {
+            bail!("addon catalog entry '{}' has no directory mapping", entry.id);
+        }
+        if map.insert(entry.id.clone(), entry).is_some() {
+            bail!("duplicate addon catalog id");
+        }
+    }
+    Ok(map)
+}
+
+/// Resolve instance addon references against the catalog. Instance fields
+/// win when set; an empty branch and empty directories inherit the catalog
+/// entry, while repository/revision fall back only when absent. Addons
+/// unknown to the catalog pass through only with a complete inline
+/// descriptor (repository required) — otherwise resolution fails closed
+/// instead of guessing an origin.
+pub fn resolve_addons(addons: &[AddonRepo]) -> Result<Vec<AddonRepo>> {
+    let catalog = addon_catalog()?;
+    addons
+        .iter()
+        .map(|addon| {
+            let entry = catalog.get(&addon.id);
+            let repository = addon
+                .repository
+                .clone()
+                .or_else(|| entry.map(|entry| entry.repository.clone()));
+            let repository = repository.with_context(|| {
+                format!(
+                    "addon '{}' is not in the catalog and declares no repository",
+                    addon.id
+                )
+            })?;
+            let branch = if addon.branch.is_empty() {
+                entry.map(|entry| entry.branch.clone())
+            } else {
+                Some(addon.branch.clone())
+            }
+            .with_context(|| {
+                format!(
+                    "addon '{}' is not in the catalog and declares no branch",
+                    addon.id
+                )
+            })?;
+            let revision = addon
+                .revision
+                .clone()
+                .or_else(|| entry.map(|entry| entry.revision.clone()));
+            let directories = if addon.directories.is_empty() {
+                entry.map(|entry| entry.directories.clone())
+            } else {
+                Some(addon.directories.clone())
+            }
+            .with_context(|| {
+                format!(
+                    "addon '{}' is not in the catalog and declares no directories",
+                    addon.id
+                )
+            })?;
+            Ok(AddonRepo {
+                id: addon.id.clone(),
+                branch,
+                repository: Some(repository),
+                directories,
+                local_source: addon.local_source.clone(),
+                revision,
+            })
+        })
+        .collect()
+}
+
+/// Whether `update` follows an addon (fetches its branch) or leaves the
+/// pin alone. Unknown ids default to following: a complete inline
+/// descriptor is self-sufficient for update.
+pub fn addon_follow(id: &str) -> Result<bool> {
+    Ok(addon_catalog()?
+        .get(id)
+        .map(|entry| entry.follow)
+        .unwrap_or(true))
+}
+
 fn digest_image(image: &Image) -> Result<String> {
     Ok(hex(&Sha256::digest(serde_json::to_vec(image)?)))
 }
@@ -948,6 +1079,129 @@ mod tests {
             revision: Some(commit),
         });
         (dir, instance, repo)
+    }
+
+    fn catalog_entry(id: &str) -> CatalogEntry {
+        CatalogEntry {
+            id: id.into(),
+            repository: "https://github.com/example/addon.git".into(),
+            branch: "master".into(),
+            revision: "0".repeat(40),
+            directories: vec![AddonDirectory {
+                source: ".".into(),
+                target: id.into(),
+            }],
+            follow: true,
+        }
+    }
+
+    #[test]
+    fn addon_catalog_lists_reviewed_registrations() {
+        let catalog = addon_catalog().unwrap();
+        assert_eq!(catalog.len(), 17);
+        let pfui = &catalog["pfUI"];
+        assert_eq!(pfui.repository, "https://github.com/shagu/pfUI.git");
+        assert_eq!(pfui.branch, "master");
+        assert_eq!(
+            pfui.revision,
+            "b2f6df84a93a4ce6adbe1fd8f0372454795151f1"
+        );
+        assert!(pfui.follow);
+        // Pin-only entries (dead origins) never fetch.
+        assert!(!catalog["aux-addon"].follow);
+        assert!(!catalog["_LazyPig"].follow);
+        assert!(!catalog["CleveRoidMacros"].follow);
+        // Branch carries the line in use, not a stale default.
+        assert_eq!(catalog["BetterCharacterStats"].branch, "main");
+        assert_eq!(
+            catalog["pfUI-Gryphons"].repository,
+            "https://github.com/Macumbafeh/pfUI-Gryphons.git"
+        );
+    }
+
+    #[test]
+    fn addon_catalog_validation_fails_closed() {
+        // Duplicate ids.
+        let mut dup = vec![catalog_entry("A"), catalog_entry("A")];
+        assert!(validate_catalog(std::mem::take(&mut dup)).is_err());
+        // Non-HTTPS repository.
+        let mut entry = catalog_entry("A");
+        entry.repository = "git@github.com:example/addon.git".into();
+        assert!(validate_catalog(vec![entry]).is_err());
+        // Non-GitHub repository.
+        let mut entry = catalog_entry("A");
+        entry.repository = "https://example.invalid/addon.git".into();
+        assert!(validate_catalog(vec![entry]).is_err());
+        // Short revision.
+        let mut entry = catalog_entry("A");
+        entry.revision = "abc123".into();
+        assert!(validate_catalog(vec![entry]).is_err());
+        // Empty branch and missing directories.
+        let mut entry = catalog_entry("A");
+        entry.branch.clear();
+        assert!(validate_catalog(vec![entry]).is_err());
+        let mut entry = catalog_entry("A");
+        entry.directories.clear();
+        assert!(validate_catalog(vec![entry]).is_err());
+    }
+
+    fn addon_ref(id: &str) -> AddonRepo {
+        AddonRepo {
+            id: id.into(),
+            branch: String::new(),
+            repository: None,
+            directories: Vec::new(),
+            local_source: None,
+            revision: None,
+        }
+    }
+
+    #[test]
+    fn resolve_addons_merges_catalog_and_overrides() {
+        // Bare id inherits the whole catalog entry.
+        let resolved = resolve_addons(&[addon_ref("pfUI")]).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].branch, "master");
+        assert_eq!(
+            resolved[0].repository.as_deref(),
+            Some("https://github.com/shagu/pfUI.git")
+        );
+        assert_eq!(
+            resolved[0].revision.as_deref(),
+            Some("b2f6df84a93a4ce6adbe1fd8f0372454795151f1")
+        );
+        assert_eq!(resolved[0].directories.len(), 1);
+        // Explicit fields win (fork trials outside the catalog).
+        let mut trial = addon_ref("pfUI");
+        trial.branch = "dev".into();
+        trial.repository = Some("https://example.invalid/fork.git".into());
+        trial.revision = Some("1".repeat(40));
+        let resolved = resolve_addons(&[trial]).unwrap();
+        assert_eq!(resolved[0].branch, "dev");
+        assert_eq!(
+            resolved[0].repository.as_deref(),
+            Some("https://example.invalid/fork.git")
+        );
+        // Unknown ids pass through only with a complete inline descriptor.
+        let mut inline = addon_ref("Custom");
+        inline.branch = "master".into();
+        inline.repository = Some("https://example.invalid/custom.git".into());
+        inline.revision = Some("2".repeat(40));
+        inline.directories = vec![AddonDirectory {
+            source: ".".into(),
+            target: "Custom".into(),
+        }];
+        let resolved = resolve_addons(&[inline]).unwrap();
+        assert_eq!(resolved[0].branch, "master");
+        // Unknown ids without a repository fail closed (no guessing origins).
+        assert!(resolve_addons(&[addon_ref("Custom")]).is_err());
+    }
+
+    #[test]
+    fn addon_follow_defaults_to_following() {
+        assert!(addon_follow("pfUI").unwrap());
+        assert!(!addon_follow("aux-addon").unwrap());
+        assert!(addon_follow("not-in-catalog").unwrap());
     }
 
     #[test]

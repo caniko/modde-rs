@@ -204,11 +204,17 @@ fn default_client_kind() -> String {
     "wow-wotlk".to_owned()
 }
 
+/// Addon reference: the id selects a compiled-in catalog entry holding
+/// the GitHub repository, followed branch, and reviewed commit hash;
+/// every other field set here overrides the catalog entry for trials
+/// outside it. Schema 4 advertises this registration paradigm.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AddonRepo {
     id: String,
-    #[serde(default = "default_branch")]
+    /// Branch to follow. Empty inherits the catalog entry; an explicit
+    /// value always wins (used for fork trials outside the catalog).
+    #[serde(default)]
     branch: String,
     /// Git repository containing the addon. Ascension's repositories default
     /// to the official GitHub organisation, while compatibility addons may be
@@ -230,8 +236,20 @@ struct SeedTree {
     destination: PathBuf,
 }
 
-fn default_branch() -> String {
-    "main".to_owned()
+/// Resolve every instance's addon references against the compiled-in
+/// catalog before any flow runs, so validation and all downstream code
+/// only ever see complete descriptors (unknown ids with full inline
+/// descriptors pass through for trials outside the catalog).
+fn resolve_config(config: &Config) -> Result<Config> {
+    let mut resolved = config.clone();
+    for (name, instance) in &config.instances {
+        let addons = transaction::resolve_addons(&instance.addons)
+            .with_context(|| format!("resolve addons for '{name}'"))?;
+        if let Some(target) = resolved.instances.get_mut(name) {
+            target.addons = addons;
+        }
+    }
+    Ok(resolved)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -322,6 +340,7 @@ fn main() -> Result<()> {
             config.version
         );
     }
+    let config = resolve_config(&config)?;
     match cli.command {
         CommandKind::Check { json } => check_all(&config, json),
         CommandKind::Plan { json } => plan_all(&config, json),
@@ -694,6 +713,12 @@ fn update_all(config: &Config) -> Result<()> {
         validate_instance(name, instance)?;
         let mut lock = read_lock(instance)?;
         for addon in &instance.addons {
+            // Pin-only catalog entries (dead origins) are never fetched:
+            // the reviewed pin stands until the catalog adopts a live home.
+            if !transaction::addon_follow(&addon.id)? {
+                println!("{name}: {} pinned (no live origin to follow)", addon.id);
+                continue;
+            }
             let checkout = ensure_checkout(
                 instance,
                 &addon.id,
@@ -1044,6 +1069,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn update_skips_pin_only_catalog_entries_without_network() {
+        // aux-addon's origin is gone: update must notice the pin, fetch
+        // nothing, and still write the (unchanged) lock.
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Interface/AddOns")).unwrap();
+        fs::create_dir_all(dir.path().join("state")).unwrap();
+        let mut instance: Instance = serde_json::from_value(serde_json::json!({
+            "root": dir.path(), "client": "wow-classic",
+            "lock_file": dir.path().join("state/addons.lock.json"),
+            "state_dir": dir.path().join("state"),
+            "addons": [{"id": "aux-addon"}]
+        }))
+        .unwrap();
+        // Same resolution main() applies before dispatch.
+        instance.addons = transaction::resolve_addons(&instance.addons).unwrap();
+        let config = Config {
+            version: 1,
+            instances: BTreeMap::from([("test".into(), instance)]),
+        };
+        update_all(&config).unwrap();
+        let lock: LockFile = serde_json::from_slice(
+            &fs::read(dir.path().join("state/addons.lock.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(lock.repositories.is_empty());
+    }
+
+    #[test]
     fn preflight_rejects_final_entry_before_any_write() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("Interface/AddOns")).unwrap();
@@ -1153,7 +1206,7 @@ mod tests {
         fs::create_dir_all(dir.path().join("Interface/AddOns")).unwrap();
         let instance: Instance = serde_json::from_value(serde_json::json!({
             "root": dir.path(), "client": "wow-classic",
-            "addons": [{"id": "Example", "repository": "https://example.org/addon.git",
+            "addons": [{"id": "Example", "branch": "master", "repository": "https://example.org/addon.git",
                 "directories": [{"source": ".", "target": "Example"}]}]
         }))
         .unwrap();

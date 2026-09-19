@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "addons": [
+    {
+      "id": "ActionBarProfiles",
+      "repository": "https://github.com/Siventt/ActionBarProfiles.git",
+      "branch": "master",
+      "revision": "b62477f279799808cdfa7398967c43437cff762d",
+      "directories": [{ "source": ".", "target": "ActionBarProfiles" }],
+      "follow": true
+    },
+    {
+      "id": "AtlasLoot",
+      "repository": "https://github.com/Otari98/AtlasLoot",
+      "branch": "main",
+      "revision": "3c229608cad0a8b7f46e2746d6a10d938b6c9003",
+      "directories": [{ "source": ".", "target": "AtlasLoot" }],
+      "follow": true
+    },
+    {
+      "id": "aux-addon",
+      "repository": "https://github.com/gwetchen/aux-addon.git",
+      "branch": "master",
+      "revision": "247504303924edc5d6ae6730f8ad10d719f20c3e",
+      "directories": [{ "source": ".", "target": "aux-addon" }],
+      "follow": false
+    },
+    {
+      "id": "BetterCharacterStats",
+      "repository": "https://github.com/pepopo978/BetterCharacterStats.git",
+      "branch": "main",
+      "revision": "4db2142180b5c9a0fbc36c6e28ba9515aec652f3",
+      "directories": [{ "source": ".", "target": "BetterCharacterStats" }],
+      "follow": true
+    },
+    {
+      "id": "BigWigs",
+      "repository": "https://github.com/pepopo978/BigWigs.git",
+      "branch": "master",
+      "revision": "e53a09a4e86170a1a29178f8500e601bdd58e9ce",
+      "directories": [{ "source": ".", "target": "BigWigs" }],
+      "follow": true
+    },
+    {
+      "id": "Cartographer",
+      "repository": "https://github.com/54ac/Cartographer",
+      "branch": "master",
+      "revision": "381d657d3230fbcd50f2acf35e37b3ab3ef75501",
+      "directories": [{ "source": ".", "target": "Cartographer" }],
+      "follow": true
+    },
+    {
+      "id": "CleveRoidMacros",
+      "repository": "https://github.com/jrc13245/CleveRoidMacros.git",
+      "branch": "main",
+      "revision": "25164d1f8937b63a8e80a00efaeb542e56bbb004",
+      "directories": [{ "source": ".", "target": "CleveRoidMacros" }],
+      "follow": false
+    },
+    {
+      "id": "_LazyPig",
+      "repository": "https://github.com/Lexiebean/_LazyPig.git",
+      "branch": "master",
+      "revision": "1d00807f5b5287ef9dde7e7fb139524ed0a8170d",
+      "directories": [{ "source": ".", "target": "_LazyPig" }],
+      "follow": false
+    },
+    {
+      "id": "ModernMapMarkers",
+      "repository": "https://github.com/tilare/ModernMapMarkers.git",
+      "branch": "main",
+      "revision": "5311be6a24979d4119ed59e9f48f90beb41ecfb4",
+      "directories": [{ "source": ".", "target": "ModernMapMarkers" }],
+      "follow": true
+    },
+    {
+      "id": "Outfitter",
+      "repository": "https://github.com/pepopo978/Outfitter",
+      "branch": "master",
+      "revision": "9e8d2c6101280c995118f2195374ffbd8dbcf283",
+      "directories": [{ "source": ".", "target": "Outfitter" }],
+      "follow": true
+    },
+    {
+      "id": "pfQuest",
+      "repository": "https://github.com/shagu/pfQuest.git",
+      "branch": "master",
+      "revision": "104f35678ca39ab1fb78b655f815cc7016f5e0c8",
+      "directories": [{ "source": ".", "target": "pfQuest" }],
+      "follow": true
+    },
+    {
+      "id": "pfUI",
+      "repository": "https://github.com/shagu/pfUI.git",
+      "branch": "master",
+      "revision": "b2f6df84a93a4ce6adbe1fd8f0372454795151f1",
+      "directories": [{ "source": ".", "target": "pfUI" }],
+      "follow": true
+    },
+    {
+      "id": "pfUI-eliteoverlay",
+      "repository": "https://github.com/shagu/pfUI-eliteoverlay.git",
+      "branch": "master",
+      "revision": "aca68921e9b08139bf48e7762a46e737b9cf0ba0",
+      "directories": [{ "source": ".", "target": "pfUI-eliteoverlay" }],
+      "follow": true
+    },
+    {
+      "id": "pfUI-Gryphons",
+      "repository": "https://github.com/Macumbafeh/pfUI-Gryphons.git",
+      "branch": "master",
+      "revision": "9f7df4dc8d10cee5464e3ac6db0ce65973083b0b",
+      "directories": [{ "source": ".", "target": "pfUI-Gryphons" }],
+      "follow": true
+    },
+    {
+      "id": "SortBags",
+      "repository": "https://github.com/shirsig/SortBags-vanilla.git",
+      "branch": "master",
+      "revision": "1b59767ca41749e70d72f2991c27054beebcdfcd",
+      "directories": [{ "source": ".", "target": "SortBags" }],
+      "follow": true
+    },
+    {
+      "id": "TurtleMail",
+      "repository": "https://github.com/sica42/TurtleMail.git",
+      "branch": "master",
+      "revision": "322429e143db1f1f00afe0d1074678a844bf8c7c",
+      "directories": [{ "source": ".", "target": "TurtleMail" }],
+      "follow": true
+    },
+    {
+      "id": "TWThreat",
+      "repository": "https://github.com/MarcelineVQ/TWThreat.git",
+      "branch": "master",
+      "revision": "e1af6d03776233569a9d6dc75c3045e13f71e78f",
+      "directories": [{ "source": ".", "target": "TWThreat" }],
+      "follow": true
+    }
+  ]
+}
