@@ -726,6 +726,13 @@ fn update_all(config: &Config) -> Result<()> {
                 addon.repository.as_deref(),
             )?;
             let revision = git_output(&checkout, &["rev-parse", "HEAD"])?;
+            // A fetched HEAD identical to the reviewed declared revision is
+            // recorded without the recency gate: the pin itself is the
+            // review, and stable addons must not fail for being finished.
+            // Adopting any other revision keeps the gate.
+            if addon.revision.as_deref() != Some(revision.as_str()) {
+                assert_recent_checkout(&checkout, &addon.id)?;
+            }
             lock.repositories.insert(
                 addon.id.clone(),
                 LockedRepository {
@@ -897,7 +904,6 @@ fn ensure_checkout(
             bail!("git clone failed for {id}");
         }
     }
-    assert_recent_checkout(&path, id)?;
     Ok(path)
 }
 
