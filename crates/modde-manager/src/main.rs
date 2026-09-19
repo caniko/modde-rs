@@ -716,9 +716,13 @@ fn update_all(config: &Config) -> Result<()> {
             // Pin-only catalog entries (dead origins) are never fetched:
             // the reviewed pin stands until the catalog adopts a live
             // home. They still get a fully verified lock entry from the
-            // local source, so deployment never waits for them either.
+            // local source plus a materialized state checkout, so
+            // deployment never waits for them either.
             if !transaction::addon_follow(&addon.id)? {
-                let (_, locked) = transaction::reviewed_checkout(&addon)?;
+                let (image, locked) = transaction::reviewed_checkout(&addon)?;
+                let digest = locked.content_sha256.clone().context("reviewed checkout lacks a digest")?;
+                let checkout = checkout_path(instance, &addon.id);
+                transaction::materialize_checkout(&checkout, &image, &digest)?;
                 lock.repositories.insert(addon.id.clone(), locked);
                 println!("{name}: {} locked at pin (no live origin to follow)", addon.id);
                 continue;

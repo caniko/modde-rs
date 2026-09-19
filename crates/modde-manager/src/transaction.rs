@@ -845,6 +845,41 @@ fn insert_blob(image: &mut Image, path: &Path, bytes: Vec<u8>) -> Result<()> {
     Ok(())
 }
 
+/// Materialize a verified addon tree as the state checkout `prepare()`
+/// deploys from. Creates it (with parents) when absent and verifies the
+/// digest after writing; an existing tree must already match, otherwise
+/// this fails closed instead of replacing manager state out from under a
+/// concurrent run. Returns whether anything was written.
+pub(crate) fn materialize_checkout(
+    checkout: &Path,
+    image: &Image,
+    expected_digest: &str,
+) -> Result<bool> {
+    match fs::symlink_metadata(checkout) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Ok(_) => {
+            let current = source(checkout, true)?;
+            if digest_image(&current)? != expected_digest {
+                bail!(
+                    "state checkout changed underneath: {}",
+                    checkout.display()
+                );
+            }
+            return Ok(false);
+        }
+        Err(e) => return Err(e).context(format!("inspect {}", checkout.display())),
+    }
+    if let Some(parent) = checkout.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    files::write_image(checkout, image)?;
+    let written = source(checkout, true)?;
+    if digest_image(&written)? != expected_digest {
+        bail!("staged checkout verification failed: {}", checkout.display());
+    }
+    Ok(true)
+}
+
 pub(crate) fn reviewed_checkout(addon: &AddonRepo) -> Result<(Image, LockedRepository)> {
     let path = addon
         .local_source
@@ -1202,6 +1237,27 @@ mod tests {
         assert!(addon_follow("pfUI").unwrap());
         assert!(!addon_follow("aux-addon").unwrap());
         assert!(addon_follow("not-in-catalog").unwrap());
+    }
+
+    #[test]
+    fn materialize_checkout_writes_verifies_and_noops() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("repos/Aux");
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "aux-addon.toc".to_owned(),
+            Image::File(b"## Interface: 11200\n".to_vec()),
+        );
+        let image = Image::Directory(entries);
+        let digest = digest_image(&image).unwrap();
+        assert!(materialize_checkout(&target, &image, &digest).unwrap());
+        assert!(!materialize_checkout(&target, &image, &digest).unwrap());
+        // Divergent existing tree fails closed instead of replacing state.
+        fs::write(target.join("aux-addon.toc"), b"changed").unwrap();
+        assert!(materialize_checkout(&target, &image, &digest).is_err());
+        // Wrong digest fails the write-time verification.
+        let other = dir.path().join("repos/Aux2");
+        assert!(materialize_checkout(&other, &image, "0").is_err());
     }
 
     #[test]
