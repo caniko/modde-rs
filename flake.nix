@@ -18,7 +18,7 @@
     };
 
     simit = {
-      url = "git+https://github.com/caniko/simit?ref=refs/tags/0.17.10";
+      url = "git+https://github.com/caniko/simit?ref=refs/tags/0.17.15";
       inputs.nixpkgs.follows = "harbor-rs/nixpkgs";
       inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
       inputs.crane.follows = "harbor-rs/crane";
