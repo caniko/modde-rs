@@ -714,9 +714,13 @@ fn update_all(config: &Config) -> Result<()> {
         let mut lock = read_lock(instance)?;
         for addon in &instance.addons {
             // Pin-only catalog entries (dead origins) are never fetched:
-            // the reviewed pin stands until the catalog adopts a live home.
+            // the reviewed pin stands until the catalog adopts a live
+            // home. They still get a fully verified lock entry from the
+            // local source, so deployment never waits for them either.
             if !transaction::addon_follow(&addon.id)? {
-                println!("{name}: {} pinned (no live origin to follow)", addon.id);
+                let (_, locked) = transaction::reviewed_checkout(&addon)?;
+                lock.repositories.insert(addon.id.clone(), locked);
+                println!("{name}: {} locked at pin (no live origin to follow)", addon.id);
                 continue;
             }
             let checkout = ensure_checkout(
@@ -1075,9 +1079,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn update_skips_pin_only_catalog_entries_without_network() {
-        // aux-addon's origin is gone: update must notice the pin, fetch
-        // nothing, and still write the (unchanged) lock.
+    fn update_skips_fetch_for_pin_only_catalog_entries() {
+        // aux-addon's origin is gone: update must never fetch it. Without
+        // a local source it fails closed instead of writing a guess.
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("Interface/AddOns")).unwrap();
         fs::create_dir_all(dir.path().join("state")).unwrap();
@@ -1094,12 +1098,12 @@ mod tests {
             version: 1,
             instances: BTreeMap::from([("test".into(), instance)]),
         };
-        update_all(&config).unwrap();
-        let lock: LockFile = serde_json::from_slice(
-            &fs::read(dir.path().join("state/addons.lock.json")).unwrap(),
-        )
-        .unwrap();
-        assert!(lock.repositories.is_empty());
+        let err = update_all(&config).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("local_source"),
+            "unexpected: {err:#}"
+        );
+        assert!(!dir.path().join("state/addons.lock.json").exists());
     }
 
     #[test]

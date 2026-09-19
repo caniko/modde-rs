@@ -845,7 +845,7 @@ fn insert_blob(image: &mut Image, path: &Path, bytes: Vec<u8>) -> Result<()> {
     Ok(())
 }
 
-fn reviewed_checkout(addon: &AddonRepo) -> Result<(Image, LockedRepository)> {
+pub(crate) fn reviewed_checkout(addon: &AddonRepo) -> Result<(Image, LockedRepository)> {
     let path = addon
         .local_source
         .as_ref()
