@@ -4090,10 +4090,12 @@ mod tests {
         HomeDirs::isolated(home.path().to_owned())
     }
 
-    /// Full state capture (names, device, inode, mode, mtime, bytes) for
-    /// no-write proofs: replacing a file with identical content still
-    /// changes identity or timestamps and fails the comparison.
-    fn snapshot_tree(root: &Path) -> Vec<(PathBuf, u64, u64, u32, i64, Option<Vec<u8>>)> {
+    /// Full state capture (names, device, inode, mode, mtime with
+    /// nanosecond precision, bytes) for observable-state comparisons: an
+    /// unexpected write changes identity, timestamps, or bytes and fails
+    /// the comparison. Matching snapshots establish unchanged captured
+    /// state, not proof that no write occurred.
+    fn snapshot_tree(root: &Path) -> Vec<(PathBuf, u64, u64, u32, i64, i64, Option<Vec<u8>>)> {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let mut out = Vec::new();
         let mut stack = vec![root.to_owned()];
@@ -4115,6 +4117,7 @@ mod tests {
                     meta.ino(),
                     meta.permissions().mode(),
                     meta.mtime(),
+                    meta.mtime_nsec(),
                     bytes,
                 ));
             }
@@ -5001,7 +5004,26 @@ mod tests {
         assert_eq!(fs::read(&yml_path).unwrap(), yml_before);
         assert_eq!(db_dump(home.path()), dump_before);
         assert_eq!(snapshot_tree(_envelope.path()), before_game);
-        assert_eq!(snapshot_tree(home.path()), before_home);
+        // sqlite's WAL bookkeeping touches the database directory on every
+        // new connection — including the status reads inside apply and this
+        // test's own db_dump — while every entry and byte stays identical.
+        // Compare the full snapshot (nanosecond timestamps included) but
+        // ignore that one directory's own mtime, so the observable-state
+        // comparison tracks managed state rather than sqlite's lifecycle.
+        let db_dir = db.parent().unwrap().to_owned();
+        let stable = |tree: Vec<(PathBuf, u64, u64, u32, i64, i64, Option<Vec<u8>>)>| {
+            tree.into_iter()
+                .map(|(path, dev, ino, mode, mtime, mtime_nsec, bytes)| {
+                    let timestamp = if path == db_dir {
+                        (0, 0)
+                    } else {
+                        (mtime, mtime_nsec)
+                    };
+                    (path, dev, ino, mode, timestamp, bytes)
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(stable(snapshot_tree(home.path())), stable(before_home));
         let record: serde_json::Value = serde_json::from_slice(
             &fs::read(_envelope.path().join("octo-manager/wiring-runtime.json")).unwrap(),
         )
