@@ -1194,6 +1194,44 @@ fn sqlite3(args: &[String]) -> Result<String> {
     Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
+/// Endpoints section of [`status`]: realmlist content assertions (the file
+/// stays unmanaged). Read-only; returns exactly one `endpoints` item.
+fn endpoints_item(root: &Path, endpoints: &Endpoints) -> StatusItem {
+    let bytes = match read_capped(root, "realmlist.wtf", 1 << 20) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return item(
+                "endpoints",
+                ItemState::Missing,
+                format!("{e:#}"),
+                "restore realmlist.wtf from backup".into(),
+            );
+        }
+    };
+    let body = String::from_utf8_lossy(&bytes);
+    let missing: Vec<&str> = endpoints
+        .assert_realmlist
+        .iter()
+        .map(String::as_str)
+        .filter(|line| !body.contains(*line))
+        .collect();
+    if missing.is_empty() {
+        item(
+            "endpoints",
+            ItemState::Verified,
+            "realmlist matches".into(),
+            String::new(),
+        )
+    } else {
+        item(
+            "endpoints",
+            ItemState::Mismatched,
+            format!("missing lines: {}", missing.join(", ")),
+            "update realmlist.wtf out-of-band (unmanaged file)".into(),
+        )
+    }
+}
+
 /// Read-only readiness report. Never executes wine, Lutris, or the launcher.
 pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<StatusItem>> {
     let wiring = resolve_wiring(instance)?;
@@ -1431,47 +1469,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
 
     // Endpoints: realmlist content assertions (file stays unmanaged).
     if let Some(endpoints) = &wiring.endpoints {
-        match read_capped(&instance.root, "realmlist.wtf", 1 << 20) {
-            Ok(bytes) => {
-                let body = String::from_utf8_lossy(&bytes);
-                let missing: Vec<_> = endpoints
-                    .assert_realmlist
-                    .iter()
-                    .filter(|line| !body.contains(line.as_str()))
-                    .collect();
-                items.push(item(
-                    "endpoints",
-                    if missing.is_empty() {
-                        ItemState::Verified
-                    } else {
-                        ItemState::Mismatched
-                    },
-                    if missing.is_empty() {
-                        "realmlist matches".into()
-                    } else {
-                        format!(
-                            "missing lines: {}",
-                            missing
-                                .iter()
-                                .map(|s| s.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    },
-                    if missing.is_empty() {
-                        String::new()
-                    } else {
-                        "update realmlist.wtf out-of-band (unmanaged file)".into()
-                    },
-                ));
-            }
-            Err(e) => items.push(item(
-                "endpoints",
-                ItemState::Missing,
-                format!("{e:#}"),
-                "restore realmlist.wtf from backup".into(),
-            )),
-        }
+        items.push(endpoints_item(&instance.root, endpoints));
     }
 
     // Launcher state: installer identity + prefix presence. Internal tweak
@@ -3887,6 +3885,69 @@ mod tests {
         assert!(!changes.is_empty());
         assert_eq!(walk_paths(&root), before_root);
         assert_eq!(walk_paths(home.path()), before_home);
+    }
+
+    #[test]
+    fn endpoints_item_reports_verified_mismatched_and_missing() {
+        let (_envelope, root) = fixture_root();
+        let realmlist = root.join("realmlist.wtf");
+        let before = snapshot_tree(&root);
+
+        // Matching assertions verify.
+        let endpoints = Endpoints {
+            assert_realmlist: vec!["set realmlist \"play.octowow.st\"".into()],
+        };
+        let found = endpoints_item(&root, &endpoints);
+        assert_eq!(found.name, "endpoints");
+        assert_eq!(found.state, ItemState::Verified);
+        assert_eq!(found.detail, "realmlist matches");
+        assert!(found.fix.is_empty());
+
+        // Multiple gaps report in declaration order.
+        let endpoints = Endpoints {
+            assert_realmlist: vec![
+                "set realmlist 1.2.3.4".into(),
+                "set realmlist \"play.octowow.st\"".into(),
+                "set patchlist 5.6.7.8".into(),
+            ],
+        };
+        let found = endpoints_item(&root, &endpoints);
+        assert_eq!(found.name, "endpoints");
+        assert_eq!(found.state, ItemState::Mismatched);
+        assert_eq!(
+            found.detail,
+            "missing lines: set realmlist 1.2.3.4, set patchlist 5.6.7.8"
+        );
+        assert_eq!(
+            found.fix,
+            "update realmlist.wtf out-of-band (unmanaged file)"
+        );
+
+        // No assertions is vacuously verified.
+        let endpoints = Endpoints {
+            assert_realmlist: Vec::new(),
+        };
+        let found = endpoints_item(&root, &endpoints);
+        assert_eq!(found.name, "endpoints");
+        assert_eq!(found.state, ItemState::Verified);
+        assert_eq!(found.detail, "realmlist matches");
+        assert!(found.fix.is_empty());
+
+        // The inspection produces no observable state change: identity,
+        // nanosecond timestamps, and bytes all match afterwards.
+        assert_eq!(snapshot_tree(&root), before);
+
+        // Absent realmlist is missing, never an error.
+        fs::remove_file(&realmlist).unwrap();
+        let endpoints = Endpoints {
+            assert_realmlist: vec!["set realmlist 1.2.3.4".into()],
+        };
+        let found = endpoints_item(&root, &endpoints);
+        assert_eq!(found.name, "endpoints");
+        assert_eq!(found.state, ItemState::Missing);
+        assert_eq!(found.detail, "missing client file: realmlist.wtf");
+        assert_eq!(found.fix, "restore realmlist.wtf from backup");
+        assert!(!realmlist.exists());
     }
 
     #[test]
