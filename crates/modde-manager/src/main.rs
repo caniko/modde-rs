@@ -898,19 +898,42 @@ fn ensure_checkout(
         .map(str::to_owned)
         .unwrap_or_else(|| format!("https://github.com/Ascension-Addons/{id}.git"));
     fs::create_dir_all(state_dir(instance).join("repos"))?;
-    if path.join(".git").is_dir() {
-        run_git(&path, &["fetch", "--prune", "origin", branch])?;
-        run_git(&path, &["checkout", branch])?;
-        run_git(&path, &["reset", "--hard", &format!("origin/{branch}")])?;
-    } else {
-        let status = Command::new("git")
-            .args(["clone", "--single-branch", "--branch", branch])
-            .arg(&url)
-            .arg(&path)
-            .status()?;
-        if !status.success() {
-            bail!("git clone failed for {id}");
+    match fs::symlink_metadata(path.join(".git")) {
+        // Existing checkout: it must track the declared origin, otherwise
+        // fetching would silently keep building the old repository while
+        // the lock records the new identity. Move it aside to re-acquire.
+        Ok(meta) if meta.is_dir() => {
+            let origin = git_output(&path, &["remote", "get-url", "origin"])?;
+            if origin != url {
+                bail!(
+                    "checkout origin '{origin}' differs from declared '{url}'; move {} aside to re-acquire",
+                    path.display()
+                );
+            }
+            run_git(&path, &["fetch", "--prune", "origin", branch])?;
+            run_git(&path, &["checkout", branch])?;
+            run_git(&path, &["reset", "--hard", &format!("origin/{branch}")])?;
         }
+        // Non-git state content is never adopted or deleted here: the
+        // operator moves it aside once, then update re-acquires cleanly.
+        // An absent path clones fresh below.
+        _ => match fs::symlink_metadata(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let status = Command::new("git")
+                    .args(["clone", "--single-branch", "--branch", branch])
+                    .arg(&url)
+                    .arg(&path)
+                    .status()?;
+                if !status.success() {
+                    bail!("git clone failed for {id}");
+                }
+            }
+            Ok(_) => bail!(
+                "state checkout is not a git repository: {}; move it aside to re-acquire",
+                path.display()
+            ),
+            Err(e) => return Err(e).context(format!("inspect {}", path.display())),
+        },
     }
     Ok(path)
 }
@@ -1108,6 +1131,83 @@ mod tests {
             "unexpected: {err:#}"
         );
         assert!(!dir.path().join("state/addons.lock.json").exists());
+    }
+
+    fn git_repo_with_origin(dir: &Path, origin: &str) {
+        assert!(Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(dir)
+            .status()
+            .unwrap()
+            .success());
+        assert!(Command::new("git")
+            .args(["-C"])
+            .arg(dir)
+            .args(["remote", "add", "origin", origin])
+            .status()
+            .unwrap()
+            .success());
+    }
+
+    fn test_instance(dir: &tempfile::TempDir) -> Instance {
+        serde_json::from_value(serde_json::json!({
+            "root": dir.path(), "client": "wow-classic",
+            "lock_file": dir.path().join("state/addons.lock.json"),
+            "state_dir": dir.path().join("state"),
+            "addons": []
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn ensure_checkout_rejects_changed_origin() {
+        // A state checkout tracking the old repository must never be
+        // fetched in place once the declaration moves on: fail closed
+        // with the exact remediation instead of recording the old
+        // identity under the new URL.
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state/repos/Example");
+        fs::create_dir_all(&state).unwrap();
+        git_repo_with_origin(&state, "https://example.invalid/old.git");
+        let instance = test_instance(&dir);
+        let err = ensure_checkout(
+            &instance,
+            "Example",
+            "master",
+            Some("https://example.invalid/new.git"),
+        )
+        .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("differs from declared") && message.contains("move"),
+            "unexpected: {message}"
+        );
+        // Nothing was fetched or altered: the old checkout stands.
+        assert!(state.join(".git").is_dir());
+    }
+
+    #[test]
+    fn ensure_checkout_rejects_non_git_state_content() {
+        // Pin-only materialized trees (no .git) are never adopted as
+        // checkouts and never deleted here: fail closed so the operator
+        // moves them aside once, then update re-acquires cleanly.
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state/repos/Example");
+        fs::create_dir_all(&state).unwrap();
+        fs::write(state.join("Example.toc"), "## Interface: 11200\n").unwrap();
+        let instance = test_instance(&dir);
+        let err = ensure_checkout(
+            &instance,
+            "Example",
+            "master",
+            Some("https://example.invalid/new.git"),
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("not a git repository"),
+            "unexpected: {err:#}"
+        );
+        assert!(state.join("Example.toc").is_file());
     }
 
     #[test]

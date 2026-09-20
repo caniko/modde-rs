@@ -98,6 +98,14 @@
       "follow": true
     },
     {
+      "id": "pfQuest-octo",
+      "repository": "https://github.com/paokkerkir/pfQuest-octo.git",
+      "branch": "main",
+      "revision": "dd3dc1fb80afe7a71e5c8ca8c31ca2a3ef57af67",
+      "directories": [{ "source": ".", "target": "pfQuest-octo" }],
+      "follow": true
+    },
+    {
       "id": "pfUI-eliteoverlay",
       "repository": "https://github.com/shagu/pfUI-eliteoverlay.git",
       "branch": "master",

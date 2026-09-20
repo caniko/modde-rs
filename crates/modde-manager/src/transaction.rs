@@ -1133,7 +1133,7 @@ mod tests {
     #[test]
     fn addon_catalog_lists_reviewed_registrations() {
         let catalog = addon_catalog().unwrap();
-        assert_eq!(catalog.len(), 17);
+        assert_eq!(catalog.len(), 18);
         let pfui = &catalog["pfUI"];
         assert_eq!(pfui.repository, "https://github.com/shagu/pfUI.git");
         assert_eq!(pfui.branch, "master");
@@ -1152,6 +1152,18 @@ mod tests {
             catalog["pfUI-Gryphons"].repository,
             "https://github.com/Macumbafeh/pfUI-Gryphons.git"
         );
+        // OctoWoW quest database extension (new registration).
+        let octo = &catalog["pfQuest-octo"];
+        assert_eq!(
+            octo.repository,
+            "https://github.com/paokkerkir/pfQuest-octo.git"
+        );
+        assert_eq!(octo.branch, "main");
+        assert_eq!(
+            octo.revision,
+            "dd3dc1fb80afe7a71e5c8ca8c31ca2a3ef57af67"
+        );
+        assert!(octo.follow);
     }
 
     #[test]
