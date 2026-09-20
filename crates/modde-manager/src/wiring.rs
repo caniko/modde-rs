@@ -4167,12 +4167,7 @@ mod tests {
 
     #[test]
     fn contended_database_fails_before_inspection() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         let instance = apply_fixture(&root, home.path());
         // Another onboard run holds the data-dir lock: fail fast, no writes.
         let data = home.path().join(".local/share/lutris");
@@ -4533,12 +4528,7 @@ mod tests {
 
     #[test]
     fn register_launcher_repoints_entry_and_client_dir() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         let instance = launcher_fixture(&root, None, true, true);
         // Status before: entry missing, stored client folder wrong.
         let items = status("test", &instance, &dirs(&home)).unwrap();
@@ -4615,12 +4605,7 @@ mod tests {
 
     #[test]
     fn register_launcher_refuses_ambiguous_settings_before_writes() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         // Prefix exists with a win64 marker, but two user profiles hold
         // settings: fail before any yml or row exists, with evidence.
         let prefix = root.parent().unwrap().join("octowow-launcher-prefix");
@@ -4650,12 +4635,7 @@ mod tests {
 
     #[test]
     fn register_launcher_creates_prefix_and_entry_then_noops() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         let instance = launcher_fixture(&root, None, false, false);
         // Status reports the missing launcher entry before registration.
         let items = status("test", &instance, &dirs(&home)).unwrap();
@@ -4699,12 +4679,7 @@ mod tests {
 
     #[test]
     fn register_launcher_refuses_bad_installer_before_writes() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         // Wrong digest fails before prefix, yml, or row exist.
         let instance = launcher_fixture(&root, Some("0".repeat(64)), false, false);
         let err = register_launcher("test", &instance, &dirs(&home), false).unwrap_err();
@@ -4726,12 +4701,7 @@ mod tests {
 
     #[test]
     fn register_launcher_conflict_needs_adopt() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         let db = home.path().join(".local/share/lutris/pga.db");
         sqlite3(&[
             db.display().to_string(),
@@ -4751,12 +4721,7 @@ mod tests {
 
     #[test]
     fn first_registration_orphan_removed_on_database_failure() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         // Abort INSERTs: the yml is created new, then the row fails.
         let db = home.path().join(".local/share/lutris/pga.db");
         sqlite3(&[
@@ -4894,6 +4859,24 @@ mod tests {
     // test's `pgrep -f lutris` would mistake for a running Lutris. Serialize.
     static APPLY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// Shared apply-test preamble: lock + sqlite gate + game envelope + fake
+    /// wine runner + empty Lutris db. Extracted from a 6-line clone repeated
+    /// across the apply/register tests.
+    fn apply_test_env() -> (
+        std::sync::MutexGuard<'static, ()>,
+        tempfile::TempDir,
+        PathBuf,
+        tempfile::TempDir,
+    ) {
+        let guard = APPLY_LOCK.lock().unwrap();
+        require_sqlite();
+        let (envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        wineboot_home(&home, "wine-ge-9-2");
+        lutris_home(home.path());
+        (guard, envelope, root, home)
+    }
+
     #[test]
     fn conflict_rejected_before_any_write() {
         let _guard = APPLY_LOCK.lock().unwrap();
@@ -4933,12 +4916,7 @@ mod tests {
 
     #[test]
     fn apply_is_idempotent_and_pins_runtime() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         // WAL mode: the backup path must stay consistent, unrelated rows kept.
         let db = home.path().join(".local/share/lutris/pga.db");
         sqlite3(&[db.display().to_string(), "PRAGMA journal_mode=WAL;".into()]).unwrap();
@@ -4987,12 +4965,7 @@ mod tests {
 
     #[test]
     fn apply_registers_entry_with_missing_hd_payloads() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         let mut instance = apply_fixture(&root, home.path());
         // A second HD letter with no payload: registration must not wait
         // for HD maintenance, while the absence stays visible.
@@ -5035,12 +5008,7 @@ mod tests {
 
     #[test]
     fn apply_ignores_register_owned_launcher_items() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         // Game block is fully satisfiable, but the declared launcher was
         // never registered: its entry, prefix, and settings stay missing.
         // Apply must still register the vanilla game entry — the launcher
@@ -5439,12 +5407,7 @@ mod tests {
 
     #[test]
     fn orphan_yml_requires_adopt() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         // Yml exists with foreign content, but no database row: orphan.
         let yml_path = home.path().join(".config/lutris/games/octowow-test.yml");
         fs::write(&yml_path, "game:\n  exe: /games/other/Game.exe\n").unwrap();
@@ -5528,12 +5491,7 @@ mod tests {
 
     #[test]
     fn yml_restored_when_database_step_fails() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         let instance = apply_fixture(&root, home.path());
         apply("test", &instance, &dirs(&home), false, false, None).unwrap();
         let yml_path = home.path().join(".config/lutris/games/octowow-test.yml");
@@ -5567,12 +5525,7 @@ mod tests {
 
     #[test]
     fn expect_runner_binds_plan_to_apply() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        require_sqlite();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
-        lutris_home(home.path());
+        let (_guard, _envelope, root, home) = apply_test_env();
         let instance = apply_fixture(&root, home.path());
         let err = apply(
             "test",
