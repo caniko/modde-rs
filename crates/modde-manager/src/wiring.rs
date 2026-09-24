@@ -122,6 +122,11 @@ pub struct LutrisEntry {
     pub name: String,
     #[serde(default = "default_game_slug")]
     pub game_slug: String,
+    /// System command prefix (Lutris `system.prefix_command`): prepended to
+    /// the wine command. OctoWoW launcher uses the packaged stdio-repair
+    /// wrapper; game entries leave this absent.
+    #[serde(default)]
+    pub command_prefix: Option<String>,
 }
 
 fn default_lutris_name() -> String {
@@ -214,6 +219,7 @@ pub struct EntrySpec {
     pub fsync: bool,
     pub dll_overrides: Vec<String>,
     pub extra_env: BTreeMap<String, String>,
+    pub command_prefix: Option<String>,
 }
 
 fn game_spec(
@@ -244,6 +250,7 @@ fn game_spec(
         fsync: wiring.tunings.fsync,
         dll_overrides: wiring.dll_overrides.clone(),
         extra_env: wiring.tunings.env.clone(),
+        command_prefix: entry.command_prefix.clone(),
     })
 }
 
@@ -279,6 +286,7 @@ fn launcher_spec(
         // Non-game process: no game-client DLL overrides.
         dll_overrides: Vec::new(),
         extra_env: wiring.tunings.env.clone(),
+        command_prefix: entry.command_prefix.clone(),
     })
 }
 
@@ -395,6 +403,7 @@ pub fn octowow_hd_defaults() -> Wiring {
             slug: "octowow-community".into(),
             name: "OctoWoW".into(),
             game_slug: default_game_slug(),
+            command_prefix: None,
         }),
         client_integrity: Some(ClientIntegrity {
             require_files: vec![
@@ -1039,6 +1048,7 @@ fn check_lutris_yml(
         fsync: wiring.tunings.fsync,
         dll_overrides: wiring.dll_overrides.clone(),
         extra_env: wiring.tunings.env.clone(),
+        command_prefix: entry.command_prefix.clone(),
     };
     check_entry_yml(
         path,
@@ -1170,6 +1180,22 @@ fn check_entry_yml(
             problems.push("WINEDLLOVERRIDES missing".into());
         }
         _ => {}
+    }
+    match (
+        &spec.command_prefix,
+        get(&["system", "prefix_command"]).and_then(|v| v.as_str()),
+    ) {
+        (Some(want), Some(have)) if have == want => {}
+        (Some(want), Some(have)) => {
+            problems.push(format!("system.prefix_command is '{have}', want '{want}'"))
+        }
+        (Some(want), None) => {
+            problems.push(format!("system.prefix_command missing, want '{want}'"))
+        }
+        (None, Some(have)) => {
+            problems.push(format!("system.prefix_command is '{have}', want absent"))
+        }
+        (None, None) => {}
     }
     if problems.is_empty() {
         item(
@@ -1851,6 +1877,27 @@ pub fn render_entry_yml(spec: &EntrySpec) -> Result<String> {
             serde_yaml_ng::Value::String(value.clone()),
         ));
     }
+    let mut system = vec![
+        (
+            serde_yaml_ng::Value::String("disable_runtime".into()),
+            // System wine is a host artifact: Lutris must not prepend
+            // its runtime lib folders (`/lib`, `/usr/lib` resolve to
+            // the FHS glibc, breaking the host wrapper with a libc
+            // symbol lookup error). Lutris-managed runners keep the
+            // runtime they were built against.
+            serde_yaml_ng::Value::Bool(spec.runner_version == "system"),
+        ),
+        (
+            serde_yaml_ng::Value::String("env".into()),
+            serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter(env)),
+        ),
+    ];
+    if let Some(prefix) = &spec.command_prefix {
+        system.push((
+            serde_yaml_ng::Value::String("prefix_command".into()),
+            serde_yaml_ng::Value::String(prefix.clone()),
+        ));
+    }
     let doc = serde_yaml_ng::Mapping::from_iter([
         (
             serde_yaml_ng::Value::String("game".into()),
@@ -1934,21 +1981,7 @@ pub fn render_entry_yml(spec: &EntrySpec) -> Result<String> {
         ),
         (
             serde_yaml_ng::Value::String("system".into()),
-            serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter([
-                (
-                    serde_yaml_ng::Value::String("disable_runtime".into()),
-                    // System wine is a host artifact: Lutris must not prepend
-                    // its runtime lib folders (`/lib`, `/usr/lib` resolve to
-                    // the FHS glibc, breaking the host wrapper with a libc
-                    // symbol lookup error). Lutris-managed runners keep the
-                    // runtime they were built against.
-                    serde_yaml_ng::Value::Bool(spec.runner_version == "system"),
-                ),
-                (
-                    serde_yaml_ng::Value::String("env".into()),
-                    serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter(env)),
-                ),
-            ])),
+            serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::from_iter(system)),
         ),
     ]);
     serde_yaml_ng::to_string(&serde_yaml_ng::Value::Mapping(doc)).context("render lutris yml")
@@ -3665,6 +3698,156 @@ pub fn register_launcher(
     Ok(())
 }
 
+/// Installed launcher bundle completeness: the executable plus the payload
+/// files the NSIS `app-64.7z` always lays down. Locale packs are upstream-
+/// empty (verified against the installer payload), so they are not required.
+/// Regular files only; symlinks fail closed like the executable check.
+fn launcher_bundle_complete(executable: &Path) -> bool {
+    let dir = match executable.parent() {
+        Some(dir) => dir,
+        None => return false,
+    };
+    for path in [
+        executable.to_path_buf(),
+        dir.join("resources/app.asar"),
+        dir.join("resources/app-update.yml"),
+    ] {
+        match fs::symlink_metadata(&path) {
+            Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// Install the launcher into its declared persistent prefix via the reviewed
+/// installer, unattended (`/S`). Reuses runner selection, prefix creation,
+/// locks, and journaling from the onboard flow. Idempotent: a complete
+/// bundle is a no-op unless `force` passes. Never touches the game client,
+/// addons, Lutris entries, or launcher settings — run register-launcher
+/// afterwards to reconcile the entry and client folder.
+pub fn install_launcher(
+    name: &str,
+    instance: &Instance,
+    dirs: &HomeDirs,
+    force: bool,
+) -> Result<()> {
+    let wiring = resolve_wiring(instance)?;
+    let root_anchor = Anchor::open(&instance.root)?;
+    let _lease = root_anchor.lock()?;
+    super::assert_stopped(instance)?;
+    let launcher = wiring
+        .launcher
+        .clone()
+        .context("no launcher block declared")?;
+    let installer = launcher
+        .installer
+        .clone()
+        .context("no installer declared in launcher block")?;
+    let prefix = launcher
+        .prefix
+        .clone()
+        .context("no launcher prefix declared")?;
+    let executable = launcher
+        .executable
+        .clone()
+        .context("no installed launcher executable declared; declare it before installing")?;
+    if !installer.path.is_absolute() {
+        bail!("installer path must be absolute");
+    }
+    validate_descriptor_file(&installer.path, installer.sha256.as_deref(), "installer")?;
+    match validate_launcher_executable(&executable, &prefix) {
+        Ok(()) => {
+            if launcher_bundle_complete(&executable) && !force {
+                println!("{name}: launcher already installed");
+                return Ok(());
+            }
+        }
+        Err(error) => {
+            // Missing executable proceeds to install; a present-but-invalid
+            // path (symlink, outside prefix, wrong type) still fails closed.
+            match fs::symlink_metadata(&executable) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                _ => return Err(error),
+            }
+        }
+    }
+    let (runner, _) = select_runner(dirs, instance, &wiring, false)
+        .context("cannot install without a resolved runner")?;
+    if validated_prefix(&prefix, &instance.root, &wiring)?.is_none() {
+        match create_prefix(&prefix, &runner, &wiring) {
+            Ok(arch) => println!("{name}: launcher prefix created ({arch})"),
+            Err(error) => {
+                journal_event(
+                    instance,
+                    name,
+                    serde_json::json!({"op": "install-launcher-failed", "step": "prefix", "error": format!("{error:#}")}),
+                );
+                return Err(error);
+            }
+        }
+    }
+    let mut cmd = Command::new(&runner.path);
+    cmd.arg(&installer.path).arg("/S");
+    cmd.current_dir(
+        installer
+            .path
+            .parent()
+            .context("installer needs a parent directory")?,
+    );
+    let (remove, set) = resolve_launch_env(&wiring, &prefix, &[]);
+    for key in remove {
+        cmd.env_remove(key);
+    }
+    for (key, value) in set {
+        cmd.env(key, value);
+    }
+    println!("{name}: installing launcher (silent) ...");
+    let status = cmd.status().context("run launcher installer")?;
+    if !status.success() {
+        journal_event(
+            instance,
+            name,
+            serde_json::json!({"op": "install-launcher-failed", "step": "installer", "status": format!("{status}")}),
+        );
+        bail!("launcher installer failed: {status}");
+    }
+    let mut wait = Command::new(wineserver_bin(&runner));
+    wait.arg("-w");
+    let (remove, set) = resolve_launch_env(&wiring, &prefix, &[]);
+    for key in remove {
+        wait.env_remove(key);
+    }
+    for (key, value) in set {
+        wait.env(key, value);
+    }
+    let status = wait.status().context("wait for wineserver")?;
+    if !status.success() {
+        bail!("wineserver -w failed: {status}");
+    }
+    if !launcher_bundle_complete(&executable) {
+        journal_event(
+            instance,
+            name,
+            serde_json::json!({"op": "install-launcher-failed", "step": "verify"}),
+        );
+        bail!(
+            "launcher bundle incomplete after install: {}",
+            executable.display()
+        );
+    }
+    if record_runner(instance, &runner)? {
+        println!("{name}: runtime selection recorded");
+    }
+    journal_event(
+        instance,
+        name,
+        serde_json::json!({"op": "install-launcher-done", "runner": runner.version}),
+    );
+    println!("{name}: launcher installed");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4462,6 +4645,76 @@ mod tests {
         let exe = launcher.executable.clone().unwrap();
         assert_eq!(spec.exe, exe.display().to_string());
         assert_eq!(spec.dir, exe.parent().unwrap().display().to_string());
+    }
+
+    #[test]
+    fn launcher_prefix_command_renders_and_verifies() {
+        let (_envelope, root) = fixture_root();
+        let home = fixture_home(&["wine-ge-9-2"]);
+        let mut instance = launcher_fixture(&root, None, true, false);
+        instance.wiring.as_mut().unwrap().launcher.as_mut().unwrap().lutris.as_mut().unwrap().command_prefix =
+            Some("/bin/octowow-stdio-redir".into());
+        let wiring = resolve_wiring(&instance).unwrap();
+        let launcher = wiring.launcher.clone().unwrap();
+        let runner = discover_runner(&dirs(&home), "wine", "latest").unwrap();
+        let spec = launcher_spec(
+            launcher.installer.as_ref().unwrap(),
+            &launcher.prefix.clone().unwrap(),
+            launcher.lutris.as_ref().unwrap(),
+            &runner,
+            &wiring,
+            launcher.executable.as_ref(),
+        )
+        .unwrap();
+        assert_eq!(
+            spec.command_prefix.as_deref(),
+            Some("/bin/octowow-stdio-redir")
+        );
+        let yml = render_entry_yml(&spec).unwrap();
+        assert!(yml.contains("prefix_command: /bin/octowow-stdio-redir"));
+        // Structural check enforces the declared prefix against a file.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("entry.yml");
+        fs::write(&path, &yml).unwrap();
+        let recorded: Result<Option<String>> = Ok(Some(runner.version.clone()));
+        let checked = check_entry_yml(&path, "launcher-entry", "fix", &spec, recorded);
+        assert_eq!(
+            checked.state,
+            ItemState::Verified,
+            "detail: {}",
+            checked.detail
+        );
+        // Drift (prefix removed) mismatches instead of silently passing.
+        let drifted = yml.replace("prefix_command: /bin/octowow-stdio-redir\n", "");
+        fs::write(&path, &drifted).unwrap();
+        let recorded: Result<Option<String>> = Ok(Some(runner.version.clone()));
+        let checked = check_entry_yml(&path, "launcher-entry", "fix", &spec, recorded);
+        assert_eq!(checked.state, ItemState::Mismatched);
+    }
+
+    #[test]
+    fn launcher_bundle_completeness_requires_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("OctoLauncher.exe");
+        fs::write(&exe, "fake-exe").unwrap();
+        assert!(!launcher_bundle_complete(&exe));
+        fs::create_dir_all(dir.path().join("resources")).unwrap();
+        fs::write(dir.path().join("resources/app.asar"), "fake-asar").unwrap();
+        assert!(!launcher_bundle_complete(&exe));
+        fs::write(
+            dir.path().join("resources/app-update.yml"),
+            "provider: generic\n",
+        )
+        .unwrap();
+        assert!(launcher_bundle_complete(&exe));
+        // Symlinked payload fails closed.
+        fs::remove_file(dir.path().join("resources/app.asar")).unwrap();
+        std::os::unix::fs::symlink(
+            dir.path().join("resources/app-update.yml"),
+            dir.path().join("resources/app.asar"),
+        )
+        .unwrap();
+        assert!(!launcher_bundle_complete(&exe));
     }
 
     #[test]

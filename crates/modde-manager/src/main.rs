@@ -69,6 +69,12 @@ enum CommandKind {
         action: OnboardAction,
     },
     Capture,
+    /// Read-only instance catalogue for UI library views. Never writes,
+    /// prepares, installs, or launches anything.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -109,6 +115,16 @@ enum OnboardAction {
         /// Take over an existing Lutris entry that points elsewhere.
         #[arg(long)]
         adopt: bool,
+    },
+    /// Install the launcher into its declared prefix via the reviewed
+    /// installer, unattended. Idempotent: a complete bundle is a no-op
+    /// unless --force. Never touches the game client or Lutris entries.
+    InstallLauncher {
+        #[arg(long)]
+        instance: String,
+        /// Reinstall over a complete bundle.
+        #[arg(long)]
+        force: bool,
     },
     /// Resolve/record the runner and ensure the game prefix. No Lutris
     /// writes of any kind — the native path works with Lutris absent.
@@ -449,6 +465,13 @@ fn main() -> Result<()> {
                         .with_context(|| format!("unknown instance '{instance}'"))?;
                     wiring::register_launcher(&instance, instance_config, &dirs, adopt)
                 }
+                OnboardAction::InstallLauncher { instance, force } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    wiring::install_launcher(&instance, instance_config, &dirs, force)
+                }
                 OnboardAction::Prepare { instance, reselect } => {
                     let instance_config = config
                         .instances
@@ -490,7 +513,54 @@ fn main() -> Result<()> {
             }
         }
         CommandKind::Capture => capture_all(&config),
+        CommandKind::List { json } => list_instances(&config, json),
     }
+}
+
+/// Read-only catalogue entry for `list`: the instance name plus the fields a
+/// library view needs to display and launch it. No addon, wiring, or status
+/// resolution — the launch path owns all validation when it runs.
+#[derive(Debug, Clone, Serialize)]
+struct ManagerListEntry {
+    name: String,
+    root: PathBuf,
+    client: String,
+}
+
+fn manager_list_entries(config: &Config) -> Vec<ManagerListEntry> {
+    let mut entries: Vec<ManagerListEntry> = config
+        .instances
+        .iter()
+        .map(|(name, instance)| ManagerListEntry {
+            name: name.clone(),
+            root: instance.root.clone(),
+            client: instance.client.clone(),
+        })
+        .collect();
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
+}
+
+fn list_instances(config: &Config, json: bool) -> Result<()> {
+    let entries = manager_list_entries(config);
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({ "instances": entries }))?
+        );
+    } else if entries.is_empty() {
+        println!("modde-manager: no instances configured");
+    } else {
+        for entry in &entries {
+            println!(
+                "{} ({}) — {}",
+                entry.name,
+                entry.client,
+                entry.root.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn load_config(path: &Path) -> Result<Config> {
@@ -1104,6 +1174,32 @@ fn wow_value(value: &Value) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manager_list_entries_are_sorted_and_read_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let instance = |client: &str| -> Instance {
+            serde_json::from_value(serde_json::json!({
+                "root": dir.path(), "client": client, "addons": []
+            }))
+            .unwrap()
+        };
+        let config = Config {
+            version: 1,
+            instances: BTreeMap::from([
+                ("zeta".into(), instance("wow-wotlk")),
+                ("alpha".into(), instance("wow-classic")),
+            ]),
+        };
+        let entries = manager_list_entries(&config);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "alpha");
+        assert_eq!(entries[1].name, "zeta");
+        assert_eq!(entries[0].client, "wow-classic");
+        assert!(list_instances(&config, true).is_ok());
+        // Read-only: listing creates nothing under the instance roots.
+        assert!(!dir.path().join(".modde-manager").exists());
+    }
 
     #[test]
     fn update_skips_fetch_for_pin_only_catalog_entries() {
