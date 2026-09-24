@@ -237,3 +237,216 @@ fn gate_refuses_drifted_client_without_exec() {
     assert!(stderr.contains("wow-exe"), "unexpected stderr: {stderr}");
     assert!(!sentinel.exists(), "drifted client was executed");
 }
+
+/// A bare raw binary finds its config through a configured wrapper on
+/// PATH: the fallback re-execs the wrapper, which supplies `--config`,
+/// and the second invocation runs. This is the deployed shape
+/// (`exec <raw> --config <file>`), proven end to end.
+#[test]
+fn config_fallback_hands_off_to_configured_wrapper() {
+    let root = unique_root("handoff");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    fs::write(client.join("WoW.exe"), "fake-wow-bytes").unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let config = write_config(&root, &client, None);
+    let real = binary();
+    let wrapper_dir = root.join("wrapper");
+    write_exe(
+        &wrapper_dir.join("modde-manager"),
+        &format!(
+            "#!/bin/sh\nexec \"{}\" --config \"{}\" \"$@\"\n",
+            real.display(),
+            config.display()
+        ),
+    );
+    let mut cmd = Command::new(&real);
+    sandbox_env(&mut cmd, &root);
+    let path = format!(
+        "{}:{}",
+        wrapper_dir.display(),
+        std::env::var_os("PATH")
+            .unwrap_or_default()
+            .to_string_lossy()
+    );
+    let output = cmd
+        .arg("list")
+        .env("PATH", &path)
+        .env_remove("MODDE_MANAGER_CONFIG")
+        .env_remove("MODDE_MANAGER_CONFIG_RESOLVED")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "handoff failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("test"),
+        "instance missing from list output"
+    );
+}
+
+/// An explicit `--config` wins even when a re-exec already happened:
+/// the marker never blocks a configured invocation.
+#[test]
+fn explicit_config_wins_over_marker() {
+    let root = unique_root("explicit-wins");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    fs::write(client.join("WoW.exe"), "fake-wow-bytes").unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let config = write_config(&root, &client, None);
+    let mut cmd = Command::new(binary());
+    sandbox_env(&mut cmd, &root);
+    let output = cmd
+        .arg("--config")
+        .arg(&config)
+        .arg("list")
+        .env("MODDE_MANAGER_CONFIG_RESOLVED", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "explicit config refused: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The gate passes the executable's exit status through: a probe
+/// exiting 42 surfaces as 42, not 0 and not 1.
+#[test]
+fn gate_propagates_nonzero_exit() {
+    let root = unique_root("gate-nonzero");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    fs::write(client.join("WoW.exe"), "fake-wow-bytes").unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let config = write_config(&root, &client, None);
+    let probe = root.join("probe42");
+    write_exe(&probe, "#!/bin/sh\nexit 42\n");
+    let mut cmd = Command::new(binary());
+    sandbox_env(&mut cmd, &root);
+    let output = cmd
+        .arg("--config")
+        .arg(&config)
+        .arg("onboard")
+        .arg("gate")
+        .arg("--instance")
+        .arg("test")
+        .arg("--")
+        .arg(&probe)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(42),
+        "exit status lost: {output:?}"
+    );
+}
+
+/// Arguments with spaces, an empty argument, and leading dashes reach
+/// the command unchanged — the game runs exactly as Lutris declared it.
+#[test]
+fn gate_preserves_tricky_arguments() {
+    let root = unique_root("gate-args");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    fs::write(client.join("WoW.exe"), "fake-wow-bytes").unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let config = write_config(&root, &client, None);
+    let sentinel = root.join("sentinel");
+    let probe = root.join("probe");
+    write_exe(
+        &probe,
+        &format!(
+            "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]\\n' \"$a\"; done > \"{}\"\nexit 0\n",
+            sentinel.display()
+        ),
+    );
+    let mut cmd = Command::new(binary());
+    sandbox_env(&mut cmd, &root);
+    let output = cmd
+        .arg("--config")
+        .arg(&config)
+        .arg("onboard")
+        .arg("gate")
+        .arg("--instance")
+        .arg("test")
+        .arg("--")
+        .arg(&probe)
+        .arg("with space")
+        .arg("")
+        .arg("--leading-dash")
+        .arg("-x")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "gate refused: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&sentinel).unwrap(),
+        "[with space]\n[]\n[--leading-dash]\n[-x]\n"
+    );
+}
+
+/// Minimal valid PE (MZ + i386 + LAA) pinned by its real digest: the
+/// gate passes with a `wow-exe` pin in force, proving the positive
+/// path is reachable and not just the refusal.
+#[test]
+fn gate_passes_with_matching_digest_pin() {
+    use sha2::{Digest, Sha256};
+    let root = unique_root("gate-pinned-pass");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    let mut bytes = vec![0u8; 0x80];
+    bytes[0..2].copy_from_slice(b"MZ");
+    bytes[0x3c..0x40].copy_from_slice(&0x40u32.to_le_bytes());
+    bytes[0x40..0x44].copy_from_slice(b"PE\0\0");
+    bytes[0x44..0x46].copy_from_slice(&0x14cu16.to_le_bytes());
+    bytes[0x56..0x58].copy_from_slice(&0x012fu16.to_le_bytes());
+    fs::write(client.join("WoW.exe"), &bytes).unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let mut digest = String::with_capacity(64);
+    for b in hasher.finalize() {
+        use std::fmt::Write;
+        write!(digest, "{b:02x}").unwrap();
+    }
+    let pin = format!(
+        "{{\"size\": {}, \"sha256\": \"{digest}\", \"laa\": true}}",
+        bytes.len()
+    );
+    let config = write_config(&root, &client, Some(&pin));
+    let sentinel = root.join("sentinel");
+    let probe = root.join("probe");
+    write_exe(
+        &probe,
+        &format!(
+            "#!/bin/sh\nprintf 'ran\\n' > \"{}\"\nexit 0\n",
+            sentinel.display()
+        ),
+    );
+    let mut cmd = Command::new(binary());
+    sandbox_env(&mut cmd, &root);
+    let output = cmd
+        .arg("--config")
+        .arg(&config)
+        .arg("onboard")
+        .arg("gate")
+        .arg("--instance")
+        .arg("test")
+        .arg("--")
+        .arg(&probe)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "gate refused a pinned client: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&sentinel).unwrap(), "ran\n");
+}

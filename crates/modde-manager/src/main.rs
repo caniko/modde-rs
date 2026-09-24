@@ -151,22 +151,6 @@ enum OnboardAction {
         #[arg(long, value_enum, default_value = "vanilla")]
         mode: LaunchModeArg,
     },
-    /// Client maintenance through the game executable itself
-    /// (`VanillaFixes.exe`): the same recorded runner, declared
-    /// environment, and quiescence as a native game launch, but the
-    /// launch-readiness gates are deliberately skipped. This is an
-    /// explicit readiness bypass, not a verified updater: fleet policy
-    /// directs client upgrades through the game entry (never the
-    /// launcher's Install/Verify) and the readiness messages point here,
-    /// but running the executable is only known to *launch* the client —
-    /// no updater surface has been established, so live use requires
-    /// operator approval. It launches, waits, and propagates the exit
-    /// status; it never reconciles, records, or falls back, and it never
-    /// claims the client changed — re-run status/check afterwards.
-    Upgrade {
-        #[arg(long)]
-        instance: String,
-    },
     /// Lutris game-entry launch gate (its `system.prefix_command`):
     /// enforce game launch readiness, then exec the appended command
     /// unchanged. Lutris invokes it on every launch; a refusal blocks that
@@ -535,13 +519,6 @@ fn main() -> Result<()> {
                         },
                     )
                 }
-                OnboardAction::Upgrade { instance } => {
-                    let instance_config = config
-                        .instances
-                        .get(&instance)
-                        .with_context(|| format!("unknown instance '{instance}'"))?;
-                    wiring::upgrade(&instance, instance_config)
-                }
                 OnboardAction::Gate { instance, command } => {
                     let instance_config = config
                         .instances
@@ -651,10 +628,13 @@ fn resolve_config_path_impl(explicit: Option<PathBuf>, reexec_attempted: bool) -
 }
 
 /// First PATH `modde-manager` distinct from the running executable:
-/// missing candidates are skipped, never executed. Pure (no `exec`), so
+/// missing candidates are skipped, never executed; directories and
+/// non-executable files are skipped too, so a stray shadow cannot block
+/// discovery of a usable wrapper later on PATH. Pure (no `exec`), so
 /// the selection order is unit-testable without replacing the test
 /// process.
 fn find_config_fallback(exe: &Path, path_var: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
     let path_var = path_var?;
     for dir in std::env::split_paths(path_var) {
         let candidate = dir.join("modde-manager");
@@ -662,6 +642,12 @@ fn find_config_fallback(exe: &Path, path_var: Option<&std::ffi::OsStr>) -> Optio
             continue;
         };
         if resolved == exe {
+            continue;
+        }
+        let Ok(meta) = fs::metadata(&resolved) else {
+            continue;
+        };
+        if !meta.is_file() || meta.permissions().mode() & 0o111 == 0 {
             continue;
         }
         return Some(resolved);
@@ -1325,6 +1311,36 @@ mod tests {
         let path = std::env::join_paths([alias_dir]).unwrap();
         assert!(find_config_fallback(&exe, Some(path.as_os_str())).is_none());
         assert!(find_config_fallback(&exe, None).is_none());
+    }
+
+    #[test]
+    fn config_fallback_skips_directories_and_non_executables() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let self_bin = root.path().join("self-bin");
+        fs::write(&self_bin, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&self_bin, fs::Permissions::from_mode(0o755)).unwrap();
+        let exe = self_bin.canonicalize().unwrap();
+        // A directory shadowing the name ...
+        let shadow_dir = root.path().join("shadow");
+        fs::create_dir_all(shadow_dir.join("modde-manager")).unwrap();
+        // ... and a non-executable file are both skipped in favour of
+        // the usable wrapper later on PATH.
+        let flat = root.path().join("flat");
+        fs::create_dir_all(&flat).unwrap();
+        fs::write(flat.join("modde-manager"), "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(flat.join("modde-manager"), fs::Permissions::from_mode(0o644))
+            .unwrap();
+        let good = root.path().join("good");
+        fs::create_dir_all(&good).unwrap();
+        fs::write(good.join("modde-manager"), "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(good.join("modde-manager"), fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let path = std::env::join_paths([shadow_dir, flat, good.clone()]).unwrap();
+        assert_eq!(
+            find_config_fallback(&exe, Some(path.as_os_str())).unwrap(),
+            good.join("modde-manager").canonicalize().unwrap()
+        );
     }
 
     #[test]

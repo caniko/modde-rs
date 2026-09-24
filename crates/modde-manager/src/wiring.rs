@@ -1340,9 +1340,10 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
 
     // Client integrity: metadata presence for required files (payloads are
     // never loaded); size-first, streaming digest, header-only flags for
-    // the executable. Fix hints point at the VanillaFixes.exe upgrade path:
-    // client payloads (WoW.exe, HD sets) are upgraded through the game
-    // entry, never the launcher's Install/Verify.
+    // the executable. Fix hints point at the operator workflow: client
+    // payloads are never fetched by the manager and never by the
+    // launcher's Install/Verify — restore the operator-confirmed file or
+    // re-pin the declaration after confirming provenance, then re-check.
     if let Some(integrity) = &wiring.client_integrity {
         for file in &integrity.require_files {
             match root_file_meta(&instance.root, file)? {
@@ -1356,7 +1357,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                     &format!("client-file:{file}"),
                     ItemState::Missing,
                     format!("{file} absent"),
-                    "run the VanillaFixes.exe upgrade, then re-check".into(),
+                    "restore the operator-confirmed file or re-pin after confirming provenance, then re-check".into(),
                 )),
             }
         }
@@ -1367,13 +1368,13 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                     "wow-exe",
                     ItemState::Missing,
                     format!("{rel} absent"),
-                    "run the VanillaFixes.exe upgrade".into(),
+                    "restore the operator-confirmed WoW.exe or re-pin after confirming provenance".into(),
                 )),
                 Some((_, meta)) if meta.len() != expected.size => items.push(item(
                     "wow-exe",
                     ItemState::Mismatched,
                     format!("size={} want={}", meta.len(), expected.size),
-                    "run the VanillaFixes.exe upgrade for a clean LAA exe".into(),
+                    "client drifted; restore the operator-confirmed WoW.exe or re-pin after confirming provenance".into(),
                 )),
                 Some((mut file, _)) => {
                     // Single descriptor: header flags first, then rewind and
@@ -1413,7 +1414,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                         if ok {
                             String::new()
                         } else {
-                            "run the VanillaFixes.exe upgrade for a clean LAA exe".into()
+                            "client drifted; restore the operator-confirmed WoW.exe or re-pin after confirming provenance".into()
                         },
                     ));
                 }
@@ -1449,7 +1450,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                 if found {
                     String::new()
                 } else {
-                    "HD patch absent; fetch a verified set via the VanillaFixes.exe upgrade, then re-check".into()
+                    "HD patch absent; restore the operator-confirmed set, then re-check".into()
                 },
             ));
         }
@@ -1459,7 +1460,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                     "hd-patch-A",
                     ItemState::Missing,
                     "no patch-A at all".into(),
-                    "HD patch-A absent; fetch a verified set via the VanillaFixes.exe upgrade, then re-check".into(),
+                    "HD patch-A absent; restore the operator-confirmed set, then re-check".into(),
                 )),
                 Some(rel) => {
                     let Some((mut file, meta)) = pinned_file(&instance.root, &rel)? else {
@@ -3009,7 +3010,7 @@ fn ensure_launch_readiness(
                 .collect();
             if !drift.is_empty() {
                 bail!(
-                    "client not ready ({}); run the VanillaFixes.exe upgrade (`modde-manager onboard upgrade --instance {name}`), or re-pin the declared client digest",
+                    "client not ready ({}); restore the operator-confirmed WoW.exe or re-pin the declared client digest after confirming provenance",
                     drift.join(", ")
                 );
             }
@@ -3066,32 +3067,6 @@ pub fn launch(
     let runner = recorded_runner(name, instance)?;
     ensure_launch_readiness(name, instance, dirs, target, mode)?;
     let lt = resolve_launch_target(instance, &wiring, target)?;
-    spawn_native(name, &wiring, &runner, &lt)
-}
-
-/// Client maintenance through the game executable itself
-/// (`VanillaFixes.exe`): the same recorded runner, declared environment,
-/// and quiescence as a native game launch, but the launch-readiness gates
-/// are deliberately skipped. This is an explicit readiness bypass, not a
-/// verified updater: fleet policy directs client upgrades through the game
-/// entry (never the launcher's Install/Verify) and the readiness messages
-/// point here — but running the executable is only known to *launch* the
-/// client. No updater surface has been established, so live use requires
-/// operator approval. It launches, waits, and propagates the exit status;
-/// it never reconciles, records, or falls back, and it never claims the
-/// client changed — re-run status/check afterwards.
-pub fn upgrade(name: &str, instance: &Instance) -> Result<()> {
-    let wiring = resolve_wiring(instance)?;
-    let root_anchor = Anchor::open(&instance.root)?;
-    let _lease = root_anchor.lock()?;
-    super::assert_stopped(instance)?;
-    let runner = recorded_runner(name, instance)?;
-    let lt = resolve_launch_target(instance, &wiring, NativeTarget::Game)?;
-    eprintln!(
-        "{name}: WARNING: readiness gates skipped — executing unverified client {} \
-         (operator-directed maintenance; live use requires operator approval)",
-        lt.exe.display()
-    );
     spawn_native(name, &wiring, &runner, &lt)
 }
 
@@ -6000,51 +5975,10 @@ mod tests {
         .unwrap_err();
         let text = format!("{err:#}");
         assert!(text.contains("wow-exe"), "unexpected: {text}");
-        assert!(text.contains("onboard upgrade"), "hint missing: {text}");
-    }
-
-    #[test]
-    fn upgrade_runs_game_without_readiness_gates() {
-        let _guard = APPLY_LOCK.lock().unwrap();
-        let (_envelope, root) = fixture_root();
-        let home = tempfile::tempdir().unwrap();
-        let log = home.path().join("wine.log");
-        logging_wine(&home, "wine-ge-9-2", &log);
-        let mut instance = apply_fixture(&root, home.path());
-        fs::write(root.join("WoW.exe"), "fake-wow").unwrap();
-        instance
-            .wiring
-            .as_mut()
-            .unwrap()
-            .client_integrity
-            .as_mut()
-            .unwrap()
-            .wow_exe = Some(
-            serde_json::from_value(serde_json::json!({
-                "size": 999,
-                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-            }))
-            .unwrap(),
-        );
-        prepare_native("test", &instance, &dirs(&home), false).unwrap();
-        // Native launch refuses the drifted client ...
-        let err = launch(
-            "test",
-            &instance,
-            &dirs(&home),
-            NativeTarget::Game,
-            LaunchMode::Vanilla,
-        )
-        .unwrap_err();
         assert!(
-            format!("{err:#}").contains("wow-exe"),
-            "unexpected: {err:#}"
+            text.contains("operator-confirmed"),
+            "hint missing: {text}"
         );
-        assert!(!log.exists());
-        // ... while upgrade runs the very same executable with the
-        // readiness gates skipped: the maintenance path the gate points at.
-        upgrade("test", &instance).unwrap();
-        assert!(log.exists());
     }
 
     #[test]

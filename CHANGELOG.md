@@ -38,16 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plus a `wineserver -w` flush wait, paired native/Flatpak
   config-database selection, fail-closed `pgrep` exit handling, and
   streaming capped reads throughout.
-- **Manager**: Add `onboard upgrade`: run the game executable
-  (`VanillaFixes.exe`) for client upgrades with the launch-readiness gates
-  deliberately skipped — an explicit readiness bypass, not a verified
-  updater. Fleet policy directs client upgrades through the game entry
-  (never the launcher's Install/Verify) and the readiness messages point
-  here, but running the executable is only known to *launch* the client:
-  no updater surface has been established, so live use requires operator
-  approval. Same recorded runner, declared environment, and quiescence as
-  a native game launch; warns on stderr, launches, waits, and propagates
-  the exit status.
+- **Manager**: Remove `onboard upgrade`. Evidence review (2026-09-24)
+  showed `VanillaFixes.exe` is an 88 KiB MinGW launcher (`CreateProcessW`,
+  no update/help strings, identical hash on both hosts) — running it is
+  only known to *launch* the client, never to update it. No updater
+  surface was established, so the readiness-bypass command was deleted
+  rather than shipped as a repair path. Readiness and status hints now
+  point at the operator workflow instead: restore the
+  operator-confirmed file or re-pin the declaration after confirming
+  provenance, then re-check. Client payloads are never fetched by the
+  manager and never by the launcher's Install/Verify.
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized
   `system.prefix_command` (`modde-manager onboard gate --instance <name>
   --`, composed behind any declared wrapper). It enforces the same game
