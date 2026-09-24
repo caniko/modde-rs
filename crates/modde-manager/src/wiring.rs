@@ -240,11 +240,13 @@ fn validate_instance_token(name: &str) -> Result<()> {
 
 /// The game entry's launch gate, composed into `system.prefix_command`:
 /// the bare `modde-manager` token resolves through PATH exactly like the
-/// entry's system wine (the deployed wrapper exports the config path, so
-/// none is threaded through status/plan/apply), `--` ends the gate's own
-/// flags so Lutris's appended wine invocation lands as the passthrough
-/// command. A declared per-site wrapper stays in front of the gate; the
-/// gate itself is synthesized per instance and never declared.
+/// entry's system wine (the deployed wrapper passes `--config` explicitly,
+/// so none is threaded through status/plan/apply — the raw-binary
+/// fallback re-exec exists only for a bare binary and runs at most once),
+/// `--` ends the gate's own flags so Lutris's appended wine invocation
+/// lands as the passthrough command. A declared per-site wrapper stays in
+/// front of the gate; the gate itself is synthesized per instance and
+/// never declared.
 fn game_gate_prefix(name: &str, declared: Option<&str>) -> Result<String> {
     validate_instance_token(name)?;
     let gate = format!("modde-manager onboard gate --instance {name} --");
@@ -3067,14 +3069,17 @@ pub fn launch(
     spawn_native(name, &wiring, &runner, &lt)
 }
 
-/// Client upgrades run through the game executable itself
+/// Client maintenance through the game executable itself
 /// (`VanillaFixes.exe`): the same recorded runner, declared environment,
 /// and quiescence as a native game launch, but the launch-readiness gates
-/// are deliberately skipped — this is the maintenance invocation the
-/// readiness messages point at, and the sanctioned way to repair a
-/// drifted client (never the launcher's Install/Verify). It launches,
-/// waits, and propagates the exit status; it never reconciles, records,
-/// or falls back.
+/// are deliberately skipped. This is an explicit readiness bypass, not a
+/// verified updater: fleet policy directs client upgrades through the game
+/// entry (never the launcher's Install/Verify) and the readiness messages
+/// point here — but running the executable is only known to *launch* the
+/// client. No updater surface has been established, so live use requires
+/// operator approval. It launches, waits, and propagates the exit status;
+/// it never reconciles, records, or falls back, and it never claims the
+/// client changed — re-run status/check afterwards.
 pub fn upgrade(name: &str, instance: &Instance) -> Result<()> {
     let wiring = resolve_wiring(instance)?;
     let root_anchor = Anchor::open(&instance.root)?;
@@ -3082,8 +3087,9 @@ pub fn upgrade(name: &str, instance: &Instance) -> Result<()> {
     super::assert_stopped(instance)?;
     let runner = recorded_runner(name, instance)?;
     let lt = resolve_launch_target(instance, &wiring, NativeTarget::Game)?;
-    println!(
-        "{name}: running {} for client upgrades (readiness gates skipped)",
+    eprintln!(
+        "{name}: WARNING: readiness gates skipped — executing unverified client {} \
+         (operator-directed maintenance; live use requires operator approval)",
         lt.exe.display()
     );
     spawn_native(name, &wiring, &runner, &lt)

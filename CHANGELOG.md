@@ -40,16 +40,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   streaming capped reads throughout.
 - **Manager**: Add `onboard upgrade`: run the game executable
   (`VanillaFixes.exe`) for client upgrades with the launch-readiness gates
-  deliberately skipped — the maintenance path the readiness messages point
-  at, never the launcher's Install/Verify. Same recorded runner, declared
-  environment, and quiescence as a native game launch; launches, waits,
-  and propagates the exit status.
+  deliberately skipped — an explicit readiness bypass, not a verified
+  updater. Fleet policy directs client upgrades through the game entry
+  (never the launcher's Install/Verify) and the readiness messages point
+  here, but running the executable is only known to *launch* the client:
+  no updater surface has been established, so live use requires operator
+  approval. Same recorded runner, declared environment, and quiescence as
+  a native game launch; warns on stderr, launches, waits, and propagates
+  the exit status.
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized
   `system.prefix_command` (`modde-manager onboard gate --instance <name>
   --`, composed behind any declared wrapper). It enforces the same game
   launch readiness a native launch enforces, then execs the appended
-  command unchanged. A missing `--config` re-execs once through the PATH
-  `modde-manager` so the bare gate token finds its config.
+  command unchanged. A missing `--config` re-execs at most once through
+  the PATH `modde-manager` (marker-bounded, self-skipping) so the bare
+  gate token finds its config; the deployed wrapper always passes
+  `--config` explicitly, so the fallback only fires for a bare raw
+  binary.
 
 ### Changed
 

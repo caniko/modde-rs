@@ -25,8 +25,9 @@ mod wiring;
 #[command(name = "modde-manager", about = "Declarative post-setup game manager")]
 struct Cli {
     /// Manager config path; falls back to `MODDE_MANAGER_CONFIG`, then to
-    /// one re-exec through the PATH `modde-manager` (the deployed wrapper
-    /// exports the path).
+    /// one bounded re-exec through the PATH `modde-manager` (the deployed
+    /// wrapper always passes `--config` explicitly, so the fallback only
+    /// fires for a bare raw binary).
     #[arg(long, env = "MODDE_MANAGER_CONFIG")]
     config: Option<PathBuf>,
     #[command(subcommand)]
@@ -150,11 +151,18 @@ enum OnboardAction {
         #[arg(long, value_enum, default_value = "vanilla")]
         mode: LaunchModeArg,
     },
-    /// Run the game executable (VanillaFixes.exe) for client upgrades with
-    /// the launch-readiness gates deliberately skipped: the maintenance
-    /// path the readiness messages point at — never the launcher's
-    /// Install/Verify. Quiescence and the recorded runner still apply;
-    /// launches, waits, and surfaces the exit status.
+    /// Client maintenance through the game executable itself
+    /// (`VanillaFixes.exe`): the same recorded runner, declared
+    /// environment, and quiescence as a native game launch, but the
+    /// launch-readiness gates are deliberately skipped. This is an
+    /// explicit readiness bypass, not a verified updater: fleet policy
+    /// directs client upgrades through the game entry (never the
+    /// launcher's Install/Verify) and the readiness messages point here,
+    /// but running the executable is only known to *launch* the client —
+    /// no updater surface has been established, so live use requires
+    /// operator approval. It launches, waits, and propagates the exit
+    /// status; it never reconciles, records, or falls back, and it never
+    /// claims the client changed — re-run status/check afterwards.
     Upgrade {
         #[arg(long)]
         instance: String,
@@ -601,20 +609,54 @@ fn list_instances(config: &Config, json: bool) -> Result<()> {
     Ok(())
 }
 
+/// Marker set on the single config-fallback re-exec. A second unconfigured
+/// invocation fails instead of ping-ponging between two `modde-manager`
+/// binaries (or re-entering a config-less wrapper): the fallback runs at
+/// most once per process tree.
+const CONFIG_REEXEC_MARKER: &str = "MODDE_MANAGER_CONFIG_RESOLVED";
+
 /// Resolve the manager config path: an explicit `--config` wins (clap
-/// already folds `MODDE_MANAGER_CONFIG` into it) — else one re-exec
-/// through the PATH `modde-manager`. The deployed wrapper exports the
-/// config path, so the bare gate token finds its config without threading
-/// a path through status/plan/apply. The `current_exe` comparison keeps a
-/// directly-invoked binary from re-execing itself; no marker env var is
-/// needed.
+/// already folds `MODDE_MANAGER_CONFIG` into it) — else one bounded
+/// re-exec through the PATH `modde-manager`. The deployed wrapper always
+/// passes `--config` explicitly (`exec <raw-binary> --config <file>`), so
+/// the fallback only fires for a bare raw binary resolving to a wrapper.
+/// The marker bounds it to a single hop and the `current_exe` comparison
+/// keeps a directly-invoked binary from re-execing itself.
 fn resolve_config_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
+    resolve_config_path_impl(explicit, std::env::var_os(CONFIG_REEXEC_MARKER).is_some())
+}
+
+fn resolve_config_path_impl(explicit: Option<PathBuf>, reexec_attempted: bool) -> Result<PathBuf> {
     if let Some(path) = explicit {
         return Ok(path);
     }
+    if reexec_attempted {
+        bail!(
+            "no --config given and config re-exec already attempted \
+             ({CONFIG_REEXEC_MARKER} is set); invoke through the deployed wrapper"
+        );
+    }
     let exe = std::env::current_exe().context("resolve current executable")?;
     let exe = exe.canonicalize().unwrap_or(exe);
-    for dir in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
+    let Some(fallback) = find_config_fallback(&exe, std::env::var_os("PATH").as_deref()) else {
+        bail!("no --config given and no other modde-manager on PATH")
+    };
+    use std::os::unix::process::CommandExt;
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    let error = std::process::Command::new(&fallback)
+        .env(CONFIG_REEXEC_MARKER, "1")
+        .args(&args)
+        .exec();
+    Err(error).with_context(|| format!("exec {}", fallback.display()))
+}
+
+/// First PATH `modde-manager` distinct from the running executable:
+/// missing candidates are skipped, never executed. Pure (no `exec`), so
+/// the selection order is unit-testable without replacing the test
+/// process.
+fn find_config_fallback(exe: &Path, path_var: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    let path_var = path_var?;
+    for dir in std::env::split_paths(path_var) {
         let candidate = dir.join("modde-manager");
         let Ok(resolved) = candidate.canonicalize() else {
             continue;
@@ -622,12 +664,9 @@ fn resolve_config_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
         if resolved == exe {
             continue;
         }
-        use std::os::unix::process::CommandExt;
-        let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-        let error = std::process::Command::new(&resolved).args(&args).exec();
-        return Err(error).with_context(|| format!("exec {}", resolved.display()));
+        return Some(resolved);
     }
-    bail!("no --config given and no other modde-manager on PATH")
+    None
 }
 
 fn load_config(path: &Path) -> Result<Config> {
@@ -1250,6 +1289,53 @@ mod tests {
         assert_eq!(
             resolve_config_path(Some(explicit.clone())).unwrap(),
             explicit
+        );
+    }
+
+    #[test]
+    fn config_fallback_prefers_first_distinct_candidate() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let self_bin = root.path().join("self-bin");
+        let first = root.path().join("first/modde-manager");
+        let second = root.path().join("second/modde-manager");
+        for path in [&self_bin, &first, &second] {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        // A symlink with a different spelling still resolves to self.
+        let alias_dir = root.path().join("alias");
+        fs::create_dir_all(&alias_dir).unwrap();
+        std::os::unix::fs::symlink(&self_bin, alias_dir.join("modde-manager")).unwrap();
+        let exe = self_bin.canonicalize().unwrap();
+        let path = std::env::join_paths([
+            root.path().join("missing"),
+            root.path().to_path_buf(),
+            alias_dir.clone(),
+            first.parent().unwrap().to_path_buf(),
+            second.parent().unwrap().to_path_buf(),
+        ])
+        .unwrap();
+        assert_eq!(
+            find_config_fallback(&exe, Some(path.as_os_str())).unwrap(),
+            first.canonicalize().unwrap()
+        );
+        // Self only (by any spelling) means no fallback.
+        let path = std::env::join_paths([alias_dir]).unwrap();
+        assert!(find_config_fallback(&exe, Some(path.as_os_str())).is_none());
+        assert!(find_config_fallback(&exe, None).is_none());
+    }
+
+    #[test]
+    fn config_fallback_runs_at_most_once() {
+        // The marker arm never reaches PATH: even a usable fallback is
+        // refused once a re-exec already happened, so two unconfigured
+        // binaries cannot ping-pong.
+        let err = resolve_config_path_impl(None, true).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("already attempted"),
+            "unexpected: {err:#}"
         );
     }
 
