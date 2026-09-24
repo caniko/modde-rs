@@ -450,3 +450,208 @@ fn gate_passes_with_matching_digest_pin() {
     );
     assert_eq!(fs::read_to_string(&sentinel).unwrap(), "ran\n");
 }
+
+/// An explicit `--config` wins over a conflicting `MODDE_MANAGER_CONFIG`
+/// env value: clap folds the env into the same option with the flag
+/// taking precedence, so a stale exported config never hijacks a
+/// configured invocation (the bogus env target is not valid JSON — if
+/// the env won, the parse would fail).
+#[test]
+fn explicit_config_wins_over_conflicting_env() {
+    let root = unique_root("explicit-over-env");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    fs::write(client.join("WoW.exe"), "fake-wow-bytes").unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let config = write_config(&root, &client, None);
+    let bogus = root.join("bogus.json");
+    fs::write(&bogus, "not json").unwrap();
+    let mut cmd = Command::new(binary());
+    sandbox_env(&mut cmd, &root);
+    let output = cmd
+        .arg("--config")
+        .arg(&config)
+        .arg("list")
+        .env("MODDE_MANAGER_CONFIG", &bogus)
+        .env_remove("MODDE_MANAGER_CONFIG_RESOLVED")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "explicit config lost to env: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("test"),
+        "instance missing from list output"
+    );
+}
+
+/// The gate inherits its environment across `exec`: a marker variable
+/// set by Lutris (or the session) reaches the game process unchanged.
+#[test]
+fn gate_preserves_environment() {
+    let root = unique_root("gate-env");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    fs::write(client.join("WoW.exe"), "fake-wow-bytes").unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let config = write_config(&root, &client, None);
+    let sentinel = root.join("sentinel");
+    let probe = root.join("probe");
+    write_exe(
+        &probe,
+        &format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$MODDE_GATE_PROBE_MARKER\" > \"{}\"\nexit 0\n",
+            sentinel.display()
+        ),
+    );
+    let mut cmd = Command::new(binary());
+    sandbox_env(&mut cmd, &root);
+    let output = cmd
+        .arg("--config")
+        .arg(&config)
+        .arg("onboard")
+        .arg("gate")
+        .arg("--instance")
+        .arg("test")
+        .arg("--")
+        .arg(&probe)
+        .env("MODDE_GATE_PROBE_MARKER", "marker-value-123")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "gate refused: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&sentinel).unwrap(),
+        "marker-value-123\n"
+    );
+}
+
+/// The complete installed bare-token chain through `gate` (not just
+/// `list`): a bare raw binary (no `--config`, no env) finds the wrapper
+/// on PATH, the wrapper supplies `--config`, and the gate execs the
+/// probe. This is the deployed graphical-session shape end to end.
+#[test]
+fn gate_bare_token_chain_through_wrapper() {
+    let root = unique_root("gate-chain");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    fs::write(client.join("WoW.exe"), "fake-wow-bytes").unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let config = write_config(&root, &client, None);
+    let sentinel = root.join("sentinel");
+    let probe = root.join("probe");
+    write_exe(
+        &probe,
+        &format!(
+            "#!/bin/sh\nprintf 'ran\\n' > \"{}\"\nexit 0\n",
+            sentinel.display()
+        ),
+    );
+    let real = binary();
+    let wrapper_dir = root.join("wrapper");
+    write_exe(
+        &wrapper_dir.join("modde-manager"),
+        &format!(
+            "#!/bin/sh\nexec \"{}\" --config \"{}\" \"$@\"\n",
+            real.display(),
+            config.display()
+        ),
+    );
+    let mut cmd = Command::new(&real);
+    let base = sandbox_env(&mut cmd, &root);
+    cmd.env("PATH", format!("{}:{base}", wrapper_dir.display()));
+    cmd.env_remove("MODDE_MANAGER_CONFIG");
+    cmd.env_remove("MODDE_MANAGER_CONFIG_RESOLVED");
+    let output = cmd
+        .arg("onboard")
+        .arg("gate")
+        .arg("--instance")
+        .arg("test")
+        .arg("--")
+        .arg(&probe)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "bare-token gate chain failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&sentinel).unwrap(), "ran\n");
+}
+
+/// Signals pass through `exec` to the game: SIGTERM delivered to the
+/// gate child reaches the probe, which traps it and records receipt.
+/// The gate installs no handlers and never double-forks — after
+/// readiness it *is* the probe process image.
+#[test]
+fn gate_forwards_sigterm_to_probe() {
+    let root = unique_root("gate-signal");
+    let client = root.join("client");
+    fs::create_dir_all(&client).unwrap();
+    fs::write(client.join("WoW.exe"), "fake-wow-bytes").unwrap();
+    fs::write(client.join("VanillaFixes.exe"), "fake-fixes-bytes").unwrap();
+    let config = write_config(&root, &client, None);
+    let sentinel = root.join("sentinel");
+    let probe = root.join("probe");
+    write_exe(
+        &probe,
+        &format!(
+            "#!/bin/sh\ntrap 'echo got-term > \"{}\"; exit 143' TERM\nwhile :; do sleep 1; done\nexit 0\n",
+            sentinel.display()
+        ),
+    );
+    let mut cmd = Command::new(binary());
+    sandbox_env(&mut cmd, &root);
+    let mut child = cmd
+        .arg("--config")
+        .arg(&config)
+        .arg("onboard")
+        .arg("gate")
+        .arg("--instance")
+        .arg("test")
+        .arg("--")
+        .arg(&probe)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Readiness is file metadata only; 500ms is ample to reach exec.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    if let Some(status) = child.try_wait().unwrap() {
+        let remaining = child.wait_with_output().unwrap();
+        panic!(
+            "gate exited early with {status}: {}",
+            String::from_utf8_lossy(&remaining.stderr)
+        );
+    }
+    let pid = child.id().to_string();
+    Command::new("kill")
+        .arg("-TERM")
+        .arg(&pid)
+        .status()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert_eq!(
+                fs::read_to_string(&sentinel).unwrap_or_default(),
+                "got-term\n",
+                "probe never received SIGTERM"
+            );
+            // 143 = 128 + SIGTERM via the trap's explicit exit.
+            assert_eq!(status.code(), Some(143), "unexpected gate status {status}");
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            let _ = child.wait();
+            panic!("gate ignored SIGTERM after 10s");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}

@@ -24,10 +24,11 @@ mod wiring;
 #[derive(Parser)]
 #[command(name = "modde-manager", about = "Declarative post-setup game manager")]
 struct Cli {
-    /// Manager config path; falls back to `MODDE_MANAGER_CONFIG`, then to
-    /// one bounded re-exec through the PATH `modde-manager` (the deployed
-    /// wrapper always passes `--config` explicitly, so the fallback only
-    /// fires for a bare raw binary).
+    /// Manager config path; an explicit `--config` wins over
+    /// `MODDE_MANAGER_CONFIG` (clap precedence), then one bounded re-exec
+    /// through the PATH `modde-manager` (the deployed wrapper always
+    /// passes `--config` explicitly, so the fallback only fires for a
+    /// bare raw binary).
     #[arg(long, env = "MODDE_MANAGER_CONFIG")]
     config: Option<PathBuf>,
     #[command(subcommand)]

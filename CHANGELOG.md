@@ -40,14 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   streaming capped reads throughout.
 - **Manager**: Remove `onboard upgrade`. Evidence review (2026-09-24)
   showed `VanillaFixes.exe` is an 88 KiB MinGW launcher (`CreateProcessW`,
-  no update/help strings, identical hash on both hosts) — running it is
-  only known to *launch* the client, never to update it. No updater
-  surface was established, so the readiness-bypass command was deleted
-  rather than shipped as a repair path. Readiness and status hints now
-  point at the operator workflow instead: restore the
-  operator-confirmed file or re-pin the declaration after confirming
-  provenance, then re-check. Client payloads are never fetched by the
-  manager and never by the launcher's Install/Verify.
+  plus dynamic `LoadLibrary`/`GetProcAddress`, no update/help strings in
+  a static ASCII scan, identical hash on both hosts) — running it is
+  only known to *launch* the client, never to update it. No supported
+  update procedure has been established: the static scan cannot rule
+  out updater behavior elsewhere (companion `VfPatcher.dll` role
+  unestablished, dynamic resolution present), so the readiness-bypass
+  command was deleted rather than kept as a repair path. It had shipped
+  in the deployed `449be6b` build (bypass warning present in the
+  shipped binary) and is removed here, not "never shipped". Readiness
+  and status hints now point at the operator workflow instead: restore
+  the operator-confirmed file or re-pin the declaration after
+  confirming provenance, then re-check. Client payloads are never
+  fetched by the manager and never by the launcher's Install/Verify.
+  The declarative game entry executing `octo/VanillaFixes.exe`
+  establishes the launch executable only; the client upgrade procedure
+  itself remains operator-gated and unestablished.
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized
   `system.prefix_command` (`modde-manager onboard gate --instance <name>
   --`, composed behind any declared wrapper). It enforces the same game
