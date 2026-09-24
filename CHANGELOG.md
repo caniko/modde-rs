@@ -59,32 +59,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Manager**: Add `onboard validate`: offline declaration validation
   (deserializer + resolver shapes only — launch-executable and
   require_files bare names, digest shapes, single-alphanumeric HD letters
-  with no case-insensitive duplicates, absolute sibling prefixes,
-  launcher-under-prefix, token-safe slugs, and rejection of structural
-  `WINEPREFIX`/`WINEARCH`/`WINEDLLOVERRIDES` in `tunings.env`). No
-  filesystem, Wine, graphical session, or user-state access; Nix checks
-  feed generated configs through it. Live presence stays in `status`.
+  with no case-insensitive duplicates, absolute traversal-free sibling
+  prefixes, launcher-under-prefix, token-safe slugs with game/launcher
+  slug separation, empty-HD-approval rejection, and rejection of
+  structural `WINEPREFIX`/`WINEARCH`/`WINEDLLOVERRIDES` in `tunings.env`).
+  No filesystem, Wine, graphical session, or user-state access; every
+  onboard command runs it before any filesystem observation, and Nix
+  checks feed both generated site configs through it. Live presence stays
+  in `status`.
 - **Manager**: Add `launcher.tunings` partial overrides (omitted fields
   inherit the game tunings, explicit `false` wins, env merges with
-  launcher keys winning and `null` removing). One resolved target
-  configuration feeds Lutris rendering, checks, and native execution, so
-  the launcher can use DXVK while the game keeps its bundled d3d9.
+  launcher keys winning and `null` removing). The resolved tunings feed
+  Lutris rendering and checks per target; native execution uses only the
+  `env` map plus DLL overrides — the Lutris wine toggles
+  (dxvk/vkd3d/esync/fsync) are Lutris-entry scope and are intentionally
+  not translated into native Wine variables.
 - **Manager**: Fix HD patch lookup to a single case-insensitive inventory:
   `Patch-E.mpq`, `patch-E.MPQ`, and `PATCH-e.MpQ` all satisfy letter `E`
   with the on-disk spelling reported and preserved. Case-variant
-  collisions fail closed as ambiguous; symlinks and non-files never count
-  as present. Checking and applying never rename patches.
+  collisions, symlinks, and listing failures surface as
+  Mismatched/Unverifiable readiness findings (registration proceeds,
+  execution refuses), never as hard errors. Checking and applying never
+  rename patches.
 - **Manager**: Fix game launch readiness to enforce the full declared set
-  in every mode: required client files, the pinned executable identity,
-  and — when declared — the approved HD set. The Lutris gate shares the
-  same policy. Present HD MPQs load in every mode, so the misleading
-  "re-run without HD mode" downgrade hint is gone; HD-mode launch
-  additionally requires a declared set instead of inferring approval from
-  installed files.
+  in every mode: required client files (`client-file:*`), the pinned
+  executable identity, and — when declared — the approved HD set. All
+  three are registration-exempt readiness findings: an otherwise-valid
+  entry registers while missing/drifted/ambiguous payloads refuse launch,
+  native and Lutris gate alike. Present HD MPQs load in every mode, so
+  the misleading "re-run without HD mode" downgrade hint is gone;
+  HD-mode launch additionally requires a declared set instead of
+  inferring approval from installed files.
 - **Manager**: Remove the implicit HD patch set from the `octowow-hd`
   preset: consumers declare their operator-confirmed `native_letters`
   explicitly, and an HD launch with no declared set fails with an
   actionable error.
+- **Manager**: Bump `managerSchemaVersion` to 5 (launcher tuning
+  overrides, offline validate, registration/readiness split).
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized
   `system.prefix_command` (`modde-manager onboard gate --instance <name>
   --`, composed behind any declared wrapper). It enforces the same game

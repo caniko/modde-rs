@@ -413,6 +413,9 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    // Shared offline gate: malformed declarations fail here,
+                    // before any filesystem observation in status.
+                    validate_offline(&instance, instance_config)?;
                     let items = wiring::status(&instance, instance_config, &dirs)?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&items)?);
@@ -449,6 +452,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    validate_offline(&instance, instance_config)?;
                     let changes = wiring::plan(&instance, instance_config, &dirs)?;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&changes)?);
@@ -475,6 +479,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    validate_offline(&instance, instance_config)?;
                     wiring::apply(
                         &instance,
                         instance_config,
@@ -489,6 +494,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    validate_offline(&instance, instance_config)?;
                     wiring::register_launcher(&instance, instance_config, &dirs, adopt)
                 }
                 OnboardAction::InstallLauncher { instance, force } => {
@@ -496,6 +502,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    validate_offline(&instance, instance_config)?;
                     wiring::install_launcher(&instance, instance_config, &dirs, force)
                 }
                 OnboardAction::Prepare { instance, reselect } => {
@@ -503,6 +510,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    validate_offline(&instance, instance_config)?;
                     wiring::prepare_native(&instance, instance_config, &dirs, reselect)
                 }
                 OnboardAction::Launch {
@@ -514,6 +522,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    validate_offline(&instance, instance_config)?;
                     wiring::launch(
                         &instance,
                         instance_config,
@@ -534,6 +543,9 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    // Offline shapes first: a malformed declaration refuses
+                    // before readiness is even observed, never reaching exec.
+                    validate_offline(&instance, instance_config)?;
                     wiring::gate(&instance, instance_config, &dirs, &command)
                 }
                 OnboardAction::DesktopEntry { instance } => {
@@ -541,6 +553,7 @@ fn main() -> Result<()> {
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
+                    validate_offline(&instance, instance_config)?;
                     wiring::desktop_entry(&instance, instance_config, &dirs, &config_path)
                 }
                 OnboardAction::Validate { instance } => {

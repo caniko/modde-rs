@@ -13,7 +13,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Optional per-instance runtime wiring. All fields optional so existing
-/// configs keep parsing; bumping `managerSchemaVersion` to 3 advertises it.
+/// configs keep parsing; bumping `managerSchemaVersion` to 5 advertises
+/// launcher tuning overrides, offline validation, and the tightened
+/// registration/readiness contract.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Wiring {
@@ -634,10 +636,19 @@ pub fn resolve_wiring(instance: &Instance) -> Result<Wiring> {
 /// no filesystem, Wine, graphical session, or mutable user-state access.
 /// Nix checks feed generated configs through this (via
 /// `onboard validate`); live file presence stays in `status`, never here.
+/// Callers (status, prepare, launch, gate, and the CLI dispatch) run this
+/// before any filesystem observation so malformed declarations fail with
+/// actionable errors, never with inspection side effects.
 pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
     validate_instance_token(name)?;
     if !instance.root.is_absolute() {
         bail!("client root must be absolute: {}", instance.root.display());
+    }
+    if has_parent_traversal(&instance.root) {
+        bail!(
+            "client root must not contain '..': {}",
+            instance.root.display()
+        );
     }
     let wiring = resolve_wiring(instance)?;
     // Launch executable: bare file name inside the client root, never a
@@ -652,16 +663,25 @@ pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
             wiring.launch.executable
         );
     }
-    // Prefix: absolute sibling of the root, never inside it.
+    // Prefix: absolute sibling of the root, never inside it, never
+    // traversal-ambiguous (lexical `starts_with`/`overlap` checks are only
+    // sound once `..` is rejected).
     if let Some(prefix) = &wiring.prefix {
         if !prefix.path.is_absolute() {
             bail!("prefix path must be absolute");
+        }
+        if has_parent_traversal(&prefix.path) {
+            bail!(
+                "prefix path must not contain '..': {}",
+                prefix.path.display()
+            );
         }
         if overlap(&prefix.path, &instance.root) {
             bail!("prefix must be a sibling, never inside the game folder");
         }
     }
-    // Lutris entries: token-safe slugs, non-empty names.
+    // Lutris entries: token-safe slugs, non-empty names, distinct game vs
+    // launcher slugs (they share the yml namespace and pga.db slugs).
     if let Some(entry) = &wiring.lutris {
         validate_slug(&entry.slug)?;
         if entry.name.is_empty() {
@@ -692,6 +712,8 @@ pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
     }
     // HD patch policy: single alphanumerics, no case-insensitive
     // duplicates (they would be ambiguous on disk), plausible patch-A.
+    // An explicitly empty approval (no letters, no patch-A) is rejected:
+    // declare the operator-confirmed set or omit the block entirely.
     if let Some(patches) = &wiring.data_patches {
         let mut seen = std::collections::BTreeSet::new();
         for letter in &patches.native_letters {
@@ -701,6 +723,9 @@ pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
             if !seen.insert(letter.to_ascii_uppercase()) {
                 bail!("duplicate patch letter (case-insensitive): {letter}");
             }
+        }
+        if patches.native_letters.is_empty() && patches.patch_a.is_none() {
+            bail!("data_patches declares no letters and no patch-A; declare the operator-confirmed set or omit the block");
         }
         if let Some(expected) = &patches.patch_a {
             if expected.size == 0 {
@@ -727,11 +752,18 @@ pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
             bail!("launcher.tunings.env must not set {key} (owned by prefix/DLL plumbing)");
         }
     }
-    // Launcher shapes: absolute paths, executable under its prefix.
+    // Launcher shapes: absolute traversal-free paths, executable under its
+    // prefix (lexical containment is only sound once `..` is rejected).
     if let Some(launcher) = &wiring.launcher {
         if let Some(installer) = &launcher.installer {
             if !installer.path.is_absolute() {
                 bail!("launcher installer path must be absolute");
+            }
+            if has_parent_traversal(&installer.path) {
+                bail!(
+                    "launcher installer path must not contain '..': {}",
+                    installer.path.display()
+                );
             }
             if let Some(digest) = &installer.sha256
                 && (digest.len() != 64
@@ -744,12 +776,24 @@ pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
             if !prefix.is_absolute() {
                 bail!("launcher prefix path must be absolute");
             }
+            if has_parent_traversal(prefix) {
+                bail!(
+                    "launcher prefix path must not contain '..': {}",
+                    prefix.display()
+                );
+            }
             if overlap(prefix, &instance.root) {
                 bail!("launcher prefix must be a sibling, never inside the game folder");
             }
             if let Some(executable) = &launcher.executable {
                 if !executable.is_absolute() {
                     bail!("launcher executable path must be absolute");
+                }
+                if has_parent_traversal(executable) {
+                    bail!(
+                        "launcher executable path must not contain '..': {}",
+                        executable.display()
+                    );
                 }
                 if !executable.starts_with(prefix) {
                     bail!("launcher executable must live under the launcher prefix");
@@ -765,7 +809,25 @@ pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
             }
         }
     }
+    if let (Some(game), Some(launcher)) = (&wiring.lutris, &wiring.launcher)
+        && let Some(lentry) = &launcher.lutris
+        && game.slug == lentry.slug
+    {
+        bail!(
+            "game and launcher lutris slugs must differ (both use '{}')",
+            game.slug
+        );
+    }
     Ok(())
+}
+
+/// Lexical parent-traversal detector for offline validation: any `..`
+/// component makes prefix-containment checks (`starts_with`/`overlap`)
+/// unsound (e.g. `/prefix/../outside` lexically starts with `/prefix`).
+/// Live resolution never follows such paths; validation rejects them first.
+fn has_parent_traversal(path: &Path) -> bool {
+    path.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1513,7 +1575,13 @@ fn endpoints_item(root: &Path, endpoints: &Endpoints) -> StatusItem {
 }
 
 /// Read-only readiness report. Never executes wine, Lutris, or the launcher.
+/// Declaration shapes are validated first (fail-closed on malformed
+/// declarations); filesystem inspection errors for launch-readiness
+/// findings (client files, wow-exe identity, HD patches) surface as
+/// Mismatched/Unverifiable items — never as hard errors — so an
+/// otherwise-valid registration can proceed while execution refuses.
 pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<StatusItem>> {
+    validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
     let mut items = Vec::new();
     if !instance.root.is_dir() {
@@ -1557,43 +1625,57 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
 
     // Client integrity: metadata presence for required files (payloads are
     // never loaded); size-first, streaming digest, header-only flags for
-    // the executable. Fix hints point at the operator workflow: client
-    // payloads are never fetched by the manager and never by the
-    // launcher's Install/Verify — restore the operator-confirmed file or
-    // re-pin the declaration after confirming provenance, then re-check.
+    // the executable. Inspection failures (symlinks, permissions) surface
+    // as launch-readiness findings, never as hard errors: registration
+    // proceeds, execution refuses. Fix hints point at the operator
+    // workflow: client payloads are never fetched by the manager and never
+    // by the launcher's Install/Verify — restore the operator-confirmed
+    // file or re-pin the declaration after confirming provenance.
     if let Some(integrity) = &wiring.client_integrity {
         for file in &integrity.require_files {
-            match root_file_meta(&instance.root, file)? {
-                Some(meta) => items.push(item(
+            match root_file_meta(&instance.root, file) {
+                Ok(Some(meta)) => items.push(item(
                     &format!("client-file:{file}"),
                     ItemState::Verified,
                     format!("present ({} bytes)", meta.len()),
                     String::new(),
                 )),
-                None => items.push(item(
+                Ok(None) => items.push(item(
                     &format!("client-file:{file}"),
                     ItemState::Missing,
                     format!("{file} absent"),
                     "restore the operator-confirmed file or re-pin after confirming provenance, then re-check".into(),
                 )),
+                Err(e) => items.push(item(
+                    &format!("client-file:{file}"),
+                    ItemState::Mismatched,
+                    format!("{e:#}"),
+                    "restore the operator-confirmed file (no symlinks), then re-check".into(),
+                )),
             }
         }
         if let Some(expected) = &integrity.wow_exe {
             let rel = "WoW.exe";
-            match pinned_file(&instance.root, rel)? {
-                None => items.push(item(
+            match pinned_file(&instance.root, rel) {
+                Err(e) => items.push(item(
+                    "wow-exe",
+                    ItemState::Mismatched,
+                    format!("{e:#}"),
+                    "restore the operator-confirmed WoW.exe (no symlinks) or re-pin after confirming provenance".into(),
+                )),
+                Ok(None) => items.push(item(
                     "wow-exe",
                     ItemState::Missing,
                     format!("{rel} absent"),
                     "restore the operator-confirmed WoW.exe or re-pin after confirming provenance".into(),
                 )),
-                Some((_, meta)) if meta.len() != expected.size => items.push(item(
+                Ok(Some((_, meta))) if meta.len() != expected.size => items.push(item(
                     "wow-exe",
                     ItemState::Mismatched,
                     format!("size={} want={}", meta.len(), expected.size),
                     "client drifted; restore the operator-confirmed WoW.exe or re-pin after confirming provenance".into(),
                 )),
-                Some((mut file, _)) => {
+                Ok(Some((mut file, _))) => {
                     // Single descriptor: header flags first, then rewind and
                     // stream the digest. Payloads never sit in memory.
                     let flags = pe_exe_flags_file(&mut file);
@@ -1642,72 +1724,118 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
     // HD data patches: one case-insensitive inventory for presence,
     // identity, and stray detection (payloads never loaded); declared
     // patch-A identity verified by streaming digest. Filenames keep their
-    // on-disk spelling — checking never renames anything.
+    // on-disk spelling — checking never renames anything. Ambiguity,
+    // symlinks, and listing failures surface as Mismatched/Unverifiable
+    // findings (execution refuses, registration proceeds), never as hard
+    // errors.
     if let Some(patches) = &wiring.data_patches {
-        let data_names = data_entry_names(&instance.root)?;
-        for letter in &patches.native_letters {
-            if letter.len() != 1 || !letter.bytes().all(|c| c.is_ascii_alphanumeric()) {
-                bail!("unsafe patch letter: {letter}");
-            }
-            let want = format!("Data/patch-{letter}.mpq");
-            let found = match &data_names {
-                None => None,
-                Some(names) => resolve_hd_letter(&instance.root, names, letter)?,
-            };
-            items.push(item(
-                &format!("hd-patch:{letter}"),
-                if found.is_some() {
-                    ItemState::Verified
-                } else {
-                    ItemState::Missing
-                },
-                match &found {
-                    Some(actual) => format!("present as Data/{actual}"),
-                    None => format!("{want} absent (case-insensitive)"),
-                },
-                if found.is_some() {
-                    String::new()
-                } else {
-                    "HD patch absent; restore the operator-confirmed set, then re-check".into()
-                },
-            ));
-        }
-        if let Some(expected) = &patches.patch_a {
-            let actual = match &data_names {
-                None => None,
-                Some(names) => resolve_hd_letter(&instance.root, names, "A")?,
-            };
-            match actual {
-                None => items.push(item(
-                    "hd-patch-A",
-                    ItemState::Missing,
-                    "no patch-A at all".into(),
-                    "HD patch-A absent; restore the operator-confirmed set, then re-check".into(),
-                )),
-                Some(actual) => {
-                    let rel = format!("Data/{actual}");
-                    let Some((mut file, meta)) = pinned_file(&instance.root, &rel)? else {
-                        bail!("patch vanished during check: {rel}")
-                    };
-                    // Size first (cheap reject), then a streaming digest.
-                    let ok = meta.len() == expected.size
-                        && stream_digest_file(&mut file)
-                            .map(|(_, digest)| digest == expected.sha256.to_ascii_lowercase())
-                            .unwrap_or(false);
+        let data_names: Result<Option<Vec<String>>> = data_entry_names(&instance.root);
+        match &data_names {
+            Err(e) => {
+                for letter in &patches.native_letters {
                     items.push(item(
-                        "hd-patch-A",
-                        if ok {
-                            ItemState::Verified
-                        } else {
-                            ItemState::Mismatched
-                        },
-                        format!("size={} want={}", meta.len(), expected.size),
-                        if ok {
-                            String::new()
-                        } else {
-                            "OctoWoW's own patch-A is back: re-copy the HD patch-A".into()
-                        },
+                        &format!("hd-patch:{letter}"),
+                        ItemState::Unverifiable,
+                        format!("Data/ unreadable: {e:#}"),
+                        "inspect Data/ permissions, then re-check".into(),
                     ));
+                }
+                items.push(item(
+                    "hd-patch-letters",
+                    ItemState::Unverifiable,
+                    format!("Data/ unreadable: {e:#}"),
+                    "inspect Data/ permissions, then re-check".into(),
+                ));
+            }
+            Ok(data_names) => {
+                for letter in &patches.native_letters {
+                    if letter.len() != 1 || !letter.bytes().all(|c| c.is_ascii_alphanumeric()) {
+                        bail!("unsafe patch letter: {letter}");
+                    }
+                    let want = format!("Data/patch-{letter}.mpq");
+                    let found: Result<Option<String>> = match data_names {
+                        None => Ok(None),
+                        Some(names) => resolve_hd_letter(&instance.root, names, letter),
+                    };
+                    match found {
+                        Ok(Some(actual)) => items.push(item(
+                            &format!("hd-patch:{letter}"),
+                            ItemState::Verified,
+                            format!("present as Data/{actual}"),
+                            String::new(),
+                        )),
+                        Ok(None) => items.push(item(
+                            &format!("hd-patch:{letter}"),
+                            ItemState::Missing,
+                            format!("{want} absent (case-insensitive)"),
+                            "HD patch absent; restore the operator-confirmed set, then re-check".into(),
+                        )),
+                        Err(e) => items.push(item(
+                            &format!("hd-patch:{letter}"),
+                            ItemState::Mismatched,
+                            format!("{e:#}"),
+                            "keep exactly one non-symlink spelling per letter, then re-check".into(),
+                        )),
+                    }
+                }
+                if let Some(expected) = &patches.patch_a {
+                    let actual: Result<Option<String>> = match data_names {
+                        None => Ok(None),
+                        Some(names) => resolve_hd_letter(&instance.root, names, "A"),
+                    };
+                    match actual {
+                        Err(e) => items.push(item(
+                            "hd-patch-A",
+                            ItemState::Mismatched,
+                            format!("{e:#}"),
+                            "keep exactly one non-symlink patch-A spelling, then re-check".into(),
+                        )),
+                        Ok(None) => items.push(item(
+                            "hd-patch-A",
+                            ItemState::Missing,
+                            "no patch-A at all".into(),
+                            "HD patch-A absent; restore the operator-confirmed set, then re-check".into(),
+                        )),
+                        Ok(Some(actual)) => {
+                            match pinned_file(&instance.root, &format!("Data/{actual}")) {
+                                Err(e) => items.push(item(
+                                    "hd-patch-A",
+                                    ItemState::Mismatched,
+                                    format!("{e:#}"),
+                                    "restore the operator-confirmed patch-A (no symlinks), then re-check".into(),
+                                )),
+                                Ok(None) => items.push(item(
+                                    "hd-patch-A",
+                                    ItemState::Missing,
+                                    format!("Data/{actual} vanished during check"),
+                                    "restore the operator-confirmed set, then re-check".into(),
+                                )),
+                                Ok(Some((mut file, meta))) => {
+                                    // Size first (cheap reject), then a streaming digest.
+                                    let ok = meta.len() == expected.size
+                                        && stream_digest_file(&mut file)
+                                            .map(|(_, digest)| {
+                                                digest == expected.sha256.to_ascii_lowercase()
+                                            })
+                                            .unwrap_or(false);
+                                    items.push(item(
+                                        "hd-patch-A",
+                                        if ok {
+                                            ItemState::Verified
+                                        } else {
+                                            ItemState::Mismatched
+                                        },
+                                        format!("size={} want={}", meta.len(), expected.size),
+                                        if ok {
+                                            String::new()
+                                        } else {
+                                            "OctoWoW's own patch-A is back: re-copy the HD patch-A".into()
+                                        },
+                                    ));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1716,11 +1844,14 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
     // Rename dodge detection: single-letter patches outside the declared
     // native letters are known character-screen crash causes. Numbered
     // stock patches (patch-1..5.mpq) are always accepted. Names only —
-    // payloads are never read (HD trees are gigabytes).
+    // payloads are never read (HD trees are gigabytes). Reuses the same
+    // inventory semantics as presence above; listing failures are already
+    // reported as Unverifiable, so only a fresh successful listing can add
+    // a stray finding here.
     if let Some(patches) = &wiring.data_patches {
         if patches.forbid_renames {
-            match data_entry_names(&instance.root)? {
-                Some(names) => {
+            match data_entry_names(&instance.root) {
+                Ok(Some(names)) => {
                     let strays: Vec<_> = names
                         .iter()
                         .filter_map(|name| classify_patch(name, &patches.native_letters))
@@ -1735,12 +1866,15 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                         ));
                     }
                 }
-                None => items.push(item(
+                Ok(None) => items.push(item(
                     "hd-patch-letters",
                     ItemState::Missing,
                     "no Data/ directory".into(),
                     "install the client before onboarding".into(),
                 )),
+                // Listing failures already surface per-letter above; no
+                // duplicate stray finding here.
+                Err(_) => {}
             }
         }
     }
@@ -2038,16 +2172,18 @@ fn is_deferred_hd_item(item: &StatusItem) -> bool {
     item.state == ItemState::Missing && item.name.starts_with("hd-patch:")
 }
 
-/// Launch-readiness findings: the client's digest identity (`wow-exe`) and
-/// HD payload state (`hd-patch*` — per-letter presence plus the
-/// rename-dodge and patch-A identity detectors). Registration neither
-/// reads nor writes them, so they never gate writing an otherwise valid,
-/// declared Lutris entry; they stay visible in status/plan and gate
-/// execution instead: HD launch requires every `hd-patch*` item verified,
-/// and a game launch requires `wow-exe` verified — native `onboard launch`
-/// and the Lutris entry through its synthesized `onboard gate` alike.
+/// Launch-readiness findings: required client files (`client-file:*`), the
+/// client's digest identity (`wow-exe`), and HD payload state (`hd-patch*`
+/// — per-letter presence plus the rename-dodge and patch-A identity
+/// detectors). Registration neither reads nor writes them, so they never
+/// gate writing an otherwise valid, declared Lutris entry; they stay
+/// visible in status/plan and gate execution instead: a game launch
+/// requires every `client-file:*` and `wow-exe` item verified plus — when
+/// `data_patches` is declared — every `hd-patch*` item verified. Native
+/// `onboard launch` and the Lutris entry through its synthesized `onboard
+/// gate` share the same policy.
 fn is_launch_readiness_item(name: &str) -> bool {
-    name == "wow-exe" || name.starts_with("hd-patch")
+    name == "wow-exe" || name.starts_with("hd-patch") || name.starts_with("client-file:")
 }
 
 /// Items apply neither owns nor gates on. The launcher lifecycle
@@ -2055,10 +2191,10 @@ fn is_launch_readiness_item(name: &str) -> bool {
 /// to register-launcher and the launcher itself — apply never touches it.
 /// Absent external artifacts (HD payloads, the bootstrap installer) never
 /// gate registration either; they stay visible and, for HD, journaled as
-/// deferred. Launch-readiness findings gate launch modes, not
-/// registration. Everything else non-verified blocks registration or
-/// fails verification — notably a digest-mismatched installer and
-/// missing client files.
+/// deferred. Launch-readiness findings (required client files, wow-exe
+/// digest, HD payload state) gate launch modes, not registration.
+/// Everything else non-verified blocks registration or fails verification
+/// — notably a digest-mismatched installer.
 fn is_apply_exempt(item: &StatusItem) -> bool {
     item.name == "launcher-entry"
         || item.name == "launcher-client-dir"
@@ -2635,6 +2771,8 @@ pub fn prepare(
 ) -> Result<PreparedWiring> {
     // NOTE: read-only validation; the caller (apply) holds the root lease
     // across validation, execution, verification, and recovery.
+    // Offline declaration shapes fail first, before any filesystem work.
+    validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
     Anchor::open(&instance.root)?;
     super::assert_stopped(instance)?;
@@ -2677,12 +2815,12 @@ pub fn prepare(
         yml_body = entry_plan.body;
     }
 
-    // Structural prerequisites (client files, endpoints, runner) are
-    // external maintenance (launcher updates, client install): anything
-    // apply does not own must already verify, or no mutation happens at
-    // all. Same observations status/plan report. The launcher lifecycle
-    // is owned by register-launcher, and launch-readiness findings
-    // (wow-exe digest, HD payload state) gate launch modes — a valid
+    // Structural prerequisites (endpoints, runner) are external
+    // maintenance (launcher updates, client install): anything apply does
+    // not own must already verify, or no mutation happens at all. Same
+    // observations status/plan report. The launcher lifecycle is owned by
+    // register-launcher, and launch-readiness findings (required client
+    // files, wow-exe digest, HD payload state) gate launch modes — a valid
     // declared entry must not wait for any of them.
     let blockers: Vec<_> = status(name, instance, dirs)?
         .into_iter()
@@ -2948,8 +3086,11 @@ pub enum LaunchMode {
 /// A resolved native launch: executable, working directory, Wine prefix,
 /// client DLL overrides, and the effective tunings plus runtime arch for
 /// the environment. Game targets use the declared tunings; launcher and
-/// installer targets use the launcher-effective tunings, mirroring the
-/// Lutris render exactly.
+/// installer targets use the launcher-effective tunings. Only the `env`
+/// map plus DLL overrides affect native execution (see
+/// `resolve_launch_env_with`): the Lutris wine toggles
+/// (dxvk/vkd3d/esync/fsync) are Lutris-entry scope and are intentionally
+/// not translated into native Wine variables.
 pub struct LaunchTarget {
     pub exe: PathBuf,
     pub dir: PathBuf,
@@ -3001,11 +3142,24 @@ fn launch_exe(path: &Path, what: &str) -> Result<PathBuf> {
 }
 
 /// Installed launcher executable checks shared by registration and native
-/// launch: absolute, under its own prefix (never an arbitrary host
-/// executable a launcher entry would then run), regular file, no symlinks.
+/// launch: absolute, traversal-free, under its own prefix (never an
+/// arbitrary host executable a launcher entry would then run), regular
+/// file, no symlinks.
 fn validate_launcher_executable(executable: &Path, prefix: &Path) -> Result<()> {
     if !executable.is_absolute() {
         bail!("launcher executable path must be absolute");
+    }
+    if has_parent_traversal(executable) {
+        bail!(
+            "launcher executable path must not contain '..': {}",
+            executable.display()
+        );
+    }
+    if has_parent_traversal(prefix) {
+        bail!(
+            "launcher prefix path must not contain '..': {}",
+            prefix.display()
+        );
     }
     if !executable.starts_with(prefix) {
         bail!(
@@ -3114,11 +3268,14 @@ fn resolve_launch_target(
 }
 
 /// Native launch environment: the scrubbed Wine base (same helper as
-/// prefix creation) plus the declared tunings, mirroring the Lutris render
-/// exactly — the typed `dll_overrides` win over an `extra_env`
-/// `WINEDLLOVERRIDES`, structural `WINEPREFIX`/`WINEARCH` win over tunings,
-/// and a declared `WINEDEBUG` wins over the scrubbed default. Pure for
-/// testability; returns (removals, assignments).
+/// prefix creation) plus the declared `env` map — the typed
+/// `dll_overrides` win over an `extra_env` `WINEDLLOVERRIDES`, structural
+/// `WINEPREFIX`/`WINEARCH` win over tunings, and a declared `WINEDEBUG`
+/// wins over the scrubbed default. The Lutris wine toggles
+/// (dxvk/vkd3d/esync/fsync) are Lutris-entry scope only and are
+/// intentionally not translated into native Wine variables here; native
+/// and Lutris executions therefore share env/DLL parity but not toggle
+/// parity. Pure for testability; returns (removals, assignments).
 fn resolve_launch_env_with(
     tunings: &Tunings,
     arch: &str,
@@ -3143,8 +3300,9 @@ fn resolve_launch_env_with(
     (remove, merged.into_iter().collect())
 }
 
-/// Launcher/installer native environment: launcher-effective tunings with
-/// the same structural wins as the game path. Mirrors `launcher_spec`.
+/// Launcher/installer native environment: launcher-effective `env` with
+/// the same structural wins as the game path. Lutris wine toggles stay
+/// Lutris-scoped (see `resolve_launch_env_with`).
 fn resolve_launcher_env(
     wiring: &Wiring,
     prefix: &Path,
@@ -3162,6 +3320,7 @@ fn resolve_launcher_env(
 /// process checks — this works with Lutris never installed. The launcher
 /// prefix stays owned by register-launcher.
 pub fn prepare_native(name: &str, instance: &Instance, dirs: &HomeDirs, reselect: bool) -> Result<()> {
+    validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
     let root_anchor = Anchor::open(&instance.root)?;
     let _lease = root_anchor.lock()?;
@@ -3237,6 +3396,7 @@ fn ensure_launch_readiness(
     target: NativeTarget,
     mode: LaunchMode,
 ) -> Result<()> {
+    validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
     if mode == LaunchMode::Hd && wiring.data_patches.is_none() {
         bail!(
@@ -3291,9 +3451,10 @@ fn ensure_launch_readiness(
 }
 
 /// Build and run the native command for a resolved target with the
-/// target-effective environment — then wait and propagate the exit status.
-/// Game targets use the declared tunings; launcher/installer targets use
-/// the launcher-effective tunings, mirroring their Lutris entries.
+/// target-effective `env` — then wait and propagate the exit status.
+/// Game targets use the declared `env`; launcher/installer targets use the
+/// launcher-effective `env`. Lutris wine toggles (dxvk/vkd3d/esync/fsync)
+/// stay Lutris-scoped and never become native Wine variables.
 fn spawn_native(name: &str, _wiring: &Wiring, runner: &Runner, lt: &LaunchTarget) -> Result<()> {
     let mut cmd = Command::new(&runner.path);
     cmd.arg(&lt.exe).current_dir(&lt.dir);
@@ -3320,7 +3481,8 @@ fn spawn_native(name: &str, _wiring: &Wiring, runner: &Runner, lt: &LaunchTarget
 /// Launch natively without Lutris: the game, the installed maintenance
 /// launcher, or the installer as an explicit bootstrap. Reads the recorded
 /// runner (prepare first), resolves the target, and execs it with the
-/// target-effective environment — then waits and propagates the exit status.
+/// target-effective `env` (Lutris wine toggles stay Lutris-scoped) — then
+/// waits and propagates the exit status.
 /// Never installs, updates, reconciles, records, or falls back: a failure
 /// surfaces instead of starting something else. Game launches enforce the
 /// declared client files, executable identity, and approved HD set; HD mode
@@ -3332,6 +3494,7 @@ pub fn launch(
     target: NativeTarget,
     mode: LaunchMode,
 ) -> Result<()> {
+    validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
     let root_anchor = Anchor::open(&instance.root)?;
     let _lease = root_anchor.lock()?;
@@ -3413,6 +3576,7 @@ pub fn desktop_entry(
     dirs: &HomeDirs,
     config: &Path,
 ) -> Result<()> {
+    validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
     let root_anchor = Anchor::open(&instance.root)?;
     let _lease = root_anchor.lock()?;
@@ -3937,6 +4101,7 @@ pub fn register_launcher(
     dirs: &HomeDirs,
     adopt: bool,
 ) -> Result<()> {
+    validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
     let root_anchor = Anchor::open(&instance.root)?;
     let _lease = root_anchor.lock()?;
@@ -4161,6 +4326,7 @@ pub fn install_launcher(
     dirs: &HomeDirs,
     force: bool,
 ) -> Result<()> {
+    validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
     let root_anchor = Anchor::open(&instance.root)?;
     let _lease = root_anchor.lock()?;
@@ -6334,15 +6500,21 @@ mod tests {
         let names = data_entry_names(&root).unwrap().unwrap();
         let err = find_mpq_actual(&names, "E").unwrap_err();
         assert!(format!("{err:#}").contains("ambiguous"), "unexpected: {err:#}");
-        // Status surfaces the same ambiguity instead of picking a spelling.
+        // Status surfaces the same ambiguity as a Mismatched readiness
+        // finding (registration proceeds, execution refuses) instead of a
+        // hard error or picking a spelling.
         let mut instance = fixture_instance(&root);
         instance.wiring.as_mut().unwrap().data_patches =
             Some(serde_json::from_value(serde_json::json!({
                 "native_letters": ["E"], "forbid_renames": true,
             })).unwrap());
         let home = fixture_home(&["wine-ge-9-2"]);
-        assert!(status("test", &instance, &dirs(&home)).is_err());
-        // A symlink with the right name never counts as present.
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        let found = items.iter().find(|i| i.name == "hd-patch:E").unwrap();
+        assert_eq!(found.state, ItemState::Mismatched);
+        assert!(found.detail.contains("ambiguous"), "unexpected: {}", found.detail);
+        // A symlink with the right name never counts as present: same
+        // itemized treatment.
         let (_envelope2, root2) = fixture_root();
         fs::write(root2.join("Data/real-E.mpq"), "hd").unwrap();
         #[cfg(unix)]
@@ -6353,6 +6525,144 @@ mod tests {
         .unwrap();
         let names2 = data_entry_names(&root2).unwrap().unwrap();
         assert!(resolve_hd_letter(&root2, &names2, "E").is_err());
+        let mut sym_instance = fixture_instance(&root2);
+        sym_instance.wiring.as_mut().unwrap().data_patches =
+            Some(serde_json::from_value(serde_json::json!({
+                "native_letters": ["E"], "forbid_renames": true,
+            })).unwrap());
+        let sym_items = status("test", &sym_instance, &dirs(&home)).unwrap();
+        let sym_found = sym_items.iter().find(|i| i.name == "hd-patch:E").unwrap();
+        assert_eq!(sym_found.state, ItemState::Mismatched);
+    }
+
+    #[test]
+    fn registration_proceeds_despite_readiness_but_launch_refuses() {
+        // Missing required file: status reports Missing, registration
+        // still writes the declared entry, launch/gate refuse without exec.
+        let (_guard, _envelope, root, home) = apply_test_env();
+        let instance = apply_fixture(&root, home.path());
+        fs::remove_file(root.join("VanillaFixes.exe")).unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        let missing = items
+            .iter()
+            .find(|i| i.name == "client-file:VanillaFixes.exe")
+            .unwrap();
+        assert_eq!(missing.state, ItemState::Missing);
+        // Registration owns yml+row only: readiness findings never block it.
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        // Execution refuses before wine runs (logging_wine would have
+        // created wine.log on exec; its absence proves no exec).
+        let log = home.path().join("wine.log");
+        let err = launch(
+            "test",
+            &instance,
+            &dirs(&home),
+            NativeTarget::Game,
+            LaunchMode::Vanilla,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("client files not ready"),
+            "unexpected: {err:#}"
+        );
+        assert!(!log.exists());
+        let gate_err = gate(
+            "test",
+            &instance,
+            &dirs(&home),
+            &[std::ffi::OsString::from(
+                "/nonexistent/modde-gate-must-not-exec",
+            )],
+        )
+        .unwrap_err();
+        assert!(
+            format!("{gate_err:#}").contains("client files not ready"),
+            "unexpected: {gate_err:#}"
+        );
+    }
+
+    #[test]
+    fn symlinked_required_file_registers_but_blocks_launch() {
+        // Symlinked required file: Mismatched item, registration proceeds,
+        // launch refuses without exec.
+        let (_guard, _envelope, root, home) = apply_test_env();
+        let instance = apply_fixture(&root, home.path());
+        fs::remove_file(root.join("d3d9.dll")).unwrap();
+        fs::write(root.join("real-d3d9.dll"), "hd").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            root.join("real-d3d9.dll"),
+            root.join("d3d9.dll"),
+        )
+        .unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .find(|i| i.name == "client-file:d3d9.dll")
+                .unwrap()
+                .state,
+            ItemState::Mismatched
+        );
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        let log = home.path().join("wine.log");
+        assert!(
+            format!(
+                "{:#}",
+                launch(
+                    "test",
+                    &instance,
+                    &dirs(&home),
+                    NativeTarget::Game,
+                    LaunchMode::Vanilla,
+                )
+                .unwrap_err()
+            )
+            .contains("client files not ready")
+        );
+        assert!(!log.exists());
+    }
+
+    #[test]
+    fn ambiguous_mpq_registers_but_blocks_launch_and_gate() {
+        let (_guard, _envelope, root, home) = apply_test_env();
+        let instance = apply_fixture(&root, home.path());
+        // apply_fixture declares patch-A; collide on that same letter so
+        // both registration and HD launch observe the ambiguity.
+        fs::write(root.join("Data/Patch-A.mpq"), "upper").unwrap();
+        fs::write(root.join("Data/patch-A.mpq"), "lower").unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .find(|i| i.name == "hd-patch:A")
+                .unwrap()
+                .state,
+            ItemState::Mismatched
+        );
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        for mode in [LaunchMode::Hd, LaunchMode::Vanilla] {
+            let err =
+                launch("test", &instance, &dirs(&home), NativeTarget::Game, mode).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("HD not ready"),
+                "unexpected for {mode:?}: {err:#}"
+            );
+        }
+        let gate_err = gate(
+            "test",
+            &instance,
+            &dirs(&home),
+            &[std::ffi::OsString::from(
+                "/nonexistent/modde-gate-must-not-exec",
+            )],
+        )
+        .unwrap_err();
+        assert!(
+            format!("{gate_err:#}").contains("HD not ready"),
+            "unexpected: {gate_err:#}"
+        );
+        assert!(!home.path().join("wine.log").exists());
     }
 
     #[test]
@@ -6411,16 +6721,74 @@ mod tests {
         .unwrap();
         assert!(!game.dxvk);
         assert!(game.esync);
-        // Native targets mirror the same split (game prefix marker only;
-        // the launcher prefix already exists via the settings fixture).
+        // Native targets share env parity only: Lutris wine toggles stay
+        // Lutris-scoped and never become native Wine variables (game prefix
+        // marker only; the launcher prefix already exists via the settings
+        // fixture).
         let game_prefix = root.parent().unwrap().join("octowow-prefix");
         fs::create_dir_all(&game_prefix).unwrap();
         fs::write(game_prefix.join("system.reg"), "#arch=win64\n").unwrap();
         let game_lt = resolve_launch_target(&instance, &rewired, NativeTarget::Game).unwrap();
-        assert!(!game_lt.tunings.dxvk);
         let launcher_lt =
             resolve_launch_target(&instance, &rewired, NativeTarget::Launcher).unwrap();
+        // The stored tunings still differ per target (Lutris scope)...
+        assert!(!game_lt.tunings.dxvk);
         assert!(launcher_lt.tunings.dxvk);
+        // ...but the native environments differ only by env map, never by
+        // Lutris toggles: flipping dxvk alone changes no native variable.
+        let game_env = resolve_launch_env_with(
+            &game_lt.tunings,
+            &game_lt.arch,
+            &game_lt.prefix,
+            &game_lt.dll_overrides,
+        );
+        let launcher_env = resolve_launch_env_with(
+            &launcher_lt.tunings,
+            &launcher_lt.arch,
+            &launcher_lt.prefix,
+            &launcher_lt.dll_overrides,
+        );
+        let to_map = |set: Vec<(std::ffi::OsString, std::ffi::OsString)>| {
+            set.into_iter()
+                .map(|(k, v)| {
+                    (
+                        k.to_string_lossy().into_owned(),
+                        v.to_string_lossy().into_owned(),
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        // Launcher carries its own WINEDEBUG; game keeps the preset default.
+        assert_eq!(
+            to_map(game_env.1).get("WINEDEBUG").map(String::as_str),
+            Some("-all")
+        );
+        assert_eq!(
+            to_map(launcher_env.1).get("WINEDEBUG").map(String::as_str),
+            Some("+fps")
+        );
+        // Toggling only dxvk/vkd3d/esync/fsync leaves the native env
+        // byte-identical: proof the toggles are Lutris-scoped.
+        let mut toggled = rewired.clone();
+        toggled.tunings.dxvk = !toggled.tunings.dxvk;
+        toggled.tunings.vkd3d = !toggled.tunings.vkd3d;
+        toggled.tunings.esync = !toggled.tunings.esync;
+        toggled.tunings.fsync = !toggled.tunings.fsync;
+        let base_set = resolve_launch_env_with(
+            &rewired.tunings,
+            &rewired.runtime.arch,
+            &game_lt.prefix,
+            &rewired.dll_overrides,
+        )
+        .1;
+        let toggled_set = resolve_launch_env_with(
+            &toggled.tunings,
+            &toggled.runtime.arch,
+            &game_lt.prefix,
+            &toggled.dll_overrides,
+        )
+        .1;
+        assert_eq!(to_map(base_set), to_map(toggled_set));
     }
 
     #[test]
@@ -6472,13 +6840,62 @@ mod tests {
                 .collect(),
         );
         assert!(validate_declaration("test", &bad).is_err());
-        let mut bad = instance;
+        let mut bad = instance.clone();
         bad.wiring.as_mut().unwrap().client_integrity.as_mut().unwrap().wow_exe =
             Some(serde_json::from_value(serde_json::json!({
                 "size": 10, "sha256": "not-hex",
             })).unwrap());
         assert!(validate_declaration("test", &bad).is_err());
         assert!(validate_declaration("has space", &apply_fixture(&root, root.parent().unwrap())).is_err());
+        // Parent traversal hidden inside an absolute path: lexical
+        // containment would otherwise approve `/prefix/../outside`.
+        // Uses the launcher fixture (apply_fixture declares no launcher).
+        let (_lenvelope, lroot) = fixture_root();
+        let linstance = launcher_fixture(&lroot, None, true, false);
+        validate_declaration("test", &linstance).unwrap();
+        let mut bad = linstance.clone();
+        let evil_prefix = lroot.parent().unwrap().join("octo-launcher/prefix");
+        let evil_exe = evil_prefix.join("../outside.exe");
+        bad.wiring.as_mut().unwrap().launcher.as_mut().unwrap().prefix =
+            Some(evil_prefix);
+        bad.wiring.as_mut().unwrap().launcher.as_mut().unwrap().executable =
+            Some(evil_exe);
+        let err = validate_declaration("test", &bad).unwrap_err();
+        assert!(
+            format!("{err:#}").contains(".."),
+            "unexpected: {err:#}"
+        );
+        // Game and launcher entries share the yml/pga slug namespace.
+        let mut bad = linstance.clone();
+        let game_slug = bad
+            .wiring
+            .as_ref()
+            .unwrap()
+            .lutris
+            .as_ref()
+            .unwrap()
+            .slug
+            .clone();
+        bad.wiring.as_mut().unwrap().launcher.as_mut().unwrap().lutris =
+            Some(serde_json::from_value(serde_json::json!({
+                "slug": game_slug, "name": "Collision",
+            })).unwrap());
+        let err = validate_declaration("test", &bad).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("must differ"),
+            "unexpected: {err:#}"
+        );
+        // An explicitly empty HD approval carries no operator meaning.
+        let mut bad = instance.clone();
+        bad.wiring.as_mut().unwrap().data_patches =
+            Some(serde_json::from_value(serde_json::json!({
+                "native_letters": [], "forbid_renames": true,
+            })).unwrap());
+        let err = validate_declaration("test", &bad).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("declares no letters"),
+            "unexpected: {err:#}"
+        );
     }
 
     #[test]
