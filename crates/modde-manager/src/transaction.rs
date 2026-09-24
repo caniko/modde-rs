@@ -1133,7 +1133,7 @@ mod tests {
     #[test]
     fn addon_catalog_lists_reviewed_registrations() {
         let catalog = addon_catalog().unwrap();
-        assert_eq!(catalog.len(), 18);
+        assert_eq!(catalog.len(), 19);
         let pfui = &catalog["pfUI"];
         assert_eq!(pfui.repository, "https://github.com/shagu/pfUI.git");
         assert_eq!(pfui.branch, "master");
@@ -1164,6 +1164,18 @@ mod tests {
             "dd3dc1fb80afe7a71e5c8ca8c31ca2a3ef57af67"
         );
         assert!(octo.follow);
+        // TurtleWoW click-casting fork (1.12, SuperWoW-optional).
+        let clique = &catalog["Clique"];
+        assert_eq!(
+            clique.repository,
+            "https://github.com/MarcelineVQ/Clique.git"
+        );
+        assert_eq!(clique.branch, "master");
+        assert_eq!(
+            clique.revision,
+            "872d441ca796e08eba79747909632cf3097100a9"
+        );
+        assert!(clique.follow);
     }
 
     #[test]

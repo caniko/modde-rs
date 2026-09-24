@@ -58,6 +58,14 @@
       "follow": false
     },
     {
+      "id": "Clique",
+      "repository": "https://github.com/MarcelineVQ/Clique.git",
+      "branch": "master",
+      "revision": "872d441ca796e08eba79747909632cf3097100a9",
+      "directories": [{ "source": ".", "target": "Clique" }],
+      "follow": true
+    },
+    {
       "id": "_LazyPig",
       "repository": "https://github.com/Lexiebean/_LazyPig.git",
       "branch": "master",
