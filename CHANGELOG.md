@@ -56,6 +56,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The declarative game entry executing `octo/VanillaFixes.exe`
   establishes the launch executable only; the client upgrade procedure
   itself remains operator-gated and unestablished.
+- **Manager**: Add `onboard validate`: offline declaration validation
+  (deserializer + resolver shapes only — launch-executable and
+  require_files bare names, digest shapes, single-alphanumeric HD letters
+  with no case-insensitive duplicates, absolute sibling prefixes,
+  launcher-under-prefix, token-safe slugs, and rejection of structural
+  `WINEPREFIX`/`WINEARCH`/`WINEDLLOVERRIDES` in `tunings.env`). No
+  filesystem, Wine, graphical session, or user-state access; Nix checks
+  feed generated configs through it. Live presence stays in `status`.
+- **Manager**: Add `launcher.tunings` partial overrides (omitted fields
+  inherit the game tunings, explicit `false` wins, env merges with
+  launcher keys winning and `null` removing). One resolved target
+  configuration feeds Lutris rendering, checks, and native execution, so
+  the launcher can use DXVK while the game keeps its bundled d3d9.
+- **Manager**: Fix HD patch lookup to a single case-insensitive inventory:
+  `Patch-E.mpq`, `patch-E.MPQ`, and `PATCH-e.MpQ` all satisfy letter `E`
+  with the on-disk spelling reported and preserved. Case-variant
+  collisions fail closed as ambiguous; symlinks and non-files never count
+  as present. Checking and applying never rename patches.
+- **Manager**: Fix game launch readiness to enforce the full declared set
+  in every mode: required client files, the pinned executable identity,
+  and — when declared — the approved HD set. The Lutris gate shares the
+  same policy. Present HD MPQs load in every mode, so the misleading
+  "re-run without HD mode" downgrade hint is gone; HD-mode launch
+  additionally requires a declared set instead of inferring approval from
+  installed files.
+- **Manager**: Remove the implicit HD patch set from the `octowow-hd`
+  preset: consumers declare their operator-confirmed `native_letters`
+  explicitly, and an HD launch with no declared set fails with an
+  actionable error.
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized
   `system.prefix_command` (`modde-manager onboard gate --instance <name>
   --`, composed behind any declared wrapper). It enforces the same game

@@ -200,6 +200,12 @@ pub struct LauncherState {
     /// re-pointed after installation). Same adapter as game entries.
     #[serde(default)]
     pub lutris: Option<LutrisEntry>,
+    /// Launcher-specific tuning overrides. Omitted fields inherit the game
+    /// tunings; explicit values win (including explicit `false`). Env merges
+    /// with the game env, launcher keys winning, `null` removing a key.
+    /// Lets the launcher use DXVK while the game keeps its bundled d3d9.
+    #[serde(default)]
+    pub tunings: TuningsPatch,
 }
 
 /// One Lutris game entry, game or launcher: everything the yml renderer
@@ -289,6 +295,41 @@ fn game_spec(
     })
 }
 
+/// Launcher-effective tunings: game tunings with the launcher's partial
+/// overrides applied. Omitted fields inherit; explicit `false` wins over
+/// `true`; env merges with launcher keys winning and `null` removing.
+fn launcher_effective_tunings(wiring: &Wiring) -> Tunings {
+    let mut out = wiring.tunings.clone();
+    if let Some(launcher) = &wiring.launcher {
+        let patch = &launcher.tunings;
+        if let Some(dxvk) = patch.dxvk {
+            out.dxvk = dxvk;
+        }
+        if let Some(vkd3d) = patch.vkd3d {
+            out.vkd3d = vkd3d;
+        }
+        if let Some(esync) = patch.esync {
+            out.esync = esync;
+        }
+        if let Some(fsync) = patch.fsync {
+            out.fsync = fsync;
+        }
+        if let Some(env) = &patch.env {
+            for (key, value) in env {
+                match value {
+                    Some(value) => {
+                        out.env.insert(key.clone(), value.clone());
+                    }
+                    None => {
+                        out.env.remove(key);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 fn launcher_spec(
     installer: &InstallerExpectation,
     prefix: &Path,
@@ -305,6 +346,7 @@ fn launcher_spec(
         .context("launcher executable needs a parent directory")?
         .display()
         .to_string();
+    let tunings = launcher_effective_tunings(wiring);
     Ok(EntrySpec {
         slug: entry.slug.clone(),
         name: entry.name.clone(),
@@ -314,13 +356,13 @@ fn launcher_spec(
         prefix: Some(prefix.display().to_string()),
         runner_version: runner.version.clone(),
         wine_arch: mapped_arch(&wiring.runtime.arch).to_owned(),
-        dxvk: wiring.tunings.dxvk,
-        vkd3d: wiring.tunings.vkd3d,
-        esync: wiring.tunings.esync,
-        fsync: wiring.tunings.fsync,
+        dxvk: tunings.dxvk,
+        vkd3d: tunings.vkd3d,
+        esync: tunings.esync,
+        fsync: tunings.fsync,
         // Non-game process: no game-client DLL overrides.
         dll_overrides: Vec::new(),
-        extra_env: wiring.tunings.env.clone(),
+        extra_env: tunings.env,
         command_prefix: entry.command_prefix.clone(),
     })
 }
@@ -412,8 +454,14 @@ pub struct LaunchPatch {
 }
 
 /// Reusable OctoWoW HD launch defaults. Site identity (accounts, paths,
-/// addon pins, user settings, endpoints) stays in the consumer declaration;
-/// only reusable launch behavior lives here.
+/// addon pins, user settings, endpoints, HD patch approval) stays in the
+/// consumer declaration; only reusable launch behavior lives here.
+///
+/// The HD patch set is deliberately undeclared: each installation's
+/// operator-confirmed letters must be stated explicitly in the consumer
+/// `wiring.data_patches` block. An HD launch with no declared set fails
+/// with an actionable error instead of inferring approval from whatever
+/// files happen to be installed.
 pub fn octowow_hd_defaults() -> Wiring {
     Wiring {
         runtime: Runtime {
@@ -449,16 +497,8 @@ pub fn octowow_hd_defaults() -> Wiring {
             ],
             wow_exe: None, // digest pinned by the consumer after launcher verify
         }),
-        data_patches: Some(DataPatches {
-            native_letters: [
-                "A", "B", "C", "D", "E", "G", "I", "L", "M", "N", "P", "S", "T", "U",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-            patch_a: None,
-            forbid_renames: true,
-        }),
+        // No implicit HD approval: the consumer declares its measured set.
+        data_patches: None,
         endpoints: None,
         launcher: None,
         client_version: None,
@@ -588,6 +628,144 @@ pub fn expand_preset(preset: Option<&str>, user: &Option<WiringPatch>) -> Result
 /// Single resolution path for status, plan, and apply.
 pub fn resolve_wiring(instance: &Instance) -> Result<Wiring> {
     expand_preset(instance.preset.as_deref(), &instance.wiring)
+}
+
+/// Offline declaration validation: pure deserializer + resolver checks with
+/// no filesystem, Wine, graphical session, or mutable user-state access.
+/// Nix checks feed generated configs through this (via
+/// `onboard validate`); live file presence stays in `status`, never here.
+pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
+    validate_instance_token(name)?;
+    if !instance.root.is_absolute() {
+        bail!("client root must be absolute: {}", instance.root.display());
+    }
+    let wiring = resolve_wiring(instance)?;
+    // Launch executable: bare file name inside the client root, never a
+    // path escape or absolute path.
+    if wiring.launch.executable.is_empty()
+        || wiring.launch.executable.contains('/')
+        || wiring.launch.executable.contains('\\')
+        || wiring.launch.executable.contains("..")
+    {
+        bail!(
+            "launch executable must be a bare file name: '{}'",
+            wiring.launch.executable
+        );
+    }
+    // Prefix: absolute sibling of the root, never inside it.
+    if let Some(prefix) = &wiring.prefix {
+        if !prefix.path.is_absolute() {
+            bail!("prefix path must be absolute");
+        }
+        if overlap(&prefix.path, &instance.root) {
+            bail!("prefix must be a sibling, never inside the game folder");
+        }
+    }
+    // Lutris entries: token-safe slugs, non-empty names.
+    if let Some(entry) = &wiring.lutris {
+        validate_slug(&entry.slug)?;
+        if entry.name.is_empty() {
+            bail!("lutris entry name must not be empty");
+        }
+    }
+    // Client integrity shapes: bare file names, plausible digest shapes.
+    if let Some(integrity) = &wiring.client_integrity {
+        for file in &integrity.require_files {
+            if file.is_empty()
+                || file.contains('/')
+                || file.contains('\\')
+                || file.contains("..")
+            {
+                bail!("require_files must be bare file names: '{file}'");
+            }
+        }
+        if let Some(expected) = &integrity.wow_exe {
+            if expected.size == 0 {
+                bail!("wow_exe size must be non-zero");
+            }
+            if expected.sha256.len() != 64
+                || !expected.sha256.bytes().all(|c| c.is_ascii_hexdigit())
+            {
+                bail!("wow_exe sha256 must be 64 hex characters");
+            }
+        }
+    }
+    // HD patch policy: single alphanumerics, no case-insensitive
+    // duplicates (they would be ambiguous on disk), plausible patch-A.
+    if let Some(patches) = &wiring.data_patches {
+        let mut seen = std::collections::BTreeSet::new();
+        for letter in &patches.native_letters {
+            if letter.len() != 1 || !letter.bytes().all(|c| c.is_ascii_alphanumeric()) {
+                bail!("unsafe patch letter: {letter}");
+            }
+            if !seen.insert(letter.to_ascii_uppercase()) {
+                bail!("duplicate patch letter (case-insensitive): {letter}");
+            }
+        }
+        if let Some(expected) = &patches.patch_a {
+            if expected.size == 0 {
+                bail!("patch_a size must be non-zero");
+            }
+            if expected.sha256.len() != 64
+                || !expected.sha256.bytes().all(|c| c.is_ascii_hexdigit())
+            {
+                bail!("patch_a sha256 must be 64 hex characters");
+            }
+        }
+    }
+    // Structural tunings: these keys are owned by the prefix/DLL
+    // plumbing and silently ignored in `tunings.env` — reject them so a
+    // declaration cannot look effective while doing nothing.
+    for key in ["WINEPREFIX", "WINEARCH", "WINEDLLOVERRIDES"] {
+        if wiring.tunings.env.contains_key(key) {
+            bail!("tunings.env must not set {key} (owned by prefix/DLL plumbing)");
+        }
+        if let Some(launcher) = &wiring.launcher
+            && let Some(env) = &launcher.tunings.env
+            && env.contains_key(key)
+        {
+            bail!("launcher.tunings.env must not set {key} (owned by prefix/DLL plumbing)");
+        }
+    }
+    // Launcher shapes: absolute paths, executable under its prefix.
+    if let Some(launcher) = &wiring.launcher {
+        if let Some(installer) = &launcher.installer {
+            if !installer.path.is_absolute() {
+                bail!("launcher installer path must be absolute");
+            }
+            if let Some(digest) = &installer.sha256
+                && (digest.len() != 64
+                    || !digest.bytes().all(|c| c.is_ascii_hexdigit()))
+            {
+                bail!("installer sha256 must be 64 hex characters");
+            }
+        }
+        if let Some(prefix) = &launcher.prefix {
+            if !prefix.is_absolute() {
+                bail!("launcher prefix path must be absolute");
+            }
+            if overlap(prefix, &instance.root) {
+                bail!("launcher prefix must be a sibling, never inside the game folder");
+            }
+            if let Some(executable) = &launcher.executable {
+                if !executable.is_absolute() {
+                    bail!("launcher executable path must be absolute");
+                }
+                if !executable.starts_with(prefix) {
+                    bail!("launcher executable must live under the launcher prefix");
+                }
+            }
+        } else if launcher.executable.is_some() {
+            bail!("launcher executable needs a declared launcher prefix");
+        }
+        if let Some(entry) = &launcher.lutris {
+            validate_slug(&entry.slug)?;
+            if entry.name.is_empty() {
+                bail!("launcher lutris entry name must not be empty");
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1008,6 +1186,45 @@ fn existing_name(root: &Path, candidates: &[&str]) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Case-insensitive `Data/patch-<letter>.mpq` lookup over one directory
+/// inventory. The full filename compares ASCII case-insensitively, so
+/// `Patch-E.mpq`, `patch-E.MPQ`, and `PATCH-e.MpQ` all satisfy letter `E`
+/// without renaming anything on disk. Zero matches mean absent; more than
+/// one case-variant is ambiguous and fails closed (never pick one).
+/// Checking and applying never rename patches.
+fn find_mpq_actual(names: &[String], letter: &str) -> Result<Option<String>> {
+    let want = format!("patch-{letter}.mpq");
+    let mut hits = Vec::new();
+    for name in names {
+        if name.eq_ignore_ascii_case(&want) {
+            hits.push(name.clone());
+        }
+    }
+    if hits.len() > 1 {
+        hits.sort();
+        bail!(
+            "ambiguous patch files for letter '{letter}': {}; keep exactly one spelling",
+            hits.join(", ")
+        );
+    }
+    Ok(hits.into_iter().next())
+}
+
+/// Resolve one HD letter against an already-listed `Data/` inventory:
+/// case-insensitive name match, then a pinned metadata check so symlinks,
+/// directories, and permission errors fail closed instead of counting as
+/// present. Returns the actual on-disk filename, if any.
+fn resolve_hd_letter(root: &Path, names: &[String], letter: &str) -> Result<Option<String>> {
+    let Some(actual) = find_mpq_actual(names, letter)? else {
+        return Ok(None);
+    };
+    let rel = format!("Data/{actual}");
+    match root_file_meta(root, &rel)? {
+        Some(_) => Ok(Some(actual)),
+        None => Ok(None),
+    }
+}
+
 /// Streaming digest from the descriptor's current offset: size plus
 /// SHA-256 without holding the payload.
 fn stream_digest_file(file: &mut fs::File) -> Result<(u64, String)> {
@@ -1422,32 +1639,33 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
         }
     }
 
-    // HD data patches: metadata presence at native letters (payloads never
-    // loaded); declared patch-A identity verified by streaming digest.
+    // HD data patches: one case-insensitive inventory for presence,
+    // identity, and stray detection (payloads never loaded); declared
+    // patch-A identity verified by streaming digest. Filenames keep their
+    // on-disk spelling — checking never renames anything.
     if let Some(patches) = &wiring.data_patches {
+        let data_names = data_entry_names(&instance.root)?;
         for letter in &patches.native_letters {
             if letter.len() != 1 || !letter.bytes().all(|c| c.is_ascii_alphanumeric()) {
                 bail!("unsafe patch letter: {letter}");
             }
-            let rel_lower = format!("Data/patch-{letter}.mpq");
-            let rel_upper = format!("Data/patch-{letter}.MPQ");
-            let found = match existing_name(&instance.root, &[&rel_lower, &rel_upper])? {
-                Some(_) => true,
-                None => false,
+            let want = format!("Data/patch-{letter}.mpq");
+            let found = match &data_names {
+                None => None,
+                Some(names) => resolve_hd_letter(&instance.root, names, letter)?,
             };
             items.push(item(
                 &format!("hd-patch:{letter}"),
-                if found {
+                if found.is_some() {
                     ItemState::Verified
                 } else {
                     ItemState::Missing
                 },
-                if found {
-                    "present at native letter".into()
-                } else {
-                    format!("{rel_lower} absent")
+                match &found {
+                    Some(actual) => format!("present as Data/{actual}"),
+                    None => format!("{want} absent (case-insensitive)"),
                 },
-                if found {
+                if found.is_some() {
                     String::new()
                 } else {
                     "HD patch absent; restore the operator-confirmed set, then re-check".into()
@@ -1455,14 +1673,19 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
             ));
         }
         if let Some(expected) = &patches.patch_a {
-            match existing_name(&instance.root, &["Data/patch-A.mpq", "Data/patch-A.MPQ"])? {
+            let actual = match &data_names {
+                None => None,
+                Some(names) => resolve_hd_letter(&instance.root, names, "A")?,
+            };
+            match actual {
                 None => items.push(item(
                     "hd-patch-A",
                     ItemState::Missing,
                     "no patch-A at all".into(),
                     "HD patch-A absent; restore the operator-confirmed set, then re-check".into(),
                 )),
-                Some(rel) => {
+                Some(actual) => {
+                    let rel = format!("Data/{actual}");
                     let Some((mut file, meta)) = pinned_file(&instance.root, &rel)? else {
                         bail!("patch vanished during check: {rel}")
                     };
@@ -2712,9 +2935,10 @@ pub enum NativeTarget {
     Installer,
 }
 
-/// Launch mode: vanilla runs the declared client as-is; HD additionally
-/// requires the full HD set verified. Missing HD never blocks vanilla —
-/// and never silently downgrades an HD request either.
+/// Launch mode: a game launch always enforces the declared client files,
+/// executable identity, and — when declared — the approved HD set. HD mode
+/// additionally requires a declared set with every item verified, and never
+/// silently downgrades.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LaunchMode {
     Vanilla,
@@ -2722,13 +2946,17 @@ pub enum LaunchMode {
 }
 
 /// A resolved native launch: executable, working directory, Wine prefix,
-/// and client DLL overrides. The environment comes from the declared
-/// tunings through `resolve_launch_env`, mirroring the Lutris render.
+/// client DLL overrides, and the effective tunings plus runtime arch for
+/// the environment. Game targets use the declared tunings; launcher and
+/// installer targets use the launcher-effective tunings, mirroring the
+/// Lutris render exactly.
 pub struct LaunchTarget {
     pub exe: PathBuf,
     pub dir: PathBuf,
     pub prefix: PathBuf,
     pub dll_overrides: Vec<String>,
+    pub tunings: Tunings,
+    pub arch: String,
 }
 
 /// Single-descriptor file check shared by registration and native launch:
@@ -2819,6 +3047,8 @@ fn resolve_launch_target(
                 exe,
                 prefix: prefix.path.clone(),
                 dll_overrides: wiring.dll_overrides.clone(),
+                tunings: wiring.tunings.clone(),
+                arch: wiring.runtime.arch.clone(),
             })
         }
         NativeTarget::Launcher => {
@@ -2845,6 +3075,8 @@ fn resolve_launch_target(
                 // Non-game process: no game-client DLL overrides (mirrors
                 // the launcher Lutris entry).
                 dll_overrides: Vec::new(),
+                tunings: launcher_effective_tunings(wiring),
+                arch: wiring.runtime.arch.clone(),
             })
         }
         NativeTarget::Installer => {
@@ -2874,6 +3106,8 @@ fn resolve_launch_target(
                 dir,
                 prefix: prefix.clone(),
                 dll_overrides: Vec::new(),
+                tunings: launcher_effective_tunings(wiring),
+                arch: wiring.runtime.arch.clone(),
             })
         }
     }
@@ -2885,18 +3119,19 @@ fn resolve_launch_target(
 /// `WINEDLLOVERRIDES`, structural `WINEPREFIX`/`WINEARCH` win over tunings,
 /// and a declared `WINEDEBUG` wins over the scrubbed default. Pure for
 /// testability; returns (removals, assignments).
-fn resolve_launch_env(
-    wiring: &Wiring,
+fn resolve_launch_env_with(
+    tunings: &Tunings,
+    arch: &str,
     prefix: &Path,
     dll_overrides: &[String],
 ) -> (
     Vec<std::ffi::OsString>,
     Vec<(std::ffi::OsString, std::ffi::OsString)>,
 ) {
-    let (remove, set) = scrub_wine_env(std::env::vars_os().collect(), prefix, &wiring.runtime.arch);
+    let (remove, set) = scrub_wine_env(std::env::vars_os().collect(), prefix, arch);
     let mut merged: std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString> =
         set.into_iter().collect();
-    for (key, value) in &wiring.tunings.env {
+    for (key, value) in &tunings.env {
         if key == "WINEPREFIX" || key == "WINEARCH" || key == "WINEDLLOVERRIDES" {
             continue;
         }
@@ -2906,6 +3141,20 @@ fn resolve_launch_env(
         merged.insert("WINEDLLOVERRIDES".into(), dll_overrides.join(";").into());
     }
     (remove, merged.into_iter().collect())
+}
+
+/// Launcher/installer native environment: launcher-effective tunings with
+/// the same structural wins as the game path. Mirrors `launcher_spec`.
+fn resolve_launcher_env(
+    wiring: &Wiring,
+    prefix: &Path,
+    dll_overrides: &[String],
+) -> (
+    Vec<std::ffi::OsString>,
+    Vec<(std::ffi::OsString, std::ffi::OsString)>,
+) {
+    let tunings = launcher_effective_tunings(wiring);
+    resolve_launch_env_with(&tunings, &wiring.runtime.arch, prefix, dll_overrides)
 }
 
 /// Native runtime preparation without any Lutris touch: resolve and record
@@ -2972,12 +3221,15 @@ fn recorded_runner(name: &str, instance: &Instance) -> Result<Runner> {
     })
 }
 
-/// Launch readiness gates execution, never registration: HD mode
-/// requires the full HD set, and a game launch requires the declared
-/// client digest identity — a drifted WoW.exe is never exec'd, native
-/// `onboard launch` or through the Lutris entry's `onboard gate` alike
-/// (the game loads it through `VanillaFixes` either way). HD never gates
-/// the vanilla path.
+/// Launch readiness gates execution, never registration: a game launch
+/// requires the declared client files, the pinned executable identity, and
+/// — when `data_patches` is declared — the full approved HD set. An HD-mode
+/// launch additionally requires a declared HD set and every `hd-patch*`
+/// item verified. A drifted WoW.exe is never exec'd, native `onboard
+/// launch` or through the Lutris entry's `onboard gate` alike (the game
+/// loads it through `VanillaFixes` either way). Present HD MPQs load in
+/// every mode, so there is no "run without HD mode for the base client"
+/// downgrade: restore the operator-confirmed set instead.
 fn ensure_launch_readiness(
     name: &str,
     instance: &Instance,
@@ -2985,9 +3237,15 @@ fn ensure_launch_readiness(
     target: NativeTarget,
     mode: LaunchMode,
 ) -> Result<()> {
+    let wiring = resolve_wiring(instance)?;
+    if mode == LaunchMode::Hd && wiring.data_patches.is_none() {
+        bail!(
+            "HD launch requires a declared data_patches set (native_letters); declare the operator-confirmed letters, then re-check"
+        );
+    }
     if mode == LaunchMode::Hd || target == NativeTarget::Game {
         let observations = status(name, instance, dirs)?;
-        if mode == LaunchMode::Hd {
+        if mode == LaunchMode::Hd || (target == NativeTarget::Game && wiring.data_patches.is_some()) {
             let missing: Vec<_> = observations
                 .iter()
                 .filter(|item| {
@@ -2997,7 +3255,7 @@ fn ensure_launch_readiness(
                 .collect();
             if !missing.is_empty() {
                 bail!(
-                    "HD not ready (re-run without HD mode for the base client): {}",
+                    "HD not ready (restore the operator-confirmed set, then re-check): {}",
                     missing.join(", ")
                 );
             }
@@ -3014,17 +3272,32 @@ fn ensure_launch_readiness(
                     drift.join(", ")
                 );
             }
+            let files: Vec<_> = observations
+                .iter()
+                .filter(|item| {
+                    item.name.starts_with("client-file:") && item.state != ItemState::Verified
+                })
+                .map(|item| format!("{}={:?}", item.name, item.state))
+                .collect();
+            if !files.is_empty() {
+                bail!(
+                    "client files not ready ({}); restore the operator-confirmed files, then re-check",
+                    files.join(", ")
+                );
+            }
         }
     }
     Ok(())
 }
 
 /// Build and run the native command for a resolved target with the
-/// declared environment — then wait and propagate the exit status.
-fn spawn_native(name: &str, wiring: &Wiring, runner: &Runner, lt: &LaunchTarget) -> Result<()> {
+/// target-effective environment — then wait and propagate the exit status.
+/// Game targets use the declared tunings; launcher/installer targets use
+/// the launcher-effective tunings, mirroring their Lutris entries.
+fn spawn_native(name: &str, _wiring: &Wiring, runner: &Runner, lt: &LaunchTarget) -> Result<()> {
     let mut cmd = Command::new(&runner.path);
     cmd.arg(&lt.exe).current_dir(&lt.dir);
-    let (remove, set) = resolve_launch_env(wiring, &lt.prefix, &lt.dll_overrides);
+    let (remove, set) = resolve_launch_env_with(&lt.tunings, &lt.arch, &lt.prefix, &lt.dll_overrides);
     for key in remove {
         cmd.env_remove(key);
     }
@@ -3047,10 +3320,11 @@ fn spawn_native(name: &str, wiring: &Wiring, runner: &Runner, lt: &LaunchTarget)
 /// Launch natively without Lutris: the game, the installed maintenance
 /// launcher, or the installer as an explicit bootstrap. Reads the recorded
 /// runner (prepare first), resolves the target, and execs it with the
-/// declared environment — then waits and propagates the exit status.
+/// target-effective environment — then waits and propagates the exit status.
 /// Never installs, updates, reconciles, records, or falls back: a failure
-/// surfaces instead of starting something else. In HD mode the full HD set
-/// must verify first; vanilla mode never waits for HD.
+/// surfaces instead of starting something else. Game launches enforce the
+/// declared client files, executable identity, and approved HD set; HD mode
+/// additionally requires a declared set fully verified.
 pub fn launch(
     name: &str,
     instance: &Instance,
@@ -3950,7 +4224,7 @@ pub fn install_launcher(
             .parent()
             .context("installer needs a parent directory")?,
     );
-    let (remove, set) = resolve_launch_env(&wiring, &prefix, &[]);
+    let (remove, set) = resolve_launcher_env(&wiring, &prefix, &[]);
     for key in remove {
         cmd.env_remove(key);
     }
@@ -3969,7 +4243,7 @@ pub fn install_launcher(
     }
     let mut wait = Command::new(wineserver_bin(&runner));
     wait.arg("-w");
-    let (remove, set) = resolve_launch_env(&wiring, &prefix, &[]);
+    let (remove, set) = resolve_launcher_env(&wiring, &prefix, &[]);
     for key in remove {
         wait.env_remove(key);
     }
@@ -4152,7 +4426,8 @@ mod tests {
 
     #[test]
     fn preset_expansion_is_single_path_with_explicit_replace_rules() {
-        // Preset-only declaration resolves to reusable Octo defaults.
+        // Preset-only declaration resolves to reusable Octo defaults. The HD
+        // patch set stays consumer-owned: no implicit approval.
         let preset_only: Instance = serde_json::from_value(serde_json::json!({
             "root": "/games/octo", "client": "wow-classic", "preset": "octowow-hd",
         }))
@@ -4162,16 +4437,17 @@ mod tests {
         assert!(!wiring.tunings.dxvk); // bundled d3d9.dll, no second layer
         assert!(!wiring.runtime.anticheat);
         assert_eq!(wiring.lutris.as_ref().unwrap().slug, "octowow-community");
-        assert!(
-            wiring
-                .data_patches
-                .as_ref()
-                .unwrap()
-                .native_letters
-                .contains(&"U".to_string())
-        );
+        assert!(wiring.data_patches.is_none());
         assert!(wiring.prefix.is_none()); // site path stays consumer-owned
         assert!(wiring.endpoints.is_none());
+        // An explicit consumer set survives preset expansion.
+        let declared: Instance = serde_json::from_value(serde_json::json!({
+            "root": "/games/octo", "client": "wow-classic", "preset": "octowow-hd",
+            "wiring": {"data_patches": {"native_letters": ["B", "U"], "forbid_renames": true}},
+        }))
+        .unwrap();
+        let with_hd = resolve_wiring(&declared).unwrap();
+        assert!(with_hd.data_patches.as_ref().unwrap().native_letters.contains(&"U".to_string()));
         // User lists replace wholesale; env merges with user winning.
         let custom: Instance = serde_json::from_value(serde_json::json!({
             "root": "/games/octo", "client": "wow-classic", "preset": "octowow-hd",
@@ -5635,7 +5911,7 @@ mod tests {
         let instance = fixture_instance(&root);
         let wiring = resolve_wiring(&instance).unwrap();
         let prefix = root.parent().unwrap().join("octowow-prefix");
-        let (_, set) = resolve_launch_env(&wiring, &prefix, &wiring.dll_overrides);
+        let (_, set) = resolve_launch_env_with(&wiring.tunings, &wiring.runtime.arch, &prefix, &wiring.dll_overrides);
         let map: std::collections::BTreeMap<String, String> = set
             .into_iter()
             .map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))
@@ -5653,7 +5929,7 @@ mod tests {
             .env
             .insert("WINEDLLOVERRIDES".into(), "d3d11=n".into());
         tuned.tunings.env.insert("FOO".into(), "bar".into());
-        let (_, set) = resolve_launch_env(&tuned, &prefix, &[]);
+        let (_, set) = resolve_launch_env_with(&tuned.tunings, &tuned.runtime.arch, &prefix, &[]);
         let map: std::collections::BTreeMap<String, String> = set
             .into_iter()
             .map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))
@@ -5733,23 +6009,52 @@ mod tests {
     }
 
     #[test]
-    fn launch_hd_mode_requires_patches_but_vanilla_does_not() {
+    fn launch_game_requires_declared_hd_set_in_every_mode() {
         let _guard = APPLY_LOCK.lock().unwrap();
         let (_envelope, root) = fixture_root();
         let home = tempfile::tempdir().unwrap();
         logging_wine(&home, "wine-ge-9-2", &home.path().join("wine.log"));
         let instance = apply_fixture(&root, home.path());
         prepare_native("test", &instance, &dirs(&home), false).unwrap();
-        // patch-A.mpq is present in the fixture: HD launches.
+        // patch-A.mpq is present in the fixture: both modes launch.
         launch("test", &instance, &dirs(&home), NativeTarget::Game, LaunchMode::Hd).unwrap();
-        // Without the payload, HD fails closed while vanilla still runs.
+        launch(
+            "test",
+            &instance,
+            &dirs(&home),
+            NativeTarget::Game,
+            LaunchMode::Vanilla,
+        )
+        .unwrap();
+        // Without the payload, both modes fail closed: present HD MPQs load
+        // in every mode, so there is no vanilla downgrade.
         fs::remove_file(root.join("Data/patch-A.mpq")).unwrap();
+        for mode in [LaunchMode::Hd, LaunchMode::Vanilla] {
+            let err =
+                launch("test", &instance, &dirs(&home), NativeTarget::Game, mode).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("HD not ready") && format!("{err:#}").contains("hd-patch:A"),
+                "unexpected for {mode:?}: {err:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn launch_hd_mode_without_declared_set_fails_actionably() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        logging_wine(&home, "wine-ge-9-2", &home.path().join("wine.log"));
+        let mut instance = apply_fixture(&root, home.path());
+        instance.wiring.as_mut().unwrap().data_patches = None;
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
         let err = launch("test", &instance, &dirs(&home), NativeTarget::Game, LaunchMode::Hd)
             .unwrap_err();
         assert!(
-            format!("{err:#}").contains("HD not ready") && format!("{err:#}").contains("hd-patch:A"),
+            format!("{err:#}").contains("declared data_patches"),
             "unexpected: {err:#}"
         );
+        // Vanilla with no declared set still launches (nothing approved to require).
         launch(
             "test",
             &instance,
@@ -5777,10 +6082,12 @@ mod tests {
             LaunchMode::Vanilla,
         )
         .unwrap_err();
+        let text = format!("{err:#}");
         assert!(
-            format!("{err:#}").contains("missing"),
-            "unexpected: {err:#}"
+            text.contains("client files not ready") && text.contains("client-file:VanillaFixes.exe"),
+            "unexpected: {text}"
         );
+        assert!(!home.path().join("wine.log").exists());
     }
 
     #[test]
@@ -5979,6 +6286,199 @@ mod tests {
             text.contains("operator-confirmed"),
             "hint missing: {text}"
         );
+    }
+
+    #[test]
+    fn mpq_lookup_is_case_insensitive_without_renames() {
+        let (_envelope, root) = fixture_root();
+        // Mixed-case basenames satisfy their letters; nothing is renamed.
+        fs::write(root.join("Data/Patch-E.mpq"), "hd-e").unwrap();
+        fs::write(root.join("Data/patch-F.MPQ"), "hd-f").unwrap();
+        let names = data_entry_names(&root).unwrap().unwrap();
+        assert_eq!(
+            resolve_hd_letter(&root, &names, "E").unwrap(),
+            Some("Patch-E.mpq".into())
+        );
+        assert_eq!(
+            resolve_hd_letter(&root, &names, "F").unwrap(),
+            Some("patch-F.MPQ".into())
+        );
+        // Letter case is insignificant too: `e` satisfies the same file.
+        assert_eq!(
+            resolve_hd_letter(&root, &names, "e").unwrap(),
+            Some("Patch-E.mpq".into())
+        );
+        // Status reports the on-disk spelling, and the tree is untouched.
+        let mut instance = fixture_instance(&root);
+        instance.wiring.as_mut().unwrap().data_patches =
+            Some(serde_json::from_value(serde_json::json!({
+                "native_letters": ["E", "F"], "forbid_renames": true,
+            })).unwrap());
+        let home = fixture_home(&["wine-ge-9-2"]);
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        let detail = items.iter().find(|i| i.name == "hd-patch:E").unwrap().detail.clone();
+        assert!(detail.contains("Patch-E.mpq"), "unexpected: {detail}");
+        assert_eq!(
+            items.iter().find(|i| i.name == "hd-patch:F").unwrap().state,
+            ItemState::Verified
+        );
+        assert!(root.join("Data/Patch-E.mpq").is_file());
+        assert!(root.join("Data/patch-F.MPQ").is_file());
+    }
+
+    #[test]
+    fn mpq_case_collision_and_symlink_fail_closed() {
+        let (_envelope, root) = fixture_root();
+        fs::write(root.join("Data/patch-E.mpq"), "lower").unwrap();
+        fs::write(root.join("Data/Patch-E.mpq"), "upper").unwrap();
+        let names = data_entry_names(&root).unwrap().unwrap();
+        let err = find_mpq_actual(&names, "E").unwrap_err();
+        assert!(format!("{err:#}").contains("ambiguous"), "unexpected: {err:#}");
+        // Status surfaces the same ambiguity instead of picking a spelling.
+        let mut instance = fixture_instance(&root);
+        instance.wiring.as_mut().unwrap().data_patches =
+            Some(serde_json::from_value(serde_json::json!({
+                "native_letters": ["E"], "forbid_renames": true,
+            })).unwrap());
+        let home = fixture_home(&["wine-ge-9-2"]);
+        assert!(status("test", &instance, &dirs(&home)).is_err());
+        // A symlink with the right name never counts as present.
+        let (_envelope2, root2) = fixture_root();
+        fs::write(root2.join("Data/real-E.mpq"), "hd").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            root2.join("Data/real-E.mpq"),
+            root2.join("Data/patch-E.mpq"),
+        )
+        .unwrap();
+        let names2 = data_entry_names(&root2).unwrap().unwrap();
+        assert!(resolve_hd_letter(&root2, &names2, "E").is_err());
+    }
+
+    #[test]
+    fn launcher_tunings_override_game_without_coupling() {
+        let (_envelope, root) = fixture_root();
+        let home = fixture_home(&["wine-ge-9-2"]);
+        // Settings fixture creates the launcher prefix; the game executable
+        // and prefix markers are added below for target resolution.
+        let mut instance = launcher_fixture(&root, None, true, true);
+        fs::write(root.join("VanillaFixes.exe"), "fake").unwrap();
+        // Game keeps the bundled-d3d9 policy (DXVK off); the launcher opts
+        // into DXVK explicitly plus its own debug value.
+        instance.wiring.as_mut().unwrap().launcher.as_mut().unwrap().tunings =
+            serde_json::from_value(serde_json::json!({
+                "dxvk": true,
+                "env": {"WINEDEBUG": "+fps"},
+            }))
+            .unwrap();
+        let wiring = resolve_wiring(&instance).unwrap();
+        assert!(!wiring.tunings.dxvk);
+        let effective = launcher_effective_tunings(&wiring);
+        assert!(effective.dxvk);
+        assert!(!effective.vkd3d);
+        assert_eq!(effective.env.get("WINEDEBUG").unwrap(), "+fps");
+        // Explicit false overrides an inherited true (field-level, so the
+        // dxvk override above survives).
+        instance.wiring.as_mut().unwrap().tunings.esync = Some(true);
+        instance.wiring.as_mut().unwrap().launcher.as_mut().unwrap().tunings.esync = Some(false);
+        let rewired = resolve_wiring(&instance).unwrap();
+        assert!(rewired.tunings.esync);
+        assert!(!launcher_effective_tunings(&rewired).esync);
+        // Rendered entries carry their own target's values through the same
+        // spec the check verifies.
+        let runner = discover_runner(&dirs(&home), "wine", "latest").unwrap();
+        let launcher = rewired.launcher.clone().unwrap();
+        let spec = launcher_spec(
+            launcher.installer.as_ref().unwrap(),
+            &launcher.prefix.clone().unwrap(),
+            launcher.lutris.as_ref().unwrap(),
+            &runner,
+            &rewired,
+            launcher.executable.as_ref(),
+        )
+        .unwrap();
+        assert!(spec.dxvk);
+        assert!(!spec.esync);
+        let yml = render_entry_yml(&spec).unwrap();
+        assert!(yml.contains("dxvk: true"));
+        let game = game_spec(
+            "test",
+            &instance,
+            rewired.lutris.as_ref().unwrap(),
+            &runner,
+            &rewired,
+        )
+        .unwrap();
+        assert!(!game.dxvk);
+        assert!(game.esync);
+        // Native targets mirror the same split (game prefix marker only;
+        // the launcher prefix already exists via the settings fixture).
+        let game_prefix = root.parent().unwrap().join("octowow-prefix");
+        fs::create_dir_all(&game_prefix).unwrap();
+        fs::write(game_prefix.join("system.reg"), "#arch=win64\n").unwrap();
+        let game_lt = resolve_launch_target(&instance, &rewired, NativeTarget::Game).unwrap();
+        assert!(!game_lt.tunings.dxvk);
+        let launcher_lt =
+            resolve_launch_target(&instance, &rewired, NativeTarget::Launcher).unwrap();
+        assert!(launcher_lt.tunings.dxvk);
+    }
+
+    #[test]
+    fn gate_enforces_full_game_readiness_without_exec() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        logging_wine(&home, "wine-ge-9-2", &home.path().join("wine.log"));
+        let instance = apply_fixture(&root, home.path());
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        // Missing HD blocks the gate even though the client digest is fine.
+        fs::remove_file(root.join("Data/patch-A.mpq")).unwrap();
+        let err = gate(
+            "test",
+            &instance,
+            &dirs(&home),
+            &[std::ffi::OsString::from(
+                "/nonexistent/modde-gate-must-not-exec",
+            )],
+        )
+        .unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("HD not ready"), "unexpected: {text}");
+        assert!(!home.path().join("wine.log").exists());
+    }
+
+    #[test]
+    fn validate_declaration_accepts_good_and_rejects_bad_shapes() {
+        let (_envelope, root) = fixture_root();
+        let instance = apply_fixture(&root, root.parent().unwrap());
+        validate_declaration("test", &instance).unwrap();
+        // Duplicate letters case-insensitively, path escapes, structural
+        // env keys, and bad digests all fail with actionable errors.
+        let mut bad = instance.clone();
+        bad.wiring.as_mut().unwrap().data_patches =
+            Some(serde_json::from_value(serde_json::json!({
+                "native_letters": ["E", "e"], "forbid_renames": true,
+            })).unwrap());
+        assert!(validate_declaration("test", &bad).is_err());
+        let mut bad = instance.clone();
+        bad.wiring.as_mut().unwrap().launch = serde_json::from_value(serde_json::json!({
+            "executable": "../evil.exe",
+        })).unwrap();
+        assert!(validate_declaration("test", &bad).is_err());
+        let mut bad = instance.clone();
+        bad.wiring.as_mut().unwrap().tunings.env = Some(
+            [("WINEPREFIX".to_string(), Some("/evil".to_string()))]
+                .into_iter()
+                .collect(),
+        );
+        assert!(validate_declaration("test", &bad).is_err());
+        let mut bad = instance;
+        bad.wiring.as_mut().unwrap().client_integrity.as_mut().unwrap().wow_exe =
+            Some(serde_json::from_value(serde_json::json!({
+                "size": 10, "sha256": "not-hex",
+            })).unwrap());
+        assert!(validate_declaration("test", &bad).is_err());
+        assert!(validate_declaration("has space", &apply_fixture(&root, root.parent().unwrap())).is_err());
     }
 
     #[test]

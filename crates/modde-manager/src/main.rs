@@ -147,8 +147,9 @@ enum OnboardAction {
         instance: String,
         #[arg(long, value_enum)]
         target: NativeTargetArg,
-        /// Vanilla runs the declared client as-is; HD requires the full
-        /// HD set verified first.
+        /// Game launches always enforce declared client files, executable
+        /// identity, and the approved HD set when declared; HD mode
+        /// additionally requires a declared set fully verified.
         #[arg(long, value_enum, default_value = "vanilla")]
         mode: LaunchModeArg,
     },
@@ -169,6 +170,13 @@ enum OnboardAction {
         #[arg(long)]
         instance: String,
     },
+    /// Offline declaration validation: deserializer + resolver checks only.
+    /// No filesystem, Wine, graphical session, or user-state access — Nix
+    /// checks feed generated configs through this.
+    Validate {
+        #[arg(long)]
+        instance: String,
+    },
 }
 
 /// Native launch target: the game, the installed maintenance launcher, or
@@ -180,7 +188,8 @@ enum NativeTargetArg {
     Installer,
 }
 
-/// Launch mode: vanilla never waits for HD; HD requires it verified.
+/// Launch mode: game launches always enforce the declared set; HD mode
+/// additionally requires it fully verified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 enum LaunchModeArg {
     Vanilla,
@@ -534,6 +543,15 @@ fn main() -> Result<()> {
                         .with_context(|| format!("unknown instance '{instance}'"))?;
                     wiring::desktop_entry(&instance, instance_config, &dirs, &config_path)
                 }
+                OnboardAction::Validate { instance } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    validate_offline(&instance, instance_config)?;
+                    println!("modde-manager: {instance} declaration valid");
+                    Ok(())
+                }
             }
         }
         CommandKind::Capture => capture_all(&config),
@@ -691,6 +709,108 @@ fn check_all(config: &Config, json: bool) -> Result<()> {
 
 fn check_instance(name: &str, instance: &Instance) -> Result<()> {
     transaction::prepare(name, instance).map(|_| ())
+}
+
+/// Offline declaration validation: deserializer + resolver shapes only, no
+/// filesystem, processes, git, or user state. Nix checks and pre-apply
+/// gates run this; live presence stays in `status`.
+fn validate_offline(name: &str, instance: &Instance) -> Result<()> {
+    if !matches!(instance.client.as_str(), "wow-wotlk" | "wow-classic") {
+        bail!(
+            "{name}: unsupported client '{}'; supported: wow-wotlk, wow-classic",
+            instance.client
+        );
+    }
+    if !instance.root.is_absolute() {
+        bail!(
+            "{name}: client root must be absolute: {}",
+            instance.root.display()
+        );
+    }
+    wiring::validate_declaration(name, instance)?;
+    let mut ids = BTreeSet::new();
+    let mut targets = BTreeSet::new();
+    for addon in &instance.addons {
+        if addon.branch.is_empty()
+            || addon.branch.starts_with('-')
+            || addon.branch.chars().any(char::is_control)
+        {
+            bail!("unsafe addon branch");
+        }
+        if addon.id.is_empty()
+            || !addon
+                .id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))
+        {
+            bail!("unsafe addon id: {}", addon.id);
+        }
+        if !ids.insert(&addon.id) {
+            bail!("duplicate addon id: {}", addon.id);
+        }
+        if instance.client == "wow-classic"
+            && addon
+                .repository
+                .as_ref()
+                .is_none_or(|url| url.trim().is_empty())
+        {
+            bail!(
+                "{name}: Classic addon {} requires an explicit repository",
+                addon.id
+            );
+        }
+        for directory in &addon.directories {
+            if directory.target.is_empty()
+                || directory.target == "."
+                || directory.target == ".."
+                || directory.target.contains(['/', '\\', ':'])
+            {
+                bail!("unsafe managed addon target: {}", directory.target);
+            }
+            if !targets.insert(&directory.target) {
+                bail!("duplicate addon target: {}", directory.target);
+            }
+            if Path::new(&directory.source).is_absolute()
+                || directory.source.contains(['\\', ':'])
+                || directory
+                    .source
+                    .split('/')
+                    .any(|part| part == ".." || part.is_empty())
+            {
+                bail!("unsafe addon source: {}", directory.source);
+            }
+        }
+    }
+    for profile in &instance.profiles {
+        if profile.name.is_empty()
+            || profile.account.is_empty()
+            || profile.realm.is_empty()
+            || profile.character.is_empty()
+        {
+            bail!("{name}: profile fields must not be empty");
+        }
+        for component in [&profile.account, &profile.realm, &profile.character] {
+            if component == "."
+                || component == ".."
+                || component.contains(['/', '\\', ':'])
+                || component.chars().any(char::is_control)
+            {
+                bail!("unsafe character profile component");
+            }
+        }
+    }
+    for saved in &instance.saved_variables {
+        if saved.mode != "seed" && saved.mode != "replace" {
+            bail!("{name}: unsupported SavedVariables mode '{}'", saved.mode);
+        }
+        if saved.mode == "replace" && saved.source.is_none() {
+            bail!(
+                "{name}: replace requires a source for {}",
+                saved.path.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn validate_instance(name: &str, instance: &Instance) -> Result<()> {
