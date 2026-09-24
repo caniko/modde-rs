@@ -1303,7 +1303,9 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
 
     // Client integrity: metadata presence for required files (payloads are
     // never loaded); size-first, streaming digest, header-only flags for
-    // the executable.
+    // the executable. Fix hints point at the VanillaFixes.exe upgrade path:
+    // client payloads (WoW.exe, HD sets) are upgraded through the game
+    // entry, never the launcher's Install/Verify.
     if let Some(integrity) = &wiring.client_integrity {
         for file in &integrity.require_files {
             match root_file_meta(&instance.root, file)? {
@@ -1317,7 +1319,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                     &format!("client-file:{file}"),
                     ItemState::Missing,
                     format!("{file} absent"),
-                    "run the launcher Install/Verify, then re-check".into(),
+                    "run the VanillaFixes.exe upgrade, then re-check".into(),
                 )),
             }
         }
@@ -1328,13 +1330,13 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                     "wow-exe",
                     ItemState::Missing,
                     format!("{rel} absent"),
-                    "run the launcher Install/Verify".into(),
+                    "run the VanillaFixes.exe upgrade".into(),
                 )),
                 Some((_, meta)) if meta.len() != expected.size => items.push(item(
                     "wow-exe",
                     ItemState::Mismatched,
                     format!("size={} want={}", meta.len(), expected.size),
-                    "run the launcher Install/Verify for a clean LAA exe".into(),
+                    "run the VanillaFixes.exe upgrade for a clean LAA exe".into(),
                 )),
                 Some((mut file, _)) => {
                     // Single descriptor: header flags first, then rewind and
@@ -1374,7 +1376,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                         if ok {
                             String::new()
                         } else {
-                            "run the launcher Install/Verify for a clean LAA exe".into()
+                            "run the VanillaFixes.exe upgrade for a clean LAA exe".into()
                         },
                     ));
                 }
@@ -1410,7 +1412,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                 if found {
                     String::new()
                 } else {
-                    "HD patch absent; the installed launcher shows no HD mod entry — add a verified set, then re-check".into()
+                    "HD patch absent; fetch a verified set via the VanillaFixes.exe upgrade, then re-check".into()
                 },
             ));
         }
@@ -1420,7 +1422,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
                     "hd-patch-A",
                     ItemState::Missing,
                     "no patch-A at all".into(),
-                    "HD patch-A absent; the installed launcher shows no HD mod entry — add a verified set, then re-check".into(),
+                    "HD patch-A absent; fetch a verified set via the VanillaFixes.exe upgrade, then re-check".into(),
                 )),
                 Some(rel) => {
                     let Some((mut file, meta)) = pinned_file(&instance.root, &rel)? else {
@@ -2976,7 +2978,7 @@ pub fn launch(
                 .collect();
             if !drift.is_empty() {
                 bail!(
-                    "client not ready ({}); run the launcher Install/Verify, or re-pin the declared client digest",
+                    "client not ready ({}); run the VanillaFixes.exe upgrade, or re-pin the declared client digest",
                     drift.join(", ")
                 );
             }
