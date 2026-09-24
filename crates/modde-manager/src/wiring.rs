@@ -124,7 +124,9 @@ pub struct LutrisEntry {
     pub game_slug: String,
     /// System command prefix (Lutris `system.prefix_command`): prepended to
     /// the wine command. OctoWoW launcher uses the packaged stdio-repair
-    /// wrapper; game entries leave this absent.
+    /// wrapper; a declared game-entry wrapper stays in front of the
+    /// synthesized launch gate (see `game_gate_prefix`) instead of
+    /// replacing it.
     #[serde(default)]
     pub command_prefix: Option<String>,
 }
@@ -222,7 +224,38 @@ pub struct EntrySpec {
     pub command_prefix: Option<String>,
 }
 
+/// The instance name embeds into the game entry's `prefix_command`, which
+/// Lutris shlex-splits before exec: restrict it to a token-safe charset so
+/// a hostile or sloppy name cannot break (or inject into) the split.
+fn validate_instance_token(name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        bail!("unsafe instance name for prefix_command: {name}");
+    }
+    Ok(())
+}
+
+/// The game entry's launch gate, composed into `system.prefix_command`:
+/// the bare `modde-manager` token resolves through PATH exactly like the
+/// entry's system wine (the deployed wrapper exports the config path, so
+/// none is threaded through status/plan/apply), `--` ends the gate's own
+/// flags so Lutris's appended wine invocation lands as the passthrough
+/// command. A declared per-site wrapper stays in front of the gate; the
+/// gate itself is synthesized per instance and never declared.
+fn game_gate_prefix(name: &str, declared: Option<&str>) -> Result<String> {
+    validate_instance_token(name)?;
+    let gate = format!("modde-manager onboard gate --instance {name} --");
+    Ok(match declared {
+        Some(prefix) => format!("{prefix} {gate}"),
+        None => gate,
+    })
+}
+
 fn game_spec(
+    name: &str,
     instance: &Instance,
     entry: &LutrisEntry,
     runner: &Runner,
@@ -250,7 +283,7 @@ fn game_spec(
         fsync: wiring.tunings.fsync,
         dll_overrides: wiring.dll_overrides.clone(),
         extra_env: wiring.tunings.env.clone(),
-        command_prefix: entry.command_prefix.clone(),
+        command_prefix: Some(game_gate_prefix(name, entry.command_prefix.as_deref())?),
     })
 }
 
@@ -1015,14 +1048,16 @@ fn validate_slug(slug: &str) -> Result<()> {
 }
 
 /// Structural check of one Lutris game yml against the declaration: exact
-/// exe, working dir, prefix, wine version/arch/toggles, DLL overrides, and
-/// explicitly disabled anti-cheat runtimes.
+/// exe, working dir, prefix, wine version/arch/toggles, DLL overrides,
+/// the synthesized launch-gate `prefix_command`, and explicitly disabled
+/// anti-cheat runtimes.
 fn check_lutris_yml(
+    name: &str,
     path: &Path,
     instance: &Instance,
     wiring: &Wiring,
     entry: &LutrisEntry,
-) -> StatusItem {
+) -> Result<StatusItem> {
     // No record yet: discovery decides, so the version check waits for apply.
     // A corrupt record fails the whole check (fail-closed, like selection).
     let recorded = read_recorded(instance).map(|record| record.map(|record| record.version));
@@ -1048,15 +1083,15 @@ fn check_lutris_yml(
         fsync: wiring.tunings.fsync,
         dll_overrides: wiring.dll_overrides.clone(),
         extra_env: wiring.tunings.env.clone(),
-        command_prefix: entry.command_prefix.clone(),
+        command_prefix: Some(game_gate_prefix(name, entry.command_prefix.as_deref())?),
     };
-    check_entry_yml(
+    Ok(check_entry_yml(
         path,
         "lutris-yml",
         "run: onboard apply (rewrites this entry only)",
         &spec,
         recorded,
-    )
+    ))
 }
 
 /// Structural check of one Lutris game yml against an entry spec: exact
@@ -1645,7 +1680,7 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
         validate_slug(&entry.slug)?;
         match lutris_yml_path(dirs, &entry.slug) {
             Some(path) => {
-                items.push(check_lutris_yml(&path, instance, &wiring, entry));
+                items.push(check_lutris_yml(name, &path, instance, &wiring, entry)?);
             }
             None => items.push(item(
                 "lutris-yml",
@@ -1783,7 +1818,8 @@ fn is_deferred_hd_item(item: &StatusItem) -> bool {
 /// reads nor writes them, so they never gate writing an otherwise valid,
 /// declared Lutris entry; they stay visible in status/plan and gate
 /// execution instead: HD launch requires every `hd-patch*` item verified,
-/// and a native game launch requires `wow-exe` verified.
+/// and a game launch requires `wow-exe` verified — native `onboard launch`
+/// and the Lutris entry through its synthesized `onboard gate` alike.
 fn is_launch_readiness_item(name: &str) -> bool {
     name == "wow-exe" || name.starts_with("hd-patch")
 }
@@ -1866,15 +1902,17 @@ fn lutris_running() -> Result<bool> {
     interpret_pgrep(status)
 }
 
-/// Render the deterministic Lutris game yml for this instance. Anti-cheat is
-/// always absent: no EAC/BattleEye keys are ever emitted.
+/// Render the deterministic Lutris game yml for this instance, including
+/// the synthesized launch-gate `prefix_command`. Anti-cheat is always
+/// absent: no EAC/BattleEye keys are ever emitted.
 pub fn render_lutris_yml(
+    name: &str,
     instance: &Instance,
     entry: &LutrisEntry,
     runner: &Runner,
     wiring: &Wiring,
 ) -> Result<String> {
-    render_entry_yml(&game_spec(instance, entry, runner, wiring)?)
+    render_entry_yml(&game_spec(name, instance, entry, runner, wiring)?)
 }
 
 pub fn render_entry_yml(spec: &EntrySpec) -> Result<String> {
@@ -2407,7 +2445,7 @@ pub fn prepare(
                         .context("another onboard run holds the Lutris database")
                 })?,
         );
-        let spec = game_spec(instance, entry, &runner, &wiring)?;
+        let spec = game_spec(name, instance, entry, &runner, &wiring)?;
         let entry_plan = plan_entry(dirs, entry, &spec, adopt)?;
         yml_target = Some(entry_plan.target);
         yml_body = entry_plan.body;
@@ -2568,7 +2606,7 @@ pub fn apply(
     // The Lutris data-dir lock travels inside `prepared` (acquired before
     // inspection), so concurrent onboard runs cannot invalidate ownership.
     if let (Some(entry), Some(target)) = (&prepared.wiring.lutris, &prepared.yml_target) {
-        let spec = game_spec(instance, entry, &prepared.runner, &prepared.wiring)?;
+        let spec = game_spec(name, instance, entry, &prepared.runner, &prepared.wiring)?;
         let entry_plan = EntryPlan {
             target: target.clone(),
             body: prepared.yml_body.clone(),
@@ -2914,45 +2952,36 @@ pub fn prepare_native(name: &str, instance: &Instance, dirs: &HomeDirs, reselect
     Ok(())
 }
 
-/// Launch natively without Lutris: the game, the installed maintenance
-/// launcher, or the installer as an explicit bootstrap. Reads the recorded
-/// runner (prepare first), resolves the target, and execs it with the
-/// declared environment — then waits and propagates the exit status.
-/// Never installs, updates, reconciles, records, or falls back: a failure
-/// surfaces instead of starting something else. In HD mode the full HD set
-/// must verify first; vanilla mode never waits for HD.
-pub fn launch(
-    name: &str,
-    instance: &Instance,
-    dirs: &HomeDirs,
-    target: NativeTarget,
-    mode: LaunchMode,
-) -> Result<()> {
-    let wiring = resolve_wiring(instance)?;
-    let root_anchor = Anchor::open(&instance.root)?;
-    let _lease = root_anchor.lock()?;
-    // Quiescence covers every backend at once (game, launcher, Lutris):
-    // either side runs alone, never concurrently into one client.
-    super::assert_stopped(instance)?;
-    // Recorded runner only: launching never resolves or records, so the
-    // executed artifact is always the reviewed one.
-    let recorded = read_recorded(instance)?.with_context(|| {
-        format!("no recorded runner for '{name}'; run onboard prepare first")
-    })?;
+/// The recorded runner only: launching and upgrading never resolve or
+/// record, so the executed artifact is always the reviewed one.
+fn recorded_runner(name: &str, instance: &Instance) -> Result<Runner> {
+    let recorded = read_recorded(instance)?
+        .with_context(|| format!("no recorded runner for '{name}'; run onboard prepare first"))?;
     if !is_executable(&recorded.path) {
         bail!(
             "recorded runner '{}' no longer executes; run onboard prepare --reselect",
             recorded.path.display()
         );
     }
-    let runner = Runner {
+    Ok(Runner {
         path: recorded.path,
         version: recorded.version,
-    };
-    // Launch readiness gates execution, never registration: HD mode
-    // requires the full HD set, and a native game launch requires the
-    // declared client digest identity — a drifted WoW.exe is never exec'd
-    // (the game loads it through VanillaFixes either way).
+    })
+}
+
+/// Launch readiness gates execution, never registration: HD mode
+/// requires the full HD set, and a game launch requires the declared
+/// client digest identity — a drifted WoW.exe is never exec'd, native
+/// `onboard launch` or through the Lutris entry's `onboard gate` alike
+/// (the game loads it through `VanillaFixes` either way). HD never gates
+/// the vanilla path.
+fn ensure_launch_readiness(
+    name: &str,
+    instance: &Instance,
+    dirs: &HomeDirs,
+    target: NativeTarget,
+    mode: LaunchMode,
+) -> Result<()> {
     if mode == LaunchMode::Hd || target == NativeTarget::Game {
         let observations = status(name, instance, dirs)?;
         if mode == LaunchMode::Hd {
@@ -2978,16 +3007,21 @@ pub fn launch(
                 .collect();
             if !drift.is_empty() {
                 bail!(
-                    "client not ready ({}); run the VanillaFixes.exe upgrade, or re-pin the declared client digest",
+                    "client not ready ({}); run the VanillaFixes.exe upgrade (`modde-manager onboard upgrade --instance {name}`), or re-pin the declared client digest",
                     drift.join(", ")
                 );
             }
         }
     }
-    let lt = resolve_launch_target(instance, &wiring, target)?;
+    Ok(())
+}
+
+/// Build and run the native command for a resolved target with the
+/// declared environment — then wait and propagate the exit status.
+fn spawn_native(name: &str, wiring: &Wiring, runner: &Runner, lt: &LaunchTarget) -> Result<()> {
     let mut cmd = Command::new(&runner.path);
     cmd.arg(&lt.exe).current_dir(&lt.dir);
-    let (remove, set) = resolve_launch_env(&wiring, &lt.prefix, &lt.dll_overrides);
+    let (remove, set) = resolve_launch_env(wiring, &lt.prefix, &lt.dll_overrides);
     for key in remove {
         cmd.env_remove(key);
     }
@@ -3005,6 +3039,98 @@ pub fn launch(
         }
         status => bail!("{name}: process exited with {status}"),
     }
+}
+
+/// Launch natively without Lutris: the game, the installed maintenance
+/// launcher, or the installer as an explicit bootstrap. Reads the recorded
+/// runner (prepare first), resolves the target, and execs it with the
+/// declared environment — then waits and propagates the exit status.
+/// Never installs, updates, reconciles, records, or falls back: a failure
+/// surfaces instead of starting something else. In HD mode the full HD set
+/// must verify first; vanilla mode never waits for HD.
+pub fn launch(
+    name: &str,
+    instance: &Instance,
+    dirs: &HomeDirs,
+    target: NativeTarget,
+    mode: LaunchMode,
+) -> Result<()> {
+    let wiring = resolve_wiring(instance)?;
+    let root_anchor = Anchor::open(&instance.root)?;
+    let _lease = root_anchor.lock()?;
+    // Quiescence covers every backend at once (game, launcher, Lutris):
+    // either side runs alone, never concurrently into one client.
+    super::assert_stopped(instance)?;
+    let runner = recorded_runner(name, instance)?;
+    ensure_launch_readiness(name, instance, dirs, target, mode)?;
+    let lt = resolve_launch_target(instance, &wiring, target)?;
+    spawn_native(name, &wiring, &runner, &lt)
+}
+
+/// Client upgrades run through the game executable itself
+/// (`VanillaFixes.exe`): the same recorded runner, declared environment,
+/// and quiescence as a native game launch, but the launch-readiness gates
+/// are deliberately skipped — this is the maintenance invocation the
+/// readiness messages point at, and the sanctioned way to repair a
+/// drifted client (never the launcher's Install/Verify). It launches,
+/// waits, and propagates the exit status; it never reconciles, records,
+/// or falls back.
+pub fn upgrade(name: &str, instance: &Instance) -> Result<()> {
+    let wiring = resolve_wiring(instance)?;
+    let root_anchor = Anchor::open(&instance.root)?;
+    let _lease = root_anchor.lock()?;
+    super::assert_stopped(instance)?;
+    let runner = recorded_runner(name, instance)?;
+    let lt = resolve_launch_target(instance, &wiring, NativeTarget::Game)?;
+    println!(
+        "{name}: running {} for client upgrades (readiness gates skipped)",
+        lt.exe.display()
+    );
+    spawn_native(name, &wiring, &runner, &lt)
+}
+
+/// The Lutris game entry's launch gate (its synthesized
+/// `system.prefix_command`): enforce the same launch readiness a native
+/// game launch enforces, then `exec` the appended command unchanged so
+/// the game runs exactly as Lutris declared it — same executable, cwd,
+/// environment, and stdio; exit status and signals pass through to
+/// Lutris. Quiescence cannot apply (Lutris is this process's parent) and
+/// no lease is taken: readiness observes client-file state apply never
+/// mutates, and a lease FD would be inherited across `exec` onto the
+/// game process. Findings therefore gate the Lutris path too: a drifted
+/// WoW.exe is never exec'd, native or via Lutris alike.
+pub fn gate(
+    name: &str,
+    instance: &Instance,
+    dirs: &HomeDirs,
+    command: &[std::ffi::OsString],
+) -> Result<()> {
+    // clap may hand back the `--` separator; it can never be the program.
+    let command = if command
+        .first()
+        .is_some_and(|arg| arg.as_encoded_bytes() == b"--")
+    {
+        &command[1..]
+    } else {
+        command
+    };
+    let (program, args) = command
+        .split_first()
+        .context("gate: no command after `--`; the Lutris entry prefix_command is misconfigured")?;
+    ensure_launch_readiness(
+        name,
+        instance,
+        dirs,
+        NativeTarget::Game,
+        LaunchMode::Vanilla,
+    )?;
+    eprintln!(
+        "{name}: launch gate passed; exec {}",
+        Path::new(program).display()
+    );
+    use std::os::unix::process::CommandExt;
+    let error = Command::new(program).args(args).exec();
+    Err(error).with_context(|| format!("exec {}", Path::new(program).display()))
 }
 
 /// Render the desktop entry invoking the native game launch. The Lutris
@@ -4203,8 +4329,14 @@ mod tests {
         let instance = fixture_instance(&root);
         let wiring = resolve_wiring(&instance).unwrap();
         let runner = discover_runner(&dirs(&home), "wine", "latest").unwrap();
-        let yml = render_lutris_yml(&instance, wiring.lutris.as_ref().unwrap(), &runner, &wiring)
-            .unwrap();
+        let yml = render_lutris_yml(
+            "test",
+            &instance,
+            wiring.lutris.as_ref().unwrap(),
+            &runner,
+            &wiring,
+        )
+        .unwrap();
         let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
         assert_eq!(parsed["runner"].as_str(), Some("wine"));
         assert_eq!(parsed["wine"]["version"].as_str(), Some("wine-ge-9-2"));
@@ -4228,11 +4360,13 @@ mod tests {
         let yml_path = dir.join("octowow-test.yml");
         fs::write(&yml_path, &yml).unwrap();
         let checked = check_lutris_yml(
+            "test",
             &yml_path,
             &instance,
             &wiring,
             wiring.lutris.as_ref().unwrap(),
-        );
+        )
+        .unwrap();
         assert_eq!(checked.state, ItemState::Verified);
     }
 
@@ -4247,7 +4381,7 @@ mod tests {
             path: PathBuf::from("/usr/bin/wine"),
             version: "system".into(),
         };
-        let yml = render_lutris_yml(&instance, entry, &system, &wiring).unwrap();
+        let yml = render_lutris_yml("test", &instance, entry, &system, &wiring).unwrap();
         let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
         assert_eq!(parsed["wine"]["version"].as_str(), Some("system"));
         assert_eq!(parsed["system"]["disable_runtime"].as_bool(), Some(true));
@@ -4267,7 +4401,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let yml_path = dir.join("octowow-test.yml");
         fs::write(&yml_path, &yml).unwrap();
-        let checked = check_lutris_yml(&yml_path, &instance, &wiring, entry);
+        let checked = check_lutris_yml("test", &yml_path, &instance, &wiring, entry).unwrap();
         assert_eq!(checked.state, ItemState::Verified);
         // Missing key (pre-fix yml): mismatched, not silently accepted.
         let without: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
@@ -4286,16 +4420,16 @@ mod tests {
             serde_yaml_ng::to_string(&serde_yaml_ng::Value::Mapping(map)).unwrap(),
         )
         .unwrap();
-        let checked = check_lutris_yml(&yml_path, &instance, &wiring, entry);
+        let checked = check_lutris_yml("test", &yml_path, &instance, &wiring, entry).unwrap();
         assert_eq!(checked.state, ItemState::Mismatched);
         assert!(checked.detail.contains("disable_runtime"));
         // Managed runner with the runtime disabled: mismatched the other way.
         let managed = discover_runner(&dirs(&home), "wine", "latest").unwrap();
-        let managed_yml = render_lutris_yml(&instance, entry, &managed, &wiring).unwrap();
+        let managed_yml = render_lutris_yml("test", &instance, entry, &managed, &wiring).unwrap();
         let flipped = managed_yml.replacen("disable_runtime: false", "disable_runtime: true", 1);
         assert_ne!(managed_yml, flipped);
         fs::write(&yml_path, &flipped).unwrap();
-        let checked = check_lutris_yml(&yml_path, &instance, &wiring, entry);
+        let checked = check_lutris_yml("test", &yml_path, &instance, &wiring, entry).unwrap();
         assert_eq!(checked.state, ItemState::Mismatched);
         assert!(checked.detail.contains("disable_runtime"));
     }
@@ -5333,11 +5467,13 @@ mod tests {
         // Effective entry verifies: prefix, recorded runtime, anticheat off.
         let wiring = resolve_wiring(&instance).unwrap();
         let checked = check_lutris_yml(
+            "test",
             &yml_path,
             &instance,
             &wiring,
             wiring.lutris.as_ref().unwrap(),
-        );
+        )
+        .unwrap();
         assert_eq!(checked.state, ItemState::Verified);
         assert!(
             status("test", &instance, &dirs(&home))
@@ -5703,6 +5839,206 @@ mod tests {
         }
         // ...so wine never executed the game.
         assert!(!log.exists());
+    }
+
+    #[test]
+    fn game_yml_carries_launch_gate_prefix() {
+        let (_envelope, root) = fixture_root();
+        let home = fixture_home(&["wine-ge-9-2"]);
+        let mut instance = fixture_instance(&root);
+        let wiring = resolve_wiring(&instance).unwrap();
+        let runner = discover_runner(&dirs(&home), "wine", "latest").unwrap();
+        let yml = render_lutris_yml(
+            "test",
+            &instance,
+            wiring.lutris.as_ref().unwrap(),
+            &runner,
+            &wiring,
+        )
+        .unwrap();
+        assert!(
+            yml.contains("prefix_command: modde-manager onboard gate --instance test --"),
+            "gate prefix missing from rendered yml:\n{yml}"
+        );
+        // The effective entry verifies against the same synthesized spec.
+        let dir = home.path().join(".config/lutris/games");
+        fs::create_dir_all(&dir).unwrap();
+        let yml_path = dir.join("octowow-test.yml");
+        fs::write(&yml_path, &yml).unwrap();
+        let checked = check_lutris_yml(
+            "test",
+            &yml_path,
+            &instance,
+            &wiring,
+            wiring.lutris.as_ref().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(checked.state, ItemState::Verified);
+        // Dropping the gate is drift the check names explicitly.
+        let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yml).unwrap();
+        let mut map = parsed.as_mapping().unwrap().clone();
+        let system_key = serde_yaml_ng::Value::String("system".into());
+        let mut system_map = map
+            .remove(&system_key)
+            .unwrap()
+            .as_mapping()
+            .unwrap()
+            .clone();
+        let prefix_key = serde_yaml_ng::Value::String("prefix_command".into());
+        system_map.remove(&prefix_key);
+        map.insert(system_key, serde_yaml_ng::Value::Mapping(system_map));
+        fs::write(
+            &yml_path,
+            serde_yaml_ng::to_string(&serde_yaml_ng::Value::Mapping(map)).unwrap(),
+        )
+        .unwrap();
+        let checked = check_lutris_yml(
+            "test",
+            &yml_path,
+            &instance,
+            &wiring,
+            wiring.lutris.as_ref().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(checked.state, ItemState::Mismatched);
+        assert!(checked.detail.contains("prefix_command"));
+        // A declared wrapper stays in front of the synthesized gate.
+        instance
+            .wiring
+            .as_mut()
+            .unwrap()
+            .lutris
+            .as_mut()
+            .unwrap()
+            .command_prefix = Some("/bin/octowow-stdio-redir".into());
+        let wrapped = resolve_wiring(&instance).unwrap();
+        let wrapped_yml = render_lutris_yml(
+            "test",
+            &instance,
+            wrapped.lutris.as_ref().unwrap(),
+            &runner,
+            &wrapped,
+        )
+        .unwrap();
+        assert!(
+            wrapped_yml.contains(
+                "prefix_command: /bin/octowow-stdio-redir modde-manager onboard gate --instance test --"
+            ),
+            "declared wrapper not composed in front of the gate:\n{wrapped_yml}"
+        );
+    }
+
+    #[test]
+    fn gate_prefix_rejects_unsafe_instance_names() {
+        assert_eq!(
+            game_gate_prefix("octowow", None).unwrap(),
+            "modde-manager onboard gate --instance octowow --"
+        );
+        assert_eq!(
+            game_gate_prefix("octowow", Some("/bin/wrap")).unwrap(),
+            "/bin/wrap modde-manager onboard gate --instance octowow --"
+        );
+        assert!(game_gate_prefix("has space", None).is_err());
+        assert!(game_gate_prefix("a\"b", None).is_err());
+        assert!(game_gate_prefix("", None).is_err());
+    }
+
+    #[test]
+    fn gate_requires_a_command_before_readiness() {
+        // Fixture-independent: an empty command is a wiring error reported
+        // before any readiness observation, and never reaches exec.
+        let (_envelope, root) = fixture_root();
+        let home = fixture_home(&["wine-ge-9-2"]);
+        let instance = fixture_instance(&root);
+        let err = gate("test", &instance, &dirs(&home), &[]).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("no command"),
+            "unexpected: {err:#}"
+        );
+    }
+
+    #[test]
+    fn gate_blocks_drifted_client_without_exec() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        logging_wine(&home, "wine-ge-9-2", &home.path().join("wine.log"));
+        let mut instance = apply_fixture(&root, home.path());
+        fs::write(root.join("WoW.exe"), "fake-wow").unwrap();
+        instance
+            .wiring
+            .as_mut()
+            .unwrap()
+            .client_integrity
+            .as_mut()
+            .unwrap()
+            .wow_exe = Some(
+            serde_json::from_value(serde_json::json!({
+                "size": 999,
+                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }))
+            .unwrap(),
+        );
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        // A nonexistent program keeps a mis-ordered gate fail-safe: exec
+        // would ENOENT instead of replacing the test process, and the
+        // readiness refusal still surfaces first.
+        let err = gate(
+            "test",
+            &instance,
+            &dirs(&home),
+            &[std::ffi::OsString::from(
+                "/nonexistent/modde-gate-must-not-exec",
+            )],
+        )
+        .unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("wow-exe"), "unexpected: {text}");
+        assert!(text.contains("onboard upgrade"), "hint missing: {text}");
+    }
+
+    #[test]
+    fn upgrade_runs_game_without_readiness_gates() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        let log = home.path().join("wine.log");
+        logging_wine(&home, "wine-ge-9-2", &log);
+        let mut instance = apply_fixture(&root, home.path());
+        fs::write(root.join("WoW.exe"), "fake-wow").unwrap();
+        instance
+            .wiring
+            .as_mut()
+            .unwrap()
+            .client_integrity
+            .as_mut()
+            .unwrap()
+            .wow_exe = Some(
+            serde_json::from_value(serde_json::json!({
+                "size": 999,
+                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }))
+            .unwrap(),
+        );
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        // Native launch refuses the drifted client ...
+        let err = launch(
+            "test",
+            &instance,
+            &dirs(&home),
+            NativeTarget::Game,
+            LaunchMode::Vanilla,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("wow-exe"),
+            "unexpected: {err:#}"
+        );
+        assert!(!log.exists());
+        // ... while upgrade runs the very same executable with the
+        // readiness gates skipped: the maintenance path the gate points at.
+        upgrade("test", &instance).unwrap();
+        assert!(log.exists());
     }
 
     #[test]

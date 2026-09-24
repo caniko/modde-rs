@@ -24,8 +24,11 @@ mod wiring;
 #[derive(Parser)]
 #[command(name = "modde-manager", about = "Declarative post-setup game manager")]
 struct Cli {
+    /// Manager config path; falls back to `MODDE_MANAGER_CONFIG`, then to
+    /// one re-exec through the PATH `modde-manager` (the deployed wrapper
+    /// exports the path).
     #[arg(long, env = "MODDE_MANAGER_CONFIG")]
-    config: PathBuf,
+    config: Option<PathBuf>,
     #[command(subcommand)]
     command: CommandKind,
 }
@@ -146,6 +149,26 @@ enum OnboardAction {
         /// HD set verified first.
         #[arg(long, value_enum, default_value = "vanilla")]
         mode: LaunchModeArg,
+    },
+    /// Run the game executable (VanillaFixes.exe) for client upgrades with
+    /// the launch-readiness gates deliberately skipped: the maintenance
+    /// path the readiness messages point at — never the launcher's
+    /// Install/Verify. Quiescence and the recorded runner still apply;
+    /// launches, waits, and surfaces the exit status.
+    Upgrade {
+        #[arg(long)]
+        instance: String,
+    },
+    /// Lutris game-entry launch gate (its `system.prefix_command`):
+    /// enforce game launch readiness, then exec the appended command
+    /// unchanged. Lutris invokes it on every launch; a refusal blocks that
+    /// launch with the reason.
+    Gate {
+        #[arg(long)]
+        instance: String,
+        /// The command to exec after the gate passes (appended after `--`).
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<std::ffi::OsString>,
     },
     /// Write the desktop entry invoking the native game launch. The Lutris
     /// entries are untouched.
@@ -349,7 +372,8 @@ struct Plan {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let config = load_config(&cli.config)?;
+    let config_path = resolve_config_path(cli.config)?;
+    let config = load_config(&config_path)?;
     if config.version != 1 {
         bail!(
             "unsupported modde-manager config version {}",
@@ -503,12 +527,26 @@ fn main() -> Result<()> {
                         },
                     )
                 }
+                OnboardAction::Upgrade { instance } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    wiring::upgrade(&instance, instance_config)
+                }
+                OnboardAction::Gate { instance, command } => {
+                    let instance_config = config
+                        .instances
+                        .get(&instance)
+                        .with_context(|| format!("unknown instance '{instance}'"))?;
+                    wiring::gate(&instance, instance_config, &dirs, &command)
+                }
                 OnboardAction::DesktopEntry { instance } => {
                     let instance_config = config
                         .instances
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
-                    wiring::desktop_entry(&instance, instance_config, &dirs, &cli.config)
+                    wiring::desktop_entry(&instance, instance_config, &dirs, &config_path)
                 }
             }
         }
@@ -561,6 +599,35 @@ fn list_instances(config: &Config, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Resolve the manager config path: an explicit `--config` wins (clap
+/// already folds `MODDE_MANAGER_CONFIG` into it) — else one re-exec
+/// through the PATH `modde-manager`. The deployed wrapper exports the
+/// config path, so the bare gate token finds its config without threading
+/// a path through status/plan/apply. The `current_exe` comparison keeps a
+/// directly-invoked binary from re-execing itself; no marker env var is
+/// needed.
+fn resolve_config_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = explicit {
+        return Ok(path);
+    }
+    let exe = std::env::current_exe().context("resolve current executable")?;
+    let exe = exe.canonicalize().unwrap_or(exe);
+    for dir in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
+        let candidate = dir.join("modde-manager");
+        let Ok(resolved) = candidate.canonicalize() else {
+            continue;
+        };
+        if resolved == exe {
+            continue;
+        }
+        use std::os::unix::process::CommandExt;
+        let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+        let error = std::process::Command::new(&resolved).args(&args).exec();
+        return Err(error).with_context(|| format!("exec {}", resolved.display()));
+    }
+    bail!("no --config given and no other modde-manager on PATH")
 }
 
 fn load_config(path: &Path) -> Result<Config> {
@@ -1174,6 +1241,17 @@ fn wow_value(value: &Value) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_config_path_prefers_explicit() {
+        // Positive PATH re-exec would replace the test process, so only
+        // the explicit arm is unit-tested; the fallback is live-tested.
+        let explicit = PathBuf::from("/tmp/manager.json");
+        assert_eq!(
+            resolve_config_path(Some(explicit.clone())).unwrap(),
+            explicit
+        );
+    }
 
     #[test]
     fn manager_list_entries_are_sorted_and_read_only() {
