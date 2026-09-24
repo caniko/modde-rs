@@ -1721,16 +1721,23 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
         }
     }
 
-    // HD data patches: one case-insensitive inventory for presence,
-    // identity, and stray detection (payloads never loaded); declared
-    // patch-A identity verified by streaming digest. Filenames keep their
-    // on-disk spelling — checking never renames anything. Ambiguity,
-    // symlinks, and listing failures surface as Mismatched/Unverifiable
-    // findings (execution refuses, registration proceeds), never as hard
-    // errors.
+    // HD data patches: a single case-insensitive Data/ inventory shared by
+    // presence, identity, and stray detection (payloads never loaded);
+    // declared patch-A identity verified by streaming digest. Filenames
+    // keep their on-disk spelling — checking never renames anything.
+    // Ambiguity, symlinks, and listing failures surface as
+    // Mismatched/Unverifiable findings (execution refuses, registration
+    // proceeds), never as hard errors. One inventory only: presence and
+    // stray detection must observe the same listing, so a failure between
+    // two reads can never leave Verified presence beside a silently
+    // skipped stray check.
+    let hd_inventory: Result<Option<Vec<String>>> = if wiring.data_patches.is_some() {
+        data_entry_names(&instance.root)
+    } else {
+        Ok(None)
+    };
     if let Some(patches) = &wiring.data_patches {
-        let data_names: Result<Option<Vec<String>>> = data_entry_names(&instance.root);
-        match &data_names {
+        match &hd_inventory {
             Err(e) => {
                 for letter in &patches.native_letters {
                     items.push(item(
@@ -1844,13 +1851,13 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
     // Rename dodge detection: single-letter patches outside the declared
     // native letters are known character-screen crash causes. Numbered
     // stock patches (patch-1..5.mpq) are always accepted. Names only —
-    // payloads are never read (HD trees are gigabytes). Reuses the same
-    // inventory semantics as presence above; listing failures are already
-    // reported as Unverifiable, so only a fresh successful listing can add
-    // a stray finding here.
+    // payloads are never read (HD trees are gigabytes). Reuses the single
+    // shared inventory above: listing failures are already reported as
+    // Unverifiable, so only that same successful listing can add a stray
+    // finding here — never a fresh second read.
     if let Some(patches) = &wiring.data_patches {
         if patches.forbid_renames {
-            match data_entry_names(&instance.root) {
+            match &hd_inventory {
                 Ok(Some(names)) => {
                     let strays: Vec<_> = names
                         .iter()
@@ -5777,13 +5784,27 @@ mod tests {
         .unwrap()
     }
 
+    /// Full-row dump for preservation checks: every owned column, so an
+    /// unrelated row cannot change unnoticed behind an identical slug.
+    fn db_full_dump(home: &Path) -> String {
+        let db = home.join(".local/share/lutris/pga.db");
+        sqlite3(&[
+            db.display().to_string(),
+            "SELECT id, name, slug, runner, platform, directory, executable, configpath, installed FROM games ORDER BY slug;".into(),
+        ])
+        .unwrap()
+    }
+
     // Apply tests spawn sqlite3 with lutris paths in argv, which a sibling
     // test's `pgrep -f lutris` would mistake for a running Lutris. Serialize.
     static APPLY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Shared apply-test preamble: lock + sqlite gate + game envelope + fake
-    /// wine runner + empty Lutris db. Extracted from a 6-line clone repeated
-    /// across the apply/register tests.
+    /// Shared apply-test preamble: lock + sqlite gate + game envelope +
+    /// logging fake wine runner + empty Lutris db. The fake wine handles
+    /// `wineboot` (prefix creation, no log) and appends every other
+    /// invocation to `home/wine.log`, so launch/gate tests asserting no
+    /// exec observe a meaningful sentinel: the log appears only when wine
+    /// actually runs.
     fn apply_test_env() -> (
         std::sync::MutexGuard<'static, ()>,
         tempfile::TempDir,
@@ -5794,7 +5815,7 @@ mod tests {
         require_sqlite();
         let (envelope, root) = fixture_root();
         let home = tempfile::tempdir().unwrap();
-        wineboot_home(&home, "wine-ge-9-2");
+        logging_wine(&home, "wine-ge-9-2", &home.path().join("wine.log"));
         lutris_home(home.path());
         (guard, envelope, root, home)
     }
@@ -5853,6 +5874,10 @@ mod tests {
         let yml_before = fs::read(&yml_path).unwrap();
         let dump_before = db_dump(home.path());
         assert!(dump_before.contains("other-game|/games/other/g.exe"));
+        // Full-row preservation: an unrelated row cannot change behind an
+        // identical slug (all owned columns compared).
+        let full_before = db_full_dump(home.path());
+        assert!(full_before.contains("Unrelated|other-game|wine|Linux|/games/other|/games/other/g.exe|other-game|1"));
         // A newer runner appears: the recorded selection must not move, and
         // the repeat apply must not change any game or Lutris state at all.
         wineboot_home(&home, "wine-ge-10-1");
@@ -5861,6 +5886,7 @@ mod tests {
         apply("test", &instance, &dirs(&home), false, false, None).unwrap();
         assert_eq!(fs::read(&yml_path).unwrap(), yml_before);
         assert_eq!(db_dump(home.path()), dump_before);
+        assert_eq!(db_full_dump(home.path()), full_before);
         assert_eq!(snapshot_tree(_envelope.path()), before_game);
         // sqlite's WAL bookkeeping touches the database directory on every
         // new connection — including the status reads inside apply and this
@@ -6640,6 +6666,54 @@ mod tests {
                 .state,
             ItemState::Mismatched
         );
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        for mode in [LaunchMode::Hd, LaunchMode::Vanilla] {
+            let err =
+                launch("test", &instance, &dirs(&home), NativeTarget::Game, mode).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("HD not ready"),
+                "unexpected for {mode:?}: {err:#}"
+            );
+        }
+        let gate_err = gate(
+            "test",
+            &instance,
+            &dirs(&home),
+            &[std::ffi::OsString::from(
+                "/nonexistent/modde-gate-must-not-exec",
+            )],
+        )
+        .unwrap_err();
+        assert!(
+            format!("{gate_err:#}").contains("HD not ready"),
+            "unexpected: {gate_err:#}"
+        );
+        assert!(!home.path().join("wine.log").exists());
+    }
+
+    #[test]
+    fn unreadable_data_inventory_registers_but_blocks_launch() {
+        // Data/ replaced by a regular file: Anchor::open requires
+        // O_DIRECTORY, so the single shared inventory fails with ENOTDIR
+        // (root-proof, unlike permission bits under root). Status reports
+        // Unverifiable readiness, registration proceeds, execution refuses.
+        let (_guard, _envelope, root, home) = apply_test_env();
+        let instance = apply_fixture(&root, home.path());
+        fs::remove_dir_all(root.join("Data")).unwrap();
+        fs::write(root.join("Data"), "not-a-directory").unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        let letter = items
+            .iter()
+            .find(|i| i.name == "hd-patch:A")
+            .unwrap();
+        assert_eq!(letter.state, ItemState::Unverifiable);
+        assert!(letter.detail.contains("unreadable"), "unexpected: {}", letter.detail);
+        let strays = items
+            .iter()
+            .find(|i| i.name == "hd-patch-letters")
+            .unwrap();
+        assert_eq!(strays.state, ItemState::Unverifiable);
+        // Registration owns yml+row only: inventory failure never blocks it.
         apply("test", &instance, &dirs(&home), false, false, None).unwrap();
         for mode in [LaunchMode::Hd, LaunchMode::Vanilla] {
             let err =

@@ -94,6 +94,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preset: consumers declare their operator-confirmed `native_letters`
   explicitly, and an HD launch with no declared set fails with an
   actionable error.
+- **Manager**: Fix HD inventory to a single shared Data/ listing for
+  presence, patch-A identity, and stray detection: the stray check reuses
+  the same `hd_inventory` result instead of a second `data_entry_names`
+  read, so a listing failure between two reads can never leave Verified
+  presence beside a silently skipped stray check. Failures stay
+  Unverifiable readiness findings (registration proceeds, launch/gate
+  refuse); new `unreadable_data_inventory_registers_but_blocks_launch`
+  regression covers the ENOTDIR path.
+- **Manager**: Harden launch/gate test sentinels: `apply_test_env`
+  installs the logging fake wine (wineboot without log, every other
+  invocation appends to `home/wine.log`), so `!wine.log.exists()`
+  proves no exec. Full-row `pga.db` preservation (`db_full_dump`)
+  asserts unrelated rows byte-identical across repeat apply.
 - **Manager**: Bump `managerSchemaVersion` to 5 (launcher tuning
   overrides, offline validate, registration/readiness split).
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized
