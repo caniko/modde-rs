@@ -1751,7 +1751,9 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
 pub enum WiringChangeKind {
     /// Onboard apply owns this transition.
     Change,
-    /// External action (launcher update, client install) must happen first.
+    /// External action (launcher update, client install) apply never
+    /// performs: readiness ones gate launch modes, registration proceeds
+    /// without them; structural ones (client install) still refuse.
     Blocker,
 }
 
@@ -1762,16 +1764,26 @@ pub struct WiringChange {
     pub summary: String,
 }
 
-/// HD payload presence items (`hd-patch:<letter>` Missing) never gate
-/// registration: an absent optional payload is not a broken vanilla
-/// client, and registration readiness must not wait for HD maintenance.
-/// Present-but-wrong HD state (`hd-patch-letters` rename dodges,
-/// `hd-patch-A` identity mismatch) still blocks, as does everything else.
-/// The exemption matches the per-letter presence items only: neither the
-/// `hd-patch-letters` dodge detector nor the `hd-patch-A` identity check
-/// carries the `hd-patch:` prefix.
+/// HD payload presence items (`hd-patch:<letter>` Missing): an absent
+/// optional payload is not a broken vanilla client. They stay visible in
+/// status/plan and are journaled as deferred after registration; all
+/// launch-readiness findings are exempt from registration outright via
+/// `is_launch_readiness_item`. The `hd-patch:` prefix matches the
+/// per-letter presence items only: neither the `hd-patch-letters` dodge
+/// detector nor the `hd-patch-A` identity check carries it.
 fn is_deferred_hd_item(item: &StatusItem) -> bool {
     item.state == ItemState::Missing && item.name.starts_with("hd-patch:")
+}
+
+/// Launch-readiness findings: the client's digest identity (`wow-exe`) and
+/// HD payload state (`hd-patch*` — per-letter presence plus the
+/// rename-dodge and patch-A identity detectors). Registration neither
+/// reads nor writes them, so they never gate writing an otherwise valid,
+/// declared Lutris entry; they stay visible in status/plan and gate
+/// execution instead: HD launch requires every `hd-patch*` item verified,
+/// and a native game launch requires `wow-exe` verified.
+fn is_launch_readiness_item(name: &str) -> bool {
+    name == "wow-exe" || name.starts_with("hd-patch")
 }
 
 /// Items apply neither owns nor gates on. The launcher lifecycle
@@ -1779,22 +1791,26 @@ fn is_deferred_hd_item(item: &StatusItem) -> bool {
 /// to register-launcher and the launcher itself — apply never touches it.
 /// Absent external artifacts (HD payloads, the bootstrap installer) never
 /// gate registration either; they stay visible and, for HD, journaled as
-/// deferred. Everything else non-verified blocks registration or fails
-/// verification — notably a digest-mismatched installer and
-/// present-but-wrong HD state.
+/// deferred. Launch-readiness findings gate launch modes, not
+/// registration. Everything else non-verified blocks registration or
+/// fails verification — notably a digest-mismatched installer and
+/// missing client files.
 fn is_apply_exempt(item: &StatusItem) -> bool {
     item.name == "launcher-entry"
         || item.name == "launcher-client-dir"
         || item.name == "launcher-prefix"
         || item.name.starts_with("tweak:")
+        || is_launch_readiness_item(&item.name)
         || (item.state == ItemState::Missing
             && (item.name == "launcher-installer" || is_deferred_hd_item(item)))
 }
 
-/// Items onboard apply owns; everything else non-verified is an external
-/// blocker (client install, launcher maintenance) that must resolve first.
-/// Absent HD payloads stay visible as blockers in plan output but never
-/// gate registration (see `is_deferred_hd_item`).
+/// Items onboard apply owns; everything else non-verified shows up in
+/// plan output as an external blocker (client install, launcher
+/// maintenance) that apply never performs. Launch-readiness findings stay
+/// visible as blockers but gate launch modes, not registration (see
+/// `is_launch_readiness_item`); absent HD payloads are journaled as
+/// deferred (see `is_deferred_hd_item`).
 fn is_ownable(name: &str) -> bool {
     name == "prefix" || name.starts_with("lutris-") || name == "runner-pinned"
 }
@@ -2395,12 +2411,13 @@ pub fn prepare(
         yml_body = entry_plan.body;
     }
 
-    // Client/HD prerequisites are external maintenance (launcher updates,
-    // client install): anything apply does not own must already verify, or
-    // no mutation happens at all. Same observations status/plan report.
-    // The launcher lifecycle is owned by register-launcher and absent HD
-    // payloads never gate registration (a valid vanilla entry must not
-    // wait for either).
+    // Structural prerequisites (client files, endpoints, runner) are
+    // external maintenance (launcher updates, client install): anything
+    // apply does not own must already verify, or no mutation happens at
+    // all. Same observations status/plan report. The launcher lifecycle
+    // is owned by register-launcher, and launch-readiness findings
+    // (wow-exe digest, HD payload state) gate launch modes — a valid
+    // declared entry must not wait for any of them.
     let blockers: Vec<_> = status(name, instance, dirs)?
         .into_iter()
         .filter(|item| item.state != ItemState::Verified && !is_ownable(&item.name) && !is_apply_exempt(item))
@@ -2493,9 +2510,10 @@ fn create_prefix(prefix: &Path, runner: &Runner, wiring: &Wiring) -> Result<Stri
 /// Execute a prepared plan. The root lease is held across validation,
 /// execution, verification, and recovery; a second lock on the Lutris data
 /// dir serializes concurrent onboard runs for other instances. Owns prefix
-/// creation, the Lutris yml, and the pga.db row — nothing else. Absent HD
-/// payloads never gate registration (they stay visible in status/plan and
-/// are journaled as deferred); present-but-wrong HD state still blocks.
+/// creation, the Lutris yml, and the pga.db row — nothing else.
+/// Launch-readiness findings (wow-exe digest, HD payload state) never
+/// gate registration: they stay visible in status/plan, missing HD is
+/// journaled as deferred, and they gate launch modes instead.
 /// Partial state is retained with journaled evidence on failure, never
 /// deleted; pre-existing content is restored from retained backups.
 pub fn apply(
@@ -2585,9 +2603,9 @@ pub fn apply(
         .into_iter()
         .filter(|item| item.state != ItemState::Verified)
         .collect();
-    // Absent HD payloads stay visible but never fail registration, and
-    // register-owned launcher items are verified by register-launcher, not
-    // here; anything else unverified is a real failure with retained
+    // Launch-readiness findings stay visible but never fail registration,
+    // and register-owned launcher items are verified by register-launcher,
+    // not here; anything else unverified is a real failure with retained
     // evidence.
     let fatal: Vec<_> = bad
         .iter()
@@ -2597,6 +2615,13 @@ pub fn apply(
         .iter()
         .filter(|item| is_deferred_hd_item(item))
         .map(|item| item.name.clone())
+        .collect();
+    // Launch-readiness findings observed but deliberately not enforced at
+    // registration: journaled so the deferral is auditable afterwards.
+    let readiness: Vec<_> = bad
+        .iter()
+        .filter(|item| is_launch_readiness_item(&item.name))
+        .map(|item| format!("{}={:?}", item.name, item.state))
         .collect();
     if !fatal.is_empty() {
         journal_event(
@@ -2620,7 +2645,7 @@ pub fn apply(
         journal_event(
             instance,
             name,
-            serde_json::json!({"op": "apply-done", "runner": prepared.runner.version, "hd_deferred": hd_deferred}),
+            serde_json::json!({"op": "apply-done", "runner": prepared.runner.version, "hd_deferred": hd_deferred, "readiness": readiness}),
         );
     }
     if !hd_deferred.is_empty() {
@@ -2922,18 +2947,39 @@ pub fn launch(
         path: recorded.path,
         version: recorded.version,
     };
-    if mode == LaunchMode::Hd {
-        let mut missing = Vec::new();
-        for item in status(name, instance, dirs)? {
-            if item.name.starts_with("hd-patch") && item.state != ItemState::Verified {
-                missing.push(format!("{}={:?}", item.name, item.state));
+    // Launch readiness gates execution, never registration: HD mode
+    // requires the full HD set, and a native game launch requires the
+    // declared client digest identity — a drifted WoW.exe is never exec'd
+    // (the game loads it through VanillaFixes either way).
+    if mode == LaunchMode::Hd || target == NativeTarget::Game {
+        let observations = status(name, instance, dirs)?;
+        if mode == LaunchMode::Hd {
+            let missing: Vec<_> = observations
+                .iter()
+                .filter(|item| {
+                    item.name.starts_with("hd-patch") && item.state != ItemState::Verified
+                })
+                .map(|item| format!("{}={:?}", item.name, item.state))
+                .collect();
+            if !missing.is_empty() {
+                bail!(
+                    "HD not ready (re-run without HD mode for the base client): {}",
+                    missing.join(", ")
+                );
             }
         }
-        if !missing.is_empty() {
-            bail!(
-                "HD not ready (re-run without HD mode for the base client): {}",
-                missing.join(", ")
-            );
+        if target == NativeTarget::Game {
+            let drift: Vec<_> = observations
+                .iter()
+                .filter(|item| item.name == "wow-exe" && item.state != ItemState::Verified)
+                .map(|item| format!("{}={:?}", item.name, item.state))
+                .collect();
+            if !drift.is_empty() {
+                bail!(
+                    "client not ready ({}); run the launcher Install/Verify, or re-pin the declared client digest",
+                    drift.join(", ")
+                );
+            }
         }
     }
     let lt = resolve_launch_target(instance, &wiring, target)?;
@@ -5343,6 +5389,60 @@ mod tests {
     }
 
     #[test]
+    fn apply_registers_despite_launch_readiness_drift() {
+        let (_guard, _envelope, root, home) = apply_test_env();
+        let mut instance = apply_fixture(&root, home.path());
+        // Client digest identity drifted (size mismatch) and a rename-dodge
+        // letter sits outside the declared set: launch readiness, both.
+        fs::write(root.join("WoW.exe"), "fake-wow").unwrap();
+        instance
+            .wiring
+            .as_mut()
+            .unwrap()
+            .client_integrity
+            .as_mut()
+            .unwrap()
+            .wow_exe = Some(
+            serde_json::from_value(serde_json::json!({
+                "size": 999,
+                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }))
+            .unwrap(),
+        );
+        fs::write(root.join("Data/patch-F.mpq"), "renamed").unwrap();
+        let items = status("test", &instance, &dirs(&home)).unwrap();
+        let state_of = |name: &str| items.iter().find(|i| i.name == name).unwrap().state;
+        assert_eq!(state_of("wow-exe"), ItemState::Mismatched);
+        assert_eq!(state_of("hd-patch-letters"), ItemState::Mismatched);
+        // Both stay blockers in the read-only plan, visible to the operator.
+        let changes = plan("test", &instance, &dirs(&home)).unwrap();
+        assert!(changes.iter().any(|c| c.resource.ends_with("wow-exe")));
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.resource.ends_with("hd-patch-letters"))
+        );
+        // ...but neither refuses writing the declared entry.
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        assert!(
+            home.path()
+                .join(".config/lutris/games/octowow-test.yml")
+                .is_file()
+        );
+        assert!(db_dump(home.path()).contains("octowow-test|"));
+        // The journal records the readiness observation on apply-done...
+        let journal =
+            fs::read_to_string(_envelope.path().join("octo-manager/wiring-journal.jsonl")).unwrap();
+        assert!(journal.contains("apply-done") && journal.contains("wow-exe"));
+        // ...and a repeat apply stays a full no-op.
+        let before_home = snapshot_tree(home.path());
+        let before_game = snapshot_tree(_envelope.path());
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        assert_eq!(snapshot_tree(home.path()), before_home);
+        assert_eq!(snapshot_tree(_envelope.path()), before_game);
+    }
+
+    #[test]
     fn apply_ignores_register_owned_launcher_items() {
         let (_guard, _envelope, root, home) = apply_test_env();
         // Game block is fully satisfiable, but the declared launcher was
@@ -5562,6 +5662,45 @@ mod tests {
             format!("{err:#}").contains("missing"),
             "unexpected: {err:#}"
         );
+    }
+
+    #[test]
+    fn launch_gates_drifted_client_but_native_preparation_does_not() {
+        let _guard = APPLY_LOCK.lock().unwrap();
+        let (_envelope, root) = fixture_root();
+        let home = tempfile::tempdir().unwrap();
+        let log = home.path().join("wine.log");
+        logging_wine(&home, "wine-ge-9-2", &log);
+        let mut instance = apply_fixture(&root, home.path());
+        fs::write(root.join("WoW.exe"), "fake-wow").unwrap();
+        instance
+            .wiring
+            .as_mut()
+            .unwrap()
+            .client_integrity
+            .as_mut()
+            .unwrap()
+            .wow_exe = Some(
+            serde_json::from_value(serde_json::json!({
+                "size": 999,
+                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }))
+            .unwrap(),
+        );
+        // Preparation never gated on the digest: the native pipeline
+        // records the runner and creates the prefix.
+        prepare_native("test", &instance, &dirs(&home), false).unwrap();
+        // Execution does: neither launch mode runs a drifted client...
+        for mode in [LaunchMode::Vanilla, LaunchMode::Hd] {
+            let err =
+                launch("test", &instance, &dirs(&home), NativeTarget::Game, mode).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("wow-exe"),
+                "unexpected for {mode:?}: {err:#}"
+            );
+        }
+        // ...so wine never executed the game.
+        assert!(!log.exists());
     }
 
     #[test]
