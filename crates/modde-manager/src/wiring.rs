@@ -5871,17 +5871,31 @@ mod tests {
         ])
         .unwrap();
         // Snapshot the unrelated row BEFORE any registration (including its
-        // id): the first apply must preserve it while adding the managed row.
-        let unrelated_before = db_full_dump(home.path());
-        assert!(unrelated_before.contains("Unrelated|other-game|wine|Linux|/games/other|/games/other/g.exe|other-game|1"));
+        // id): the first apply must preserve it while adding the managed
+        // row. Exact row-value comparison — a substring `contains` could
+        // accept a mutated id (e.g. `1` surviving as the tail of `11`).
+        let unrelated_row = |home: &Path| {
+            sqlite3(&[
+                home.join(".local/share/lutris/pga.db").display().to_string(),
+                "SELECT id, name, slug, runner, platform, directory, executable, configpath, installed FROM games WHERE slug='other-game';".into(),
+            ])
+            .unwrap()
+        };
+        let unrelated_before = unrelated_row(home.path());
+        assert_eq!(
+            unrelated_before,
+            "1|Unrelated|other-game|wine|Linux|/games/other|/games/other/g.exe|other-game|1"
+        );
         let instance = apply_fixture(&root, home.path());
         apply("test", &instance, &dirs(&home), false, false, None).unwrap();
-        // First apply preserved the unrelated row byte-identical (ids included).
-        let unrelated_after_first = db_full_dump(home.path());
-        assert!(
-            unrelated_after_first.contains(unrelated_before.trim()),
-            "unrelated row changed across first apply: {unrelated_after_first}"
+        // First apply preserved the unrelated row exactly (ids included)
+        // while adding the managed row beside it.
+        assert_eq!(
+            unrelated_row(home.path()),
+            unrelated_before,
+            "unrelated row changed across first apply"
         );
+        assert!(db_dump(home.path()).contains("octowow-test|"));
         let yml_path = home.path().join(".config/lutris/games/octowow-test.yml");
         let yml_before = fs::read(&yml_path).unwrap();
         let dump_before = db_dump(home.path());

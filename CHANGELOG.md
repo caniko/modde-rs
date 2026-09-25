@@ -107,10 +107,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   invocation appends to `home/wine.log`), so `!wine.log.exists()`
   proves no native wine exec. Gate refusal is proven by the readiness
   error surfacing before the final `exec` (nonexistent sentinel command
-  as fail-safe). Full-row `pga.db` preservation (`db_full_dump`)
-  asserts unrelated rows byte-identical: snapshotted before any
-  registration, verified across game INSERT, launcher INSERT, managed
-  UPDATEs, and repeat no-ops. New
+  as fail-safe). `pga.db` preservation asserts identical selected row
+  values, including ids and the fixture's unmanaged column (row
+  serialization compared, not physical database bytes): snapshotted
+  before any registration, verified exactly across game INSERT,
+  launcher INSERT, managed UPDATEs, and repeat no-ops. The idempotency
+  test now compares the pre-registration unrelated row by exact
+  equality rather than substring containment (a mutated id such as `1`
+  inside `11` can no longer pass), and the new
   `unrelated_rows_survive_game_and_launcher_registration` covers two
   Ascension-like rows plus an unmanaged `lastplayed` column the upsert
   never touches (explicit column lists).
