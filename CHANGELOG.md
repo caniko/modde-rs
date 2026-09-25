@@ -105,8 +105,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Manager**: Harden launch/gate test sentinels: `apply_test_env`
   installs the logging fake wine (wineboot without log, every other
   invocation appends to `home/wine.log`), so `!wine.log.exists()`
-  proves no exec. Full-row `pga.db` preservation (`db_full_dump`)
-  asserts unrelated rows byte-identical across repeat apply.
+  proves no native wine exec. Gate refusal is proven by the readiness
+  error surfacing before the final `exec` (nonexistent sentinel command
+  as fail-safe). Full-row `pga.db` preservation (`db_full_dump`)
+  asserts unrelated rows byte-identical: snapshotted before any
+  registration, verified across game INSERT, launcher INSERT, managed
+  UPDATEs, and repeat no-ops. New
+  `unrelated_rows_survive_game_and_launcher_registration` covers two
+  Ascension-like rows plus an unmanaged `lastplayed` column the upsert
+  never touches (explicit column lists).
 - **Manager**: Bump `managerSchemaVersion` to 5 (launcher tuning
   overrides, offline validate, registration/readiness split).
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized

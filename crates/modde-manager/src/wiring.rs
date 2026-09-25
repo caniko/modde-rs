@@ -5802,9 +5802,11 @@ mod tests {
     /// Shared apply-test preamble: lock + sqlite gate + game envelope +
     /// logging fake wine runner + empty Lutris db. The fake wine handles
     /// `wineboot` (prefix creation, no log) and appends every other
-    /// invocation to `home/wine.log`, so launch/gate tests asserting no
-    /// exec observe a meaningful sentinel: the log appears only when wine
-    /// actually runs.
+    /// invocation to `home/wine.log`. Absence of that log proves no native
+    /// wine exec (launch path). Gate refusal is proven by the readiness
+    /// error surfacing before the final `exec`; gate tests use a
+    /// nonexistent sentinel command so a mis-ordered gate would ENOENT
+    /// instead of replacing the test process.
     fn apply_test_env() -> (
         std::sync::MutexGuard<'static, ()>,
         tempfile::TempDir,
@@ -5868,8 +5870,18 @@ mod tests {
             "INSERT INTO games (name, slug, runner, platform, directory, executable, configpath, installed) VALUES ('Unrelated', 'other-game', 'wine', 'Linux', '/games/other', '/games/other/g.exe', 'other-game', 1);".into(),
         ])
         .unwrap();
+        // Snapshot the unrelated row BEFORE any registration (including its
+        // id): the first apply must preserve it while adding the managed row.
+        let unrelated_before = db_full_dump(home.path());
+        assert!(unrelated_before.contains("Unrelated|other-game|wine|Linux|/games/other|/games/other/g.exe|other-game|1"));
         let instance = apply_fixture(&root, home.path());
         apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        // First apply preserved the unrelated row byte-identical (ids included).
+        let unrelated_after_first = db_full_dump(home.path());
+        assert!(
+            unrelated_after_first.contains(unrelated_before.trim()),
+            "unrelated row changed across first apply: {unrelated_after_first}"
+        );
         let yml_path = home.path().join(".config/lutris/games/octowow-test.yml");
         let yml_before = fs::read(&yml_path).unwrap();
         let dump_before = db_dump(home.path());
@@ -5930,6 +5942,90 @@ mod tests {
                 .iter()
                 .all(|item| item.state == ItemState::Verified)
         );
+    }
+
+    #[test]
+    fn unrelated_rows_survive_game_and_launcher_registration() {
+        // Two Ascension-like unrelated rows plus one unmanaged column the
+        // manager never owns. Every mutating registration path (game INSERT,
+        // launcher INSERT, managed UPDATEs, repeat no-ops) must leave both
+        // rows byte-identical, ids and unmanaged values included.
+        let (_guard, _envelope, root, home) = apply_test_env();
+        let db = home.path().join(".local/share/lutris/pga.db");
+        sqlite3(&[db.display().to_string(), "PRAGMA journal_mode=WAL;".into()]).unwrap();
+        // Unmanaged column: real pga.db carries columns outside the owned
+        // set (lastplayed, service, ...); the upsert uses explicit column
+        // lists so it must never touch this.
+        sqlite3(&[
+            db.display().to_string(),
+            "ALTER TABLE games ADD COLUMN lastplayed INTEGER NOT NULL DEFAULT 0;".into(),
+        ])
+        .unwrap();
+        sqlite3(&[
+            db.display().to_string(),
+            "INSERT INTO games (name, slug, runner, platform, directory, executable, configpath, installed, lastplayed) VALUES ('Ascension', 'ascension', 'wine', 'Linux', '/games/ascension', '/games/ascension/WoW.exe', 'ascension', 1, 1720000000);".into(),
+        ])
+        .unwrap();
+        sqlite3(&[
+            db.display().to_string(),
+            "INSERT INTO games (name, slug, runner, platform, directory, executable, configpath, installed, lastplayed) VALUES ('Ascension Launcher', 'ascension-launcher', 'wine', 'Linux', '/games/ascension-launcher', '/games/ascension-launcher/Launcher.exe', 'ascension-launcher', 1, 1730000000);".into(),
+        ])
+        .unwrap();
+        let unrelated = |home: &Path| {
+            let db = home.join(".local/share/lutris/pga.db");
+            sqlite3(&[
+                db.display().to_string(),
+                "SELECT id, name, slug, runner, platform, directory, executable, configpath, installed, lastplayed FROM games WHERE slug IN ('ascension', 'ascension-launcher') ORDER BY slug;".into(),
+            ])
+            .unwrap()
+        };
+        // Snapshot BEFORE any registration: ids, all owned columns, and the
+        // unmanaged value for both rows.
+        let unrelated_before = unrelated(home.path());
+        assert!(unrelated_before.contains("Ascension|ascension|wine|Linux|/games/ascension|/games/ascension/WoW.exe|ascension|1|1720000000"));
+        assert!(unrelated_before.contains("Ascension Launcher|ascension-launcher|wine|Linux|/games/ascension-launcher|/games/ascension-launcher/Launcher.exe|ascension-launcher|1|1730000000"));
+        // Game instance plus a launcher block (installer on disk, sibling
+        // prefix, own Lutris slug) so one instance exercises both adapters.
+        let mut instance = apply_fixture(&root, home.path());
+        let installer = _envelope.path().join("OctoLauncher_Installer.exe");
+        fs::write(&installer, "fake-installer-bytes").unwrap();
+        instance.wiring.as_mut().unwrap().launcher = Some(
+            serde_json::from_value(serde_json::json!({
+                "installer": {"path": installer},
+                "prefix": root.parent().unwrap().join("octowow-launcher-prefix"),
+                "lutris": {"slug": "octowow-launcher-test", "name": "OctoWoW Launcher"},
+            }))
+            .unwrap(),
+        );
+        // 1. Game INSERT: unrelated rows survive the first managed write.
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        assert_eq!(unrelated(home.path()), unrelated_before);
+        assert!(db_dump(home.path()).contains("octowow-test|"));
+        // 2. Launcher INSERT: a second managed slug, same preservation.
+        register_launcher("test", &instance, &dirs(&home), false).unwrap();
+        assert_eq!(unrelated(home.path()), unrelated_before);
+        assert!(db_dump(home.path()).contains("octowow-launcher-test|"));
+        // 3. Forced managed UPDATE (game): rename the managed entry so the
+        // upsert takes the UPDATE branch; unrelated rows must not move.
+        instance.wiring.as_mut().unwrap().lutris.as_mut().unwrap().name = "OctoWoW Renamed".into();
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        assert_eq!(unrelated(home.path()), unrelated_before);
+        assert!(db_full_dump(home.path()).contains("OctoWoW Renamed|octowow-test|"));
+        // 4. Forced managed UPDATE (launcher): same UPDATE-branch coverage
+        // through the launcher adapter.
+        instance.wiring.as_mut().unwrap().launcher.as_mut().unwrap().lutris.as_mut().unwrap().name =
+            "OctoWoW Launcher Renamed".into();
+        register_launcher("test", &instance, &dirs(&home), false).unwrap();
+        assert_eq!(unrelated(home.path()), unrelated_before);
+        assert!(db_full_dump(home.path()).contains("OctoWoW Launcher Renamed|octowow-launcher-test|"));
+        // 5. Repeat no-ops: converged game + launcher registrations change
+        // nothing, unrelated or managed.
+        let full_before = db_full_dump(home.path());
+        let unmanaged_before = unrelated(home.path());
+        apply("test", &instance, &dirs(&home), false, false, None).unwrap();
+        register_launcher("test", &instance, &dirs(&home), false).unwrap();
+        assert_eq!(db_full_dump(home.path()), full_before);
+        assert_eq!(unrelated(home.path()), unmanaged_before);
     }
 
     #[test]
@@ -6688,6 +6784,9 @@ mod tests {
             format!("{gate_err:#}").contains("HD not ready"),
             "unexpected: {gate_err:#}"
         );
+        // wine.log absence proves the native launch loop above exec'd no
+        // wine; the gate refusal itself is proven by the readiness error
+        // (the nonexistent sentinel command would ENOENT on mis-order).
         assert!(!home.path().join("wine.log").exists());
     }
 
@@ -6736,6 +6835,8 @@ mod tests {
             format!("{gate_err:#}").contains("HD not ready"),
             "unexpected: {gate_err:#}"
         );
+        // Same split as above: wine.log covers the native launch loop, the
+        // readiness error covers the gate (nonexistent command is fail-safe).
         assert!(!home.path().join("wine.log").exists());
     }
 
@@ -6874,6 +6975,9 @@ mod tests {
         let instance = apply_fixture(&root, home.path());
         prepare_native("test", &instance, &dirs(&home), false).unwrap();
         // Missing HD blocks the gate even though the client digest is fine.
+        // Refusal is proven by the readiness error (nonexistent command is
+        // fail-safe); wine.log absence is consistency (gate execs the
+        // supplied command, never wine directly).
         fs::remove_file(root.join("Data/patch-A.mpq")).unwrap();
         let err = gate(
             "test",
