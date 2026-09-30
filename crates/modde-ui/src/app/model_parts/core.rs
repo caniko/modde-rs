@@ -96,14 +96,6 @@ impl Modde {
             .is_some_and(Self::game_supports_save_profiles)
     }
 
-    pub(crate) fn resolve_save_dir(game_id: &str) -> Option<PathBuf> {
-        let plugin = modde_games::resolve_game_plugin(game_id)?;
-        plugin
-            .supports_save_profiles()
-            .then(|| plugin.save_directory())
-            .flatten()
-    }
-
     /// Reload the active profile, its data-tab conflicts, and the tool state
     /// off the render thread, returning the `Task` that resolves to
     /// `Message::ProfileContextLoaded`. Replaces the old synchronous
@@ -135,6 +127,7 @@ impl Modde {
     /// the current `selected_game`/`active_profile`).
     fn reload_request(&self, rerun_diagnostics: bool) -> ProfileContextRequest {
         ProfileContextRequest {
+            settings: self.settings.clone(),
             selected_game: self.selected_game.clone(),
             active_profile: self.active_profile.clone(),
             recompute_active: false,
@@ -226,6 +219,7 @@ impl Modde {
             .clone()
             .expect("selected_game set by the switch kickoff");
         let request = ProfileContextRequest {
+            settings: self.settings.clone(),
             selected_game: Some(game_id.clone()),
             active_profile: None,
             recompute_active: true,
@@ -247,6 +241,7 @@ impl Modde {
         self.loaded_profile = None;
         self.mod_id_filter_keys.clear();
         let request = ProfileContextRequest {
+            settings: self.settings.clone(),
             selected_game: Some(game_id.to_string()),
             active_profile: None,
             recompute_active: true,

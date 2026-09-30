@@ -106,6 +106,7 @@ pub(super) async fn install_managed_output(
     profile: &Profile,
     game_plugin: &dyn modde_games::GamePlugin,
     install_dir: &Path,
+    prefix: Option<&Path>,
     game_mod_dir: &Path,
     stage: &PatcherStageRow,
     own_before: &HashSet<String>,
@@ -136,7 +137,7 @@ pub(super) async fn install_managed_output(
 
     if !next_manifest.is_empty() {
         game_plugin
-            .deploy_to_install(&generated, install_dir)
+            .deploy_to_install_at(&generated, install_dir, prefix)
             .with_context(|| {
                 format!(
                     "failed to project generated output for patcher stage '{}'",

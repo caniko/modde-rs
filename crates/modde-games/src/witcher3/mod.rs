@@ -149,6 +149,11 @@ impl GamePlugin for Witcher3Game {
         true
     }
 
+    fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
+        crate::library::context::steam_user_path(install, prefix, "292030",
+            Path::new("Documents/The Witcher 3/gamesaves"))
+    }
+
     fn classify_mod(&self, mod_dir: &Path) -> ModSafety {
         WITCHER_CONTENT_POLICY.classify_mod(mod_dir)
     }

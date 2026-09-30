@@ -921,10 +921,9 @@ fn lutris_sites(dirs: &HomeDirs) -> [(PathBuf, PathBuf); 2] {
 }
 
 fn runner_search_dirs(dirs: &HomeDirs) -> Vec<PathBuf> {
-    lutris_sites(dirs)
-        .into_iter()
-        .map(|(_, data)| data.join("runners/wine"))
-        .collect()
+    let mut paths = vec![dirs.data.join("modde/runners/wine")];
+    paths.extend(lutris_sites(dirs).into_iter().map(|(_, data)| data.join("runners/wine")));
+    paths
 }
 
 /// First site whose database exists (native preferred). The paired config
@@ -977,7 +976,7 @@ fn major_version(name: &str) -> Option<u64> {
     version_key(name).into_iter().find(|n| *n != 0)
 }
 
-/// Scan Lutris runner dirs for `wine-*/bin/wine` executables, newest first
+/// Scan modde and legacy Lutris runner dirs for `wine-*/bin/wine`, newest first
 /// by numeric version. The wine-ge-8 floor is the minimum that runs this
 /// client; anything older is ignored, not warned about.
 fn scan_runners(dirs: &HomeDirs) -> Vec<(String, PathBuf)> {
@@ -3462,10 +3461,21 @@ fn ensure_launch_readiness(
 /// Game targets use the declared `env`; launcher/installer targets use the
 /// launcher-effective `env`. Lutris wine toggles (dxvk/vkd3d/esync/fsync)
 /// stay Lutris-scoped and never become native Wine variables.
-fn spawn_native(name: &str, _wiring: &Wiring, runner: &Runner, lt: &LaunchTarget) -> Result<()> {
+fn spawn_native(name: &str, root: &Path, _wiring: &Wiring, runner: &Runner, lt: &LaunchTarget) -> Result<()> {
+    let (remove, set) = resolve_launch_env_with(&lt.tunings, &lt.arch, &lt.prefix, &lt.dll_overrides);
     let mut cmd = Command::new(&runner.path);
     cmd.arg(&lt.exe).current_dir(&lt.dir);
-    let (remove, set) = resolve_launch_env_with(&lt.tunings, &lt.arch, &lt.prefix, &lt.dll_overrides);
+    if let Some(id) = std::env::var_os("MODDE_LIBRARY_LAUNCH_ID") {
+        let binary = std::env::var_os("MODDE_BIN").unwrap_or_else(|| "modde".into());
+        cmd = Command::new(binary);
+        if let Some(data) = std::env::var_os("MODDE_LIBRARY_DATA_DIR") { cmd.arg("--data-dir").arg(data); }
+        if let Some(config) = std::env::var_os("MODDE_LIBRARY_CONFIG_DIR") { cmd.arg("--config-dir").arg(config); }
+        cmd.args(["library", "manager-wrap"]).arg(id).arg("--root").arg(root)
+            .arg("--prefix").arg(&lt.prefix);
+        for (key, _) in &set { cmd.arg("--inherit-env").arg(key); }
+        cmd.arg("--").arg(&runner.path).arg(&lt.exe).current_dir(&lt.dir);
+        cmd.env_remove("MODDE_LIBRARY_LAUNCH_ID");
+    }
     for key in remove {
         cmd.env_remove(key);
     }
@@ -3511,7 +3521,7 @@ pub fn launch(
     let runner = recorded_runner(name, instance)?;
     ensure_launch_readiness(name, instance, dirs, target, mode)?;
     let lt = resolve_launch_target(instance, &wiring, target)?;
-    spawn_native(name, &wiring, &runner, &lt)
+    spawn_native(name, &instance.root, &wiring, &runner, &lt)
 }
 
 /// The Lutris game entry's launch gate (its synthesized

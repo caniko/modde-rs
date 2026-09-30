@@ -150,12 +150,28 @@ impl GamePlugin for LarianBg3Game {
         Ok(mods_dir_from_install(install))
     }
 
+    fn mod_root_at(&self, install: &Path, prefix: Option<&Path>) -> Result<PathBuf> {
+        if let Some(prefix) = prefix {
+            return Ok(prefix.join("drive_c/users/steamuser/AppData/Local/Larian Studios/Baldur's Gate 3/Mods"));
+        }
+        self.mod_root(install)
+    }
+
+    fn deploy_to_install_at(&self, staging: &Path, install: &Path, prefix: Option<&Path>) -> Result<()> {
+        self.deploy(staging, &self.mod_root_at(install, prefix)?)
+    }
+
     fn save_directory(&self) -> Option<PathBuf> {
         save_dir_from_steam_default()
     }
 
     fn supports_save_profiles(&self) -> bool {
         true
+    }
+
+    fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
+        crate::library::context::steam_user_path(install, prefix, STEAM_APP_ID,
+            Path::new("AppData/Local/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/Savegames"))
     }
 
     fn classify_mod(&self, mod_dir: &Path) -> ModSafety {
@@ -183,7 +199,11 @@ impl GamePlugin for LarianBg3Game {
     }
 
     fn post_deploy(&self, install: &Path) -> Result<()> {
-        let mods_dir = mods_dir_from_install(install);
+        self.post_deploy_at(install, None)
+    }
+
+    fn post_deploy_at(&self, install: &Path, prefix: Option<&Path>) -> Result<()> {
+        let mods_dir = self.mod_root_at(install, prefix)?;
         let mut mods = Vec::new();
         if mods_dir.is_dir() {
             for entry in std::fs::read_dir(&mods_dir)
@@ -203,7 +223,8 @@ impl GamePlugin for LarianBg3Game {
         }
         mods.sort();
         if !mods.is_empty() {
-            write_modsettings(&modsettings_path_from_install(install), &mods)?;
+            let data_root = mods_dir.parent().context("BG3 mod directory has no data root")?;
+            write_modsettings(&data_root.join("PlayerProfiles/Public/modsettings.lsx"), &mods)?;
         }
         Ok(())
     }

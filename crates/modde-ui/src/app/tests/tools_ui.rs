@@ -379,42 +379,55 @@ fn stale_profile_write_done_is_ignored() {
 }
 
 #[test]
+#[cfg(feature = "cyberpunk")]
 fn experiment_try_then_commit_write_completion_updates_state() {
     let _guard = db_lock();
     reset_isolated_db();
     let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB");
+    let install = tempfile::tempdir().expect("installation");
+    let saves = tempfile::tempdir().expect("saves");
     crate::app::block_on(pm.create(&profile_for_game(
         "experiment-profile",
-        "test-game",
+        "cyberpunk2077",
         Vec::new(),
     )))
     .expect("seed experiment profile");
-    crate::app::block_on(pm.activate("experiment-profile", &GameId::from("test-game"), None))
-        .expect("activate experiment profile");
     let loaded =
-        crate::app::block_on(pm.load("experiment-profile", Some(&GameId::from("test-game"))))
+        crate::app::block_on(pm.load("experiment-profile", Some(&GameId::from("cyberpunk2077"))))
             .expect("load experiment profile");
-    drop(pm);
 
     let mut app = test_app();
-    app.selected_game = Some("test-game".to_string());
+    app.settings.set_game_path(&GameId::from("cyberpunk2077"), install.path().into());
+    let game = modde_games::library::catalogue(&app.settings).unwrap().games.into_iter()
+        .find(|game| game.install_path.as_deref() == Some(install.path())).unwrap();
+    modde_core::library::LibraryPreferences::update(|prefs| {
+        prefs.launches.insert(game.id, modde_core::library::LaunchSettings {
+            save_directory: Some(saves.path().into()), ..Default::default()
+        });
+    }).unwrap();
+    let context = crate::app::block_on(modde_games::library::context::for_game(&app.settings, "cyberpunk2077", pm.db())).unwrap();
+    crate::app::block_on(pm.activate_scoped("experiment-profile", &context.saves, None)).unwrap();
+    drop(pm);
+    app.selected_game = Some("cyberpunk2077".to_string());
     app.active_profile = Some("experiment-profile".to_string());
     app.loaded_profile = Some(loaded);
 
     let task = app.update(Message::TryProfile);
-    assert_eq!(task.units(), 1);
+    assert_eq!(task.units(), 2); // operation and lease-release completion
+    drop(task); // completion is driven explicitly by the fixture below
     complete_experiment_write(
         &mut app,
         ExperimentWriteKind::Try,
         Some("experiment-profile"),
-        "test-game",
+        "cyberpunk2077",
     );
     assert_eq!(app.experiment_depth, 1);
     assert_eq!(app.status_message, "Experiment started (depth 1)");
 
     let task = app.update(Message::CommitExperiment);
-    assert_eq!(task.units(), 1);
-    complete_experiment_write(&mut app, ExperimentWriteKind::Commit, None, "test-game");
+    assert_eq!(task.units(), 2);
+    drop(task);
+    complete_experiment_write(&mut app, ExperimentWriteKind::Commit, None, "cyberpunk2077");
     assert_eq!(app.experiment_depth, 0);
     assert_eq!(app.status_message, "Experiment committed");
 }

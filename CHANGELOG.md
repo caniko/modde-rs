@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Library (Partial)**: Add a Library-first GUI with owned Steam/Heroic games,
+  favorites, installation filters and saved per-installation launch settings.
+  Share CLI, GUI, store-hook and manager launches through supervised sessions,
+  journalled profile/save transitions and retryable completion/recovery.
+- **Sandbox (Partial)**: Add disabled-by-default per-installation bubblewrap
+  settings and alternating paired MangoHud captures. Require measured frame
+  times and usable post-warmup samples, convert MangoHud elapsed nanoseconds,
+  and preserve observed exit status during re-ingestion. Compilation, regression
+  execution, containment qualification and overhead measurements remain pending.
+- **Build**: Add optional game, GUI, archive, PostgreSQL and manager Cargo
+  features. Separate Nix application development, documentation and release
+  shells; refresh pinned inputs and the Simit workflow patch.
+
 - **Manager**: Add Classic/OctoWoW reconciliation, verified offline addon import,
   private account snapshots, seed-only account-tree merging, and recovery journals.
 - **Manager**: Add declarative runtime wiring (presence-tracking `wiring`

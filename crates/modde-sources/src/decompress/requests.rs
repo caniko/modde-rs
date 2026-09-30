@@ -232,12 +232,14 @@ pub(super) fn validate_final_output_size(
     Ok(())
 }
 
+#[cfg(any(feature = "bethesda-archives", feature = "rar"))]
 pub(super) struct SizeCheckedWriter<W> {
     inner: W,
     expected_size: Option<u64>,
     written: u64,
 }
 
+#[cfg(any(feature = "bethesda-archives", feature = "rar"))]
 impl<W> SizeCheckedWriter<W> {
     pub(super) fn new(inner: W, expected_size: Option<u64>) -> Self {
         Self {
@@ -252,6 +254,7 @@ impl<W> SizeCheckedWriter<W> {
     }
 }
 
+#[cfg(any(feature = "bethesda-archives", feature = "rar"))]
 impl<W: std::io::Write> std::io::Write for SizeCheckedWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let next = self.written.saturating_add(buf.len() as u64);

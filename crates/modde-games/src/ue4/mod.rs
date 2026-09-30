@@ -228,6 +228,11 @@ impl GamePlugin for Ue4Game {
         self.save_profiles
     }
 
+    fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
+        crate::library::context::steam_user_path(install, prefix, self.steam_app_id,
+            &Path::new("AppData/Local").join(self.project_name).join("Saved/SaveGames"))
+    }
+
     fn deploy_targets(&self) -> &'static [DeployTarget] {
         &[DeployTarget {
             id: "ue4-saved-config",
@@ -243,15 +248,16 @@ impl GamePlugin for Ue4Game {
     /// Returns `None` if the prefix doesn't exist yet — the caller is
     /// expected to surface that to the user (typically: launch the
     /// game once so Proton creates the prefix).
-    fn resolve_deploy_target(&self, id: &str, _install: &Path) -> Option<PathBuf> {
+    fn resolve_deploy_target(&self, id: &str, install: &Path) -> Option<PathBuf> {
+        self.resolve_deploy_target_at(id, install, None)
+    }
+
+    fn resolve_deploy_target_at(&self, id: &str, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
         if id != "ue4-saved-config" {
             return None;
         }
-        let prefix = paths::steam_common()
-            .parent()?
-            .join("compatdata")
-            .join(self.steam_app_id)
-            .join("pfx");
+        let prefix = prefix.map(Path::to_path_buf)
+            .or_else(|| crate::library::context::steam_prefix(install, self.steam_app_id))?;
         if !prefix.exists() {
             return None;
         }

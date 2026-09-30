@@ -1,4 +1,5 @@
 pub mod backup;
+#[cfg(feature = "bethesda-archives")]
 pub mod bethesda_archive;
 pub mod bisect;
 pub mod collision;
@@ -14,6 +15,7 @@ pub mod hot_deploy;
 pub mod installer;
 pub mod instance;
 pub mod ipc;
+pub mod library;
 pub mod link;
 pub mod lockfile;
 pub mod manifest;

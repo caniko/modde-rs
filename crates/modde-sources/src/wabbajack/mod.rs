@@ -2,6 +2,7 @@
 //! archives, and running the installer that materializes a modlist on disk.
 
 pub mod acquire;
+#[cfg(feature = "bethesda-archives")]
 pub mod bsa_repack;
 pub mod catalog;
 pub mod cdn;

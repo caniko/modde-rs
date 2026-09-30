@@ -176,6 +176,7 @@ pub struct Modde {
     pub browse_nexus: crate::views::browse_nexus::NexusBrowseState,
     pub diagnostics_state: crate::views::diagnostics::DiagnosticsState,
     pub crash_log_path_draft: String,
+    pub library: crate::views::library::LibraryState,
     pub tool_state: ToolState,
     /// Filter mode (AND/OR) for the mod list filter toolbar.
     pub filter_mode: FilterMode,

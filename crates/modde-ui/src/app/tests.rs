@@ -9,6 +9,7 @@ use modde_core::profile::{LoadOrderLock, LockReason, ProfileManager, ProfileSour
 use std::path::{Path, PathBuf};
 
 fn test_app() -> Modde {
+    fixtures::isolated_data_dir();
     Modde {
         db: test_db(),
         active_view: View::ModList,
@@ -71,6 +72,7 @@ fn test_app() -> Modde {
         data_tab_conflicts: Vec::new(),
         diagnostics_state: Default::default(),
         crash_log_path_draft: String::new(),
+        library: Default::default(),
         tool_state: Default::default(),
         browse_nexus: Default::default(),
         filter_mode: FilterMode::default(),
@@ -418,6 +420,8 @@ fn assert_scroll_y_unchanged(harness: &mut AppUiHarness, before: f32) {
 mod core;
 #[path = "tests/fixtures.rs"]
 mod fixtures;
+#[path = "tests/library.rs"]
+mod library;
 #[path = "tests/profiles.rs"]
 mod profiles;
 #[path = "tests/reorder.rs"]

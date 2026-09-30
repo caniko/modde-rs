@@ -1,3 +1,5 @@
+#![cfg(feature = "ue4")]
+
 use std::sync::OnceLock;
 
 use modde_games::resolve_optiscaler_profiles;

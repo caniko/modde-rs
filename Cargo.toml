@@ -172,10 +172,10 @@ clap_complete = "4"
 fomod-oxide = { version = "0.1", features = ["json"] }
 
 # Workspace crates
-modde-core = { version = "0.7.0", path = "crates/modde-core" }
-modde-sources = { version = "0.7.0", path = "crates/modde-sources" }
-modde-games = { version = "0.7.0", path = "crates/modde-games" }
-modde-ui = { version = "0.7.0", path = "crates/modde-ui" }
+modde-core = { version = "0.7.0", path = "crates/modde-core", default-features = false }
+modde-sources = { version = "0.7.0", path = "crates/modde-sources", default-features = false }
+modde-games = { version = "0.7.0", path = "crates/modde-games", default-features = false }
+modde-ui = { version = "0.7.0", path = "crates/modde-ui", default-features = false }
 modde-oracle-api = { version = "0.7.0", path = "crates/modde-oracle-api" }
 nix-manager-core = { git = "https://github.com/caniko/nix-manager-core.git", branch = "trunk" }
 

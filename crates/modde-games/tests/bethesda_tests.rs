@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use modde_core::scanner::ModFootprint;
 use modde_games::bethesda::scanner::{
     FALLOUT4_SCANNER, FALLOUT76_SCANNER, SKYRIM_SCANNER, STARFIELD_SCANNER,

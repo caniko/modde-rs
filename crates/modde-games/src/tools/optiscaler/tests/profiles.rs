@@ -3,6 +3,7 @@ use super::*;
 /// Verifies that `default_config_for` applies the default community profile and
 /// leaves GPU-specific FSR4 selection to the hardware tuning layer.
 #[test]
+#[cfg(feature = "ue4")]
 fn stellar_blade_default_config_adds_default_profile_and_hardware_tuning() {
     let context = ToolGameContext::from_parts(
         "stellar-blade",
@@ -78,6 +79,7 @@ fn custom_profile_opt_out_prevents_community_defaults() {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn stale_stellar_blade_rdna3_profile_marker_falls_back_to_default_profile() {
     let context = ToolGameContext::from_parts(
         "stellar-blade",
@@ -99,6 +101,7 @@ fn stale_stellar_blade_rdna3_profile_marker_falls_back_to_default_profile() {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn stellar_blade_customize_after_profile_application_preserves_manual_settings() {
     let context = ToolGameContext::from_parts(
         "stellar-blade",
@@ -169,6 +172,7 @@ fn stellar_blade_customize_after_profile_application_preserves_manual_settings()
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn stellar_blade_with_explicit_profile_marker_can_preserve_custom_release() {
     let context = ToolGameContext::from_parts(
         "stellar-blade",
@@ -212,6 +216,7 @@ fn stellar_blade_with_explicit_profile_marker_can_preserve_custom_release() {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn selecting_community_profile_applies_all_community_settings() {
     let mut config = OptiScaler.default_config();
 
@@ -240,6 +245,7 @@ fn selecting_community_profile_applies_all_community_settings() {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn custom_profile_then_community_profile_overwrites_most_settings() {
     let mut config = OptiScaler.default_config();
     assert!(apply_profile_by_id(&mut config, "stellar-blade", "custom"));

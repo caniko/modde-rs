@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 //! Comprehensive INI patching tests covering edge cases.
 
 use modde_games::bethesda::ini::patch_ini_content;

@@ -28,10 +28,21 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [features]
-default = ["linux-integrations", "macos-integrations"]
-linux-integrations = []
-macos-integrations = []
-windows-integrations = ["modde-core/windows-integrations"]
+default = ["all-games", "postgres", "linux-integrations", "macos-integrations"]
+all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
+bethesda = ["modde-core/bethesda-archives", "dep:lz4_flex", "dep:serde_yaml_ng"]
+gamebryo = ["modde-core/bethesda-archives"]
+cyberpunk = ["dep:which"]
+ue4 = []
+bg3 = []
+stardew = []
+bannerlord = []
+witcher3 = []
+oblivion-remastered = ["modde-core/bethesda-archives"]
+postgres = ["modde-core/postgres"]
+linux-integrations = ["dep:which"]
+macos-integrations = ["dep:which"]
+windows-integrations = ["modde-core/windows-integrations", "dep:which"]
 
 [dependencies]
 modde-core = { workspace = true }
@@ -39,18 +50,18 @@ fomod-oxide = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml_ng = { workspace = true }
+serde_yaml_ng = { workspace = true, optional = true }
 toml = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 zip = { workspace = true }
 futures = { workspace = true }
 flate2 = { workspace = true }
-lz4_flex = { workspace = true }
+lz4_flex = { workspace = true, optional = true }
 tracing = { workspace = true }
 smallvec = { workspace = true }
 dashmap = { workspace = true }
-which = { workspace = true }
+which = { workspace = true, optional = true }
 open = { workspace = true }
 xxhash-rust = { workspace = true }
 

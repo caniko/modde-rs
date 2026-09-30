@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use modde_core::profile::{ProfileManager, ReorderError, try_reorder};
 use modde_core::resolver::GameId;
 
@@ -41,9 +39,12 @@ pub(super) async fn fork_profile(
     source: String,
     new_name: String,
     game_id: GameId,
+    settings: modde_core::settings::AppSettings,
 ) -> Result<ProfileWriteOutcome, String> {
+    let context = modde_games::library::context::for_game(&settings, game_id.as_str(), &db)
+        .await.map_err(|err| err.to_string())?;
     ProfileManager::with_db(db)
-        .fork(&source, &new_name, &game_id)
+        .fork_scoped(&source, &new_name, &context.saves, Default::default())
         .await
         .map_err(|err| err.to_string())?;
     Ok(ProfileWriteOutcome {
@@ -156,13 +157,12 @@ pub(super) async fn remove_mod_from_profile(
     if let Some(analyzer) = modde_games::resolve_save_dependency_analyzer(profile.game_id.as_str())
     {
         let mut save_roots = Vec::new();
-        if let Some(plugin) = modde_games::resolve_game_plugin(profile.game_id.as_str())
-            && plugin.supports_save_profiles()
-            && let Some(save_dir) = plugin.save_directory()
-        {
+        let context = modde_games::library::context::for_game(&modde_core::settings::AppSettings::load(), profile.game_id.as_str(), pm.db())
+            .await.map_err(|err| err.to_string())?;
+        if let Some(save_dir) = context.saves.directory {
             save_roots.push(save_dir);
         }
-        let vault_dir = modde_core::paths::save_vault_dir(&profile.game_id);
+        let vault_dir = modde_core::paths::save_vault_dir(&context.saves.scope);
         if vault_dir.exists() {
             save_roots.push(vault_dir);
         }
@@ -253,15 +253,20 @@ pub(super) async fn run_experiment_write(
     kind: ExperimentWriteKind,
     profile_name: Option<String>,
     game_id: GameId,
-    save_dir: Option<PathBuf>,
+    settings: modde_core::settings::AppSettings,
     current_depth: usize,
 ) -> Result<ExperimentWriteOutcome, String> {
     let pm = ProfileManager::with_db(db);
+    let context = modde_games::library::context::for_game(&settings, game_id.as_str(), pm.db())
+        .await.map_err(|err| err.to_string())?;
+    context.require_save_management().map_err(|err| err.to_string())?;
+    let fingerprint = pm.active(&context.saves.scope).await.map_err(|err| err.to_string())?
+        .map(|active| modde_games::save_fingerprint(&active.profile));
     match kind {
         ExperimentWriteKind::Try => {
             let profile_name =
                 profile_name.ok_or_else(|| "No active profile selected".to_string())?;
-            pm.try_profile(&profile_name, &game_id, save_dir.as_deref())
+            context.try_profile(&pm, &profile_name, fingerprint.as_ref())
                 .await
                 .map_err(|err| err.to_string())?;
             let next_depth = current_depth.saturating_add(1);
@@ -272,8 +277,8 @@ pub(super) async fn run_experiment_write(
             })
         }
         ExperimentWriteKind::Rollback => {
-            let previous_profile = pm
-                .rollback(&game_id, save_dir.as_deref())
+            let previous_profile = context
+                .rollback_profile(&pm, fingerprint.as_ref())
                 .await
                 .map_err(|err| err.to_string())?;
             Ok(ExperimentWriteOutcome {
@@ -283,7 +288,7 @@ pub(super) async fn run_experiment_write(
             })
         }
         ExperimentWriteKind::Commit => {
-            pm.commit(&game_id).await.map_err(|err| err.to_string())?;
+            pm.commit(&context.saves.scope).await.map_err(|err| err.to_string())?;
             Ok(ExperimentWriteOutcome {
                 previous_profile: None,
                 status_message: "Experiment committed".to_string(),

@@ -29,6 +29,19 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [features]
+default = ["all-games", "bethesda-archives", "postgres", "linux-integrations", "macos-integrations"]
+all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
+bethesda = ["modde-games/bethesda", "modde-sources/bethesda"]
+gamebryo = ["modde-games/gamebryo", "modde-sources/gamebryo"]
+cyberpunk = ["modde-games/cyberpunk", "modde-sources/cyberpunk"]
+ue4 = ["modde-games/ue4", "modde-sources/ue4"]
+bg3 = ["modde-games/bg3", "modde-sources/bg3"]
+stardew = ["modde-games/stardew", "modde-sources/stardew"]
+bannerlord = ["modde-games/bannerlord", "modde-sources/bannerlord"]
+witcher3 = ["modde-games/witcher3", "modde-sources/witcher3"]
+oblivion-remastered = ["modde-games/oblivion-remastered", "modde-sources/oblivion-remastered"]
+bethesda-archives = ["modde-sources/bethesda-archives"]
+postgres = ["modde-core/postgres"]
 # Headless offscreen screenshot CLI support. Non-default so release binaries
 # carry zero extra weight. Pulls iced_test (the dual-backend tiny-skia renderer)
 # in as a normal dependency only when enabled.

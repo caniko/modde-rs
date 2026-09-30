@@ -74,6 +74,9 @@ pub use self::state::{
     ToolReleaseSupport, ToolRevertResult, ToolSettingWriteResult, ToolState, ToolUiEntry, View,
     WabbajackInstallerState, WabbajackTab,
 };
+pub use crate::views::library::{
+    LibraryEntry, LibraryEntryKind, LibraryLoadResult, LibraryState, ManagerListInstance,
+};
 pub use self::tool_ops::parse_executable_environment;
 #[cfg(test)]
 use self::tool_ops::{apply_tool_for_game, validate_optiscaler_apply};

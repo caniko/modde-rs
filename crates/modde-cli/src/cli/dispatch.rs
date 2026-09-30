@@ -230,6 +230,7 @@ pub(crate) fn run_command(cli: Cli) -> Result<()> {
         }
         Commands::Import => db_sync!(commands::import::handle()),
         Commands::Fomod { action } => return commands::fomod::handle(action),
+        #[cfg(feature = "bethesda")]
         Commands::Loot { action } => {
             return match action {
                 LootAction::Sort { game, data_dir } => commands::loot::handle_sort(&game, data_dir),

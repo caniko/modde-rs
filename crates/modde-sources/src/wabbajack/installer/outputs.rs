@@ -204,6 +204,7 @@ impl WabbajackInstaller {
     }
 
     /// Create a BSA/BA2 archive from file states.
+    #[cfg(feature = "bethesda-archives")]
     pub(super) async fn apply_create_bsa(
         &self,
         temp_id: &str,
@@ -224,5 +225,15 @@ impl WabbajackInstaller {
 
         info!(to = %to, files = file_states.len(), "created BSA archive");
         Ok(())
+    }
+
+    #[cfg(not(feature = "bethesda-archives"))]
+    pub(super) async fn apply_create_bsa(
+        &self,
+        _temp_id: &str,
+        _to: &str,
+        _file_states: &[modde_core::manifest::wabbajack::BSAFileState],
+    ) -> Result<()> {
+        anyhow::bail!("CreateBSA requires the bethesda-archives feature")
     }
 }

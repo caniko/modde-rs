@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use tracing::warn;
 
 use crate::generic::GenericGame;
-use crate::registry::{EngineFamily, GameRegistration, LauncherIds, SUPPORTED_GAME_IDS};
+use crate::registry::{EngineFamily, GameRegistration, LauncherIds};
 use crate::traits::{GamePlugin, HotDeploySupport};
 
 use super::leak::str as leak_str;
@@ -25,10 +25,7 @@ pub fn load_user_games() -> Vec<GameRegistration> {
     let mut paths: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
     paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
 
-    let mut seen_ids: HashSet<String> = SUPPORTED_GAME_IDS
-        .iter()
-        .map(|id| (*id).to_string())
-        .collect();
+    let mut seen_ids: HashSet<String> = HashSet::new();
     let mut registrations = Vec::new();
 
     for path in paths {

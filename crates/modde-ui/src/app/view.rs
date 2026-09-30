@@ -38,6 +38,7 @@ impl Modde {
         let settings_state = self.settings_state();
 
         let content: Element<Message> = match &self.active_view {
+            View::Library => crate::views::library::view(&self.library),
             View::ModList => crate::views::mod_list::view_filtered(
                 mods,
                 &self.mod_id_filter_keys,
@@ -372,6 +373,9 @@ impl Modde {
     /// While idle, the listener costs nothing — `accept()` just blocks
     /// in the kernel.
     pub(super) fn subscription(&self) -> iced::Subscription<Message> {
-        iced::Subscription::run(external_refresh_stream)
+        iced::Subscription::batch([
+            iced::Subscription::run(external_refresh_stream),
+            iced::time::every(std::time::Duration::from_secs(2)).map(|_| Message::LibrarySessionTick),
+        ])
     }
 }

@@ -63,7 +63,7 @@ fn registry_preserves_known_nexus_metadata() {
     ];
 
     for (game_id, domain, numeric_id) in expected {
-        let game = modde_games::resolve_game(game_id).unwrap();
+        let Some(game) = modde_games::resolve_game(game_id) else { continue };
         assert_eq!(game.nexus_domain, domain, "{game_id} Nexus domain");
         assert_eq!(game.nexus_game_id, numeric_id, "{game_id} Nexus numeric ID");
     }
@@ -71,20 +71,43 @@ fn registry_preserves_known_nexus_metadata() {
 
 #[test]
 fn registry_preserves_wabbajack_normalization() {
-    assert_eq!(
-        normalize_wabbajack_game("Cyberpunk2077"),
-        Some("cyberpunk2077")
-    );
-    assert_eq!(
-        normalize_wabbajack_game("SkyrimSpecialEdition"),
-        Some("skyrim-se")
-    );
-    assert_eq!(normalize_wabbajack_game("SkyrimAE"), Some("skyrim-ae"));
-    assert_eq!(normalize_wabbajack_game("Fallout4"), Some("fallout4"));
-    assert_eq!(normalize_wabbajack_game("Fallout76"), Some("fallout76"));
-    assert_eq!(normalize_wabbajack_game("Starfield"), Some("starfield"));
-    assert_eq!(
-        normalize_wabbajack_game("StellarBlade"),
-        Some("stellar-blade")
-    );
+    for (name, id, enabled) in [
+        ("Cyberpunk2077", "cyberpunk2077", cfg!(feature = "cyberpunk")),
+        ("SkyrimSpecialEdition", "skyrim-se", cfg!(feature = "bethesda")),
+        ("SkyrimAE", "skyrim-ae", cfg!(feature = "bethesda")),
+        ("Fallout4", "fallout4", cfg!(feature = "bethesda")),
+        ("Fallout76", "fallout76", cfg!(feature = "bethesda")),
+        ("Starfield", "starfield", cfg!(feature = "bethesda")),
+        ("StellarBlade", "stellar-blade", cfg!(feature = "ue4")),
+    ] {
+        assert_eq!(normalize_wabbajack_game(name), enabled.then_some(id));
+    }
+}
+
+#[test]
+fn registry_contains_exactly_the_enabled_games() {
+    for (enabled, ids) in [
+        (cfg!(feature = "bethesda"), &["skyrim-se", "skyrim-ae", "fallout4", "fallout76", "starfield"][..]),
+        (cfg!(feature = "gamebryo"), &["fallout-new-vegas", "oblivion"][..]),
+        (cfg!(feature = "cyberpunk"), &["cyberpunk2077"][..]),
+        (cfg!(feature = "ue4"), &["stellar-blade", "subnautica2"][..]),
+        (cfg!(feature = "bg3"), &["baldurs-gate3"][..]),
+        (cfg!(feature = "stardew"), &["stardew-valley"][..]),
+        (cfg!(feature = "bannerlord"), &["bannerlord"][..]),
+        (cfg!(feature = "witcher3"), &["witcher3"][..]),
+        (cfg!(feature = "oblivion-remastered"), &["oblivion-remastered"][..]),
+    ] {
+        for id in ids {
+            assert_eq!(SUPPORTED_GAME_IDS.contains(id), enabled, "{id}");
+            assert_eq!(modde_games::resolve_game(id).is_some(), enabled, "{id}");
+            assert_eq!(modde_games::resolve_game_plugin(id).is_some(), enabled, "{id}");
+            assert_eq!(modde_games::registry::launcher_games().any(|game| game.game_id == *id), enabled && *id != "skyrim-ae", "{id}");
+            let spec = modde_games::generic::spec::GameSpec {
+                id: (*id).into(), display_name: "Override".into(), steam_app_id: None,
+                install_dir_name: None, install_path_override: None,
+                executable_dir: ".".into(), mod_dir: None, nexus_domain: None, proxy_dlls: vec![],
+            };
+            assert!(spec.validate().is_err(), "reserved ID {id} accepted");
+        }
+    }
 }

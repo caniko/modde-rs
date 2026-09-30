@@ -10,6 +10,7 @@ use super::super::args::*;
 pub(super) fn dispatch_async(cli: Cli) -> Result<()> {
     tokio::runtime::Runtime::new()?.block_on(async {
         match cli.command {
+            Commands::Library { action } => commands::library::handle(action).await?,
             Commands::Play {
                 profile,
                 game,
@@ -18,6 +19,9 @@ pub(super) fn dispatch_async(cli: Cli) -> Result<()> {
                 no_capture,
             } => commands::play::handle(profile, game, no_deploy, no_switch, no_capture).await?,
             Commands::Perf { action } => match action {
+                PerfAction::Sandbox { id, profile, pairs, duration, warmup_seconds } => {
+                    commands::perf::sandbox_pairs(&id, &profile, pairs, duration, warmup_seconds).await?;
+                }
                 PerfAction::Run {
                     profile,
                     game,
@@ -430,11 +434,13 @@ pub(super) fn dispatch_async(cli: Cli) -> Result<()> {
             | Commands::Doctor { .. }
             | Commands::Export { .. }
             | Commands::Fomod { .. }
-            | Commands::Loot { .. }
-            | Commands::Skill { .. }
-            | Commands::Gui => {
+            | Commands::Skill { .. } => {
                 unreachable!("these commands are dispatched before the async runtime block")
             }
+            #[cfg(feature = "gui")]
+            Commands::Gui => unreachable!("GUI is dispatched before the async runtime block"),
+            #[cfg(feature = "bethesda")]
+            Commands::Loot { .. } => unreachable!("LOOT is dispatched before the async runtime block"),
         }
         Ok(())
     })

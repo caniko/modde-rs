@@ -18,6 +18,8 @@ The guardrail test `crates/modde-core/tests/repo_truth_tests.rs` fails the build
 
 | Capability | Status | Notes |
 | ---------- | ------ | ----- |
+| Owned game library | `Partial` | Library-first GUI, favorites, cached Steam/Heroic ownership, exact-install settings, command hooks, descendant observation and retryable post-capture completion. Profile-managed Heroic saves require automatic cloud sync disabled and a Heroic restart; unhooked URI launches need explicit completion. Compilation, regression execution and live integration qualification remain pending. See [Playing](../guides/playing.md). |
+| Sandboxed launch | `Partial` | Opt-in bubblewrap around direct, store-hook and validated manager game commands, with discovered executable/runtime grants, physical/container prefix validation, post-deployment command resolution, preflight and paired performance capture requiring usable post-warmup FPS and measured frame-time series with MangoHud timestamp-unit conversion. Compilation, regression execution, nested-runtime compatibility, containment and overhead measurements remain unverified. |
 | Core VFS deployment | `Done` | Symlink-farm deployment, per-file hiding, atomic rollback, and conflict resolution are shipped. See [Deployment & VFS](../guides/deployment.md). |
 | Profile switching & save vaults | `Done` | Profile activation, the experiment stack, git-backed save history, and save fingerprints ship for games with real save trackers. |
 | Bethesda plugin management | `Done` | Plugin-order backup/restore, `plugins.txt` IO, LOOT parsing, Form 43 detection, and missing-master checks are shipped. |

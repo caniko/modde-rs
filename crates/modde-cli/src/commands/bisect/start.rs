@@ -1,7 +1,9 @@
 //! Bisect session start and source-profile analysis.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "bethesda")]
+use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
@@ -53,6 +55,7 @@ pub async fn handle_start(
         anyhow::bail!("bisect requires at least two enabled mods");
     }
 
+    let context = modde_games::library::context::for_game(&modde_core::settings::AppSettings::load(), &game, pm.db()).await?;
     let oracle = match oracle {
         BisectOracleArg::Manual => BisectOracle::Manual,
         BisectOracleArg::Crash => {
@@ -81,6 +84,9 @@ pub async fn handle_start(
                     baseline.game_id
                 );
             }
+            anyhow::ensure!(baseline.exit_status == Some(0), "baseline must have a successful observed game exit");
+            super::perf::require_baseline_profile(&baseline, &profile)?;
+            crate::commands::perf::require_baseline_configuration(&baseline_run, &context)?;
             BisectOracle::Perf {
                 baseline_run,
                 p99_frame_time_percent: perf_p99_frame_time_percent,
@@ -92,6 +98,9 @@ pub async fn handle_start(
     };
 
     let session_id = format!("b{}", time_id());
+    modde_core::library::atomic_json(&super::candidate::pin_path(&session_id), &super::candidate::InstallationPin {
+        installation: context.game.id, save_scope: context.saves.scope,
+    })?;
     pm.db()
         .create_bisect_session(&NewBisectSession {
             session_id: session_id.clone(),
@@ -116,7 +125,7 @@ pub async fn handle_start(
 }
 
 pub(super) async fn bisect_dependency_map(
-    pm: &ProfileManager,
+    _pm: &ProfileManager,
     source: &Profile,
 ) -> Result<HashMap<String, Vec<String>>> {
     let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
@@ -145,10 +154,15 @@ pub(super) async fn bisect_dependency_map(
         return Ok(dependencies);
     }
 
+    #[cfg(not(feature = "bethesda"))]
+    anyhow::bail!("Bethesda bisect dependency analysis requires the bethesda feature");
+
+    #[cfg(feature = "bethesda")]
+    {
     let Some(profile_id) = source.id else {
         return Ok(dependencies);
     };
-    let installed_files = pm.db().installed_files_for_profile(profile_id).await?;
+    let installed_files = _pm.db().installed_files_for_profile(profile_id).await?;
     let mut plugin_owner_by_lower: HashMap<String, String> = HashMap::new();
     let mut plugin_path_by_lower: HashMap<String, PathBuf> = HashMap::new();
     for (mod_id, file) in installed_files {
@@ -203,8 +217,10 @@ pub(super) async fn bisect_dependency_map(
         deps.dedup();
     }
     Ok(dependencies)
+    }
 }
 
+#[cfg(feature = "bethesda")]
 pub(super) fn is_bethesda_plugin_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl")

@@ -6,7 +6,6 @@
 
     harbor-macos-sdk-pin.url = "git+https://github.com/caniko/harbor-macos-sdk-pin.git";
 
-
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
     crane.follows = "harbor-rs/crane";
@@ -26,12 +25,7 @@
       inputs.plinth.follows = "plinth";
     };
 
-    plinth = {
-      url = "git+https://github.com/caniko/plinth.git";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.rust-overlay.follows = "rust-overlay";
-      inputs.crane.follows = "crane";
-    };
+    plinth.follows = "visual-rubric/plinth";
 
     visual-rubric = {
       url = "git+https://github.com/caniko/visual-rubric.git";
@@ -83,7 +77,10 @@
         };
         lib = nixpkgs.lib;
 
-        toolchain = harbor-rs.lib.mkToolchain {inherit pkgs; toolchainProfile = "nightly";};
+        toolchain = harbor-rs.lib.mkToolchain {
+          inherit pkgs;
+          toolchainProfile = "nightly";
+        };
         inherit (toolchain) craneLib;
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
@@ -242,6 +239,92 @@
           ]
           ++ linuxBuildInputs;
 
+        # Default shell: application development only (build, run, test,
+        # lint, debug). Packaging/signing/VM tools live in releaseTools,
+        # website tooling (dioxus via plinthProject/visualRubric) in docs —
+        # see devshell-no-dioxus below.
+        nativeDevPackages = with pkgs;
+          [
+            cargo-audit
+            cargo-deny
+            cargo-llvm-cov
+            cargo-nextest
+            curl
+            file
+            findutils
+            git
+            gnugrep
+            gnupg
+            gnutar
+            gzip
+            jq
+            just
+            openssh
+            pre-commit
+            rust-analyzer
+            stdenv.cc
+            toolchain.rustToolchain
+            simitCli
+            alejandra
+            _7zz
+            unrar
+            prettier
+            taplo
+            unzip
+            util-linux
+            wget
+            zip
+          ]
+          ++ nativeBuildInputs
+          ++ buildInputs;
+
+        # Release-only tooling: packaging, signing, image/VM/container
+        # workflows (see scripts/release-local-check.sh). Explicitly
+        # activated via `nix develop .#release`, never in default.
+        releaseTools = with pkgs; [
+          appstream
+          cargo-about
+          cargo-cyclonedx
+          cargo-deb
+          cargo-sbom
+          coprCli
+          cosign
+          debootstrap
+          dnf5
+          dpkg
+          flatpak
+          flatpak-builder
+          forgejo-cli
+          grype
+          minisign
+          nodejs
+          osslsigncode
+          pacman
+          podman
+          qemu
+          reprepro
+          rpm
+          wineWow64Packages.stable
+        ];
+
+        docsPackages = with pkgs;
+          [
+            cargo-deny
+            cargo-nextest
+            git
+            mdbook
+            plinthProject
+            pre-commit
+            rust-analyzer
+            stdenv.cc
+            toolchain.rustToolchain
+            visualRubric
+            jq
+            taplo
+          ]
+          ++ nativeBuildInputs
+          ++ buildInputs;
+
         src = lib.fileset.toSource {
           root = ./.;
           fileset = lib.fileset.unions [
@@ -318,6 +401,7 @@
               for bin in "$out"/bin/*; do
                 wrapProgram "$bin" \
                   ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix LD_LIBRARY_PATH : ${linuxLdPath} \\"}
+                  ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix PATH : ${lib.makeBinPath [pkgs.bubblewrap pkgs.coreutils pkgs.systemd]} \\"}
                   --set-default SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
                   --set-default NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               done
@@ -363,7 +447,10 @@
         aarch64LinuxTargetSuffix =
           lib.strings.replaceStrings ["-"] ["_"] aarch64LinuxTarget;
         pkgsAarch64Linux = pkgs.pkgsCross.aarch64-multiplatform;
-        toolchainAarch64 = harbor-rs.lib.mkToolchain {pkgs = pkgsAarch64Linux; toolchainProfile = "nightly";};
+        toolchainAarch64 = harbor-rs.lib.mkToolchain {
+          pkgs = pkgsAarch64Linux;
+          toolchainProfile = "nightly";
+        };
         craneLibAarch64 = toolchainAarch64.craneLib;
         darwinSigtool = pkgs.darwin.sigtool;
         # Ad-hoc sign the cross-built Mach-O binaries. sigtool's `codesign`
@@ -550,7 +637,8 @@
                     "build-commands" = [
                       "install -Dm0644 cargo/config .cargo/config.toml"
                       "cargo --offline fetch --locked --manifest-path Cargo.toml --verbose"
-                      "cargo build --offline --release --locked --bin modde-ui --verbose"
+                      "cargo build --offline --release --locked --bin modde --bin modde-ui --verbose"
+                      "install -Dm0755 target/release/modde \${FLATPAK_DEST}/bin/modde"
                       "install -Dm0755 target/release/modde-ui \${FLATPAK_DEST}/bin/modde-ui"
                       "install -Dm0644 dist/modde-ui.desktop \${FLATPAK_DEST}/share/applications/\${FLATPAK_ID}.desktop"
                       "install -Dm0644 dist/com.tartanoglu.modde.png \${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/\${FLATPAK_ID}.png"
@@ -1245,6 +1333,14 @@
             diff -u ${./nix/release-supporting-tools.nix} "$TMPDIR/release-supporting-tools.nix"
             touch "$out"
           '';
+          # Shell boundary: default stays iced-only, website tooling stays in
+          # docs. Name-based so this half never evaluates plinth itself; the
+          # docs-membership assert below is what keeps plinth pinned working.
+          devshell-no-dioxus = assert lib.assertMsg (lib.all (p: !lib.elem (lib.getName p) ["dioxus-cli" "plinth-project" "visual-rubric"]) nativeDevPackages)
+          "default devShell must not include website tooling (dioxus/plinth); use `nix develop .#docs`";
+          assert lib.assertMsg (builtins.elem plinthProject docsPackages)
+          "docs shell must include plinthProject; website tooling belongs there, not in default";
+            pkgs.runCommand "modde-devshell-no-dioxus" {} ''touch "$out"' '';
           hm-module = pkgs.runCommand "modde-hm-module-check" {} ''
             cat > ready <<'EOF'
             ${activationReady}
@@ -1589,66 +1685,7 @@
             inherit (toolchain) craneLib;
             pkgConfigDeps = buildInputs;
 
-            packages = with pkgs;
-              [
-                appstream
-                cargo-about
-                cargo-audit
-                cargo-cyclonedx
-                cargo-deb
-                cargo-deny
-                cargo-llvm-cov
-                cargo-nextest
-                cargo-sbom
-                coprCli
-                cosign
-                curl
-                debootstrap
-                dnf5
-                dpkg
-                file
-                findutils
-                flatpak
-                flatpak-builder
-                forgejo-cli
-                git
-                gnugrep
-                gnupg
-                gnutar
-                grype
-                gzip
-                jq
-                minisign
-                nodejs
-                openssh
-                osslsigncode
-                pacman
-                podman
-                pre-commit
-                qemu
-                reprepro
-                rpm
-                rust-analyzer
-                stdenv.cc
-                toolchain.rustToolchain
-                simitCli
-                plinthProject
-                visualRubric
-                alejandra
-                just
-                _7zz
-                unrar
-                mdbook
-                prettier
-                taplo
-                unzip
-                util-linux
-                wineWow64Packages.stable
-                wget
-                zip
-              ]
-              ++ nativeBuildInputs
-              ++ buildInputs;
+            packages = nativeDevPackages;
 
             extraEnv = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
               LD_LIBRARY_PATH = linuxLdPath;
@@ -1656,23 +1693,15 @@
           })
           // {
             docs = pkgs.mkShell {
-              packages = with pkgs;
-                [
-                  cargo-deny
-                  cargo-nextest
-                  git
-                  mdbook
-                  plinthProject
-                  pre-commit
-                  rust-analyzer
-                  stdenv.cc
-                  toolchain.rustToolchain
-                  visualRubric
-                  jq
-                  taplo
-                ]
-                ++ nativeBuildInputs
-                ++ buildInputs;
+              packages = docsPackages;
+              shellHook = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+                export LD_LIBRARY_PATH="${linuxLdPath}"
+              '';
+            };
+            # Release engineering: dev packages plus packaging/signing/VM
+            # tooling. Explicitly activated via `nix develop .#release`.
+            release = pkgs.mkShell {
+              packages = nativeDevPackages ++ releaseTools;
               shellHook = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
                 export LD_LIBRARY_PATH="${linuxLdPath}"
               '';
@@ -2032,7 +2061,12 @@
           runner = "ubuntu-24.04";
           runtime = "nix";
           workspace = true;
-          required_gates = [{ id = "modde-check"; run = "nix develop -c cargo run -p modde-xtask -- check"; }];
+          required_gates = [
+            {
+              id = "modde-check";
+              run = "nix develop -c cargo run -p modde-xtask -- check";
+            }
+          ];
         };
         release.publish.enforcement = "activated-remote";
         release.publish.channels = {

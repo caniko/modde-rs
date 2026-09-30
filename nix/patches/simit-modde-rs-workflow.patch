@@ -1,8 +1,7 @@
 diff --git a/src/commands/copr.rs b/src/commands/copr.rs
-index de93bbb..3048628 100644
 --- a/src/commands/copr.rs
 +++ b/src/commands/copr.rs
-@@ -8,7 +8,7 @@ use crate::cli::{CoprAction, CoprCommand, CoprRenderArgs};
+@@ -8,7 +8,7 @@
  use crate::config::{CoprOverrides, ProjectConfig, ResolvedCopr};
  use crate::render::{copr_makefile, rpm_spec};
  
@@ -12,10 +11,9 @@ index de93bbb..3048628 100644
  pub fn run(command: CoprCommand) -> Result<()> {
      match command.action {
 diff --git a/src/readme_badges.rs b/src/readme_badges.rs
-index 15c57d4..c796753 100644
 --- a/src/readme_badges.rs
 +++ b/src/readme_badges.rs
-@@ -184,7 +184,7 @@ fn badges(
+@@ -184,7 +184,7 @@
              "COPR",
              "configured",
              "3f51b5",
@@ -42,10 +40,12 @@ index a47580b..1bc19a4 100644
      )
      .expect("write");
 -    w.push_str("          rm -rf srpms && mkdir -p srpms\n");
-+    w.push_str("          rm -rf target/modde-release/root-artifacts/srpms && mkdir -p target/modde-release/root-artifacts/srpms\n");
-     writeln!(
-         w,
+-    writeln!(
+-        w,
 -        "          rpmbuild -bs {spec} --define \"_sourcedir $(pwd)\" --define \"_srcrpmdir $(pwd)/srpms\"",
++    w.push_str("          rm -rf target/modde-release/root-artifacts/srpms && mkdir -p target/modde-release/root-artifacts/srpms\n");
++    writeln!(
++        w,
 +        "          rpmbuild -bs {spec} --define \"_sourcedir $(pwd)\" --define \"_srcrpmdir $(pwd)/target/modde-release/root-artifacts/srpms\"",
          spec = copr.spec_path
      )
@@ -175,12 +175,14 @@ index a47580b..1bc19a4 100644
      } else {
          writeln!(w, "          ZIP=\"release/{zip}\"; test -s \"$ZIP\"").expect("write");
      }
+-    writeln!(
+-        w,
+-        "          nix shell {} -c simit dist chocolatey bump \\",
 +    writeln!(w, "          CHOCO_VERSION_FILTER=\"Id%20eq%20'{choco_id}'%20and%20Version%20eq%20'${{VERSION}}'\"").expect("write");
 +    w.push_str("          if curl -fsSL \"https://community.chocolatey.org/api/v2/Packages()?%24filter=${CHOCO_VERSION_FILTER}\" | grep -q \"<entry>\"; then echo \"Chocolatey ${VERSION} already published; skipping.\"; exit 0; fi\n");
 +    w.push_str("          choco_log=\"$(mktemp)\"; trap 'rm -f \"$choco_log\"' EXIT\n");
-     writeln!(
-         w,
--        "          nix shell {} -c simit dist chocolatey bump \\",
++    writeln!(
++        w,
 +        "          if ! nix develop -c nix shell {} -c simit dist chocolatey bump \\",
          chocolatey.nix_tool
      )
@@ -252,10 +254,9 @@ index a47580b..1bc19a4 100644
          // Checksum step uses runner-compatible Bash glob enumeration, not find/xargs.
          assert!(workflow.contains("add_matches '*.tar.gz'"));
 diff --git a/tests/init_copr.rs b/tests/init_copr.rs
-index 3c3a584..18b2648 100644
 --- a/tests/init_copr.rs
 +++ b/tests/init_copr.rs
-@@ -69,13 +69,13 @@ fn bootstraps_fresh_copr_files() {
+@@ -69,13 +69,13 @@
      assert!(spec.contains("Version:        0.1.0\n"));
      assert!(spec.contains("BuildRequires:  rust >= 1.85\n"));
      assert!(spec.contains("install -Dm755 target/release/demo %{buildroot}%{_bindir}/demo\n"));
@@ -271,7 +272,7 @@ index 3c3a584..18b2648 100644
      assert!(stdout.contains("copr-cli build <owner>/<project> <srpm>"));
  }
  
-@@ -118,7 +118,7 @@ fn print_matches_checked_files_without_writing_files() {
+@@ -118,7 +118,7 @@
      let stdout = String::from_utf8(output.stdout).unwrap();
      assert!(stdout.contains("==> demo.spec"));
      assert!(stdout.contains("%global crate demo\n"));

@@ -48,8 +48,14 @@ jobs:
       - name: Test
         run: nix develop -c cargo test -p modde-manager
 
+      - name: Test no default features
+        run: nix develop -c cargo test -p modde-manager --no-default-features
+
       - name: Clippy
         run: nix develop -c cargo clippy -p modde-manager --all-targets -- --deny warnings
+
+      - name: Clippy no default features
+        run: nix develop -c cargo clippy -p modde-manager --all-targets --no-default-features -- --deny warnings
 
       - name: Package crate
         run: nix develop -c cargo package -p modde-manager --allow-dirty --list

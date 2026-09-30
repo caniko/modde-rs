@@ -48,6 +48,21 @@ cargo xtask gui
 RUST_LOG=modde_ui=trace,modde_core=debug cargo xtask gui
 ```
 
+### Nix shells
+
+The default shell (what `nix develop` and direnv load) holds application
+development only: build, run, test, lint, debug. Website and release
+tooling are separate shells you activate explicitly:
+
+| Shell | Activate | Contains |
+| ----- | -------- | -------- |
+| default | `nix develop` (direnv) | Rust toolchain, rust-analyzer, cargo test/lint tools, formatters, archive tools for test fixtures |
+| docs | `nix develop .#docs` | Default docs tooling plus `plinth-project` (Dioxus site generator), `visual-rubric`, mdBook — for `just website-serve` / `just website-audit` |
+| release | `nix develop .#release` | Default dev packages plus packaging/signing/VM tools (cargo-deb, RPM/COPR, Flatpak, cosign/minisign, QEMU, Wine) — for `scripts/release-local-check.sh` |
+
+Plinth is a project dependency (website outputs, Pages deployment), but it
+never belongs in the default shell: modde itself is Iced-only.
+
 ### Project Structure
 
 ```

@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use std::fs;
 
 use modde_games::bethesda::ini_tweaks::{IniTweak, apply_ini_tweaks, scan_mod_ini_tweaks};

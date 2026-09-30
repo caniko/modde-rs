@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use modde_games::bethesda;
 use modde_games::{
     GamePlugin, SUPPORTED_GAME_IDS, resolve_game_plugin, resolve_save_dependency_analyzer,

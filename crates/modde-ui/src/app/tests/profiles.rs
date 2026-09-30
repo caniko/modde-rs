@@ -160,7 +160,7 @@ pub(crate) fn complete_experiment_write(
         kind.clone(),
         profile_name.map(str::to_string),
         GameId::from(game_id),
-        None,
+        app.settings.clone(),
         app.experiment_depth,
     ));
     let _ = app.update(Message::ExperimentWriteDone {

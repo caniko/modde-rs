@@ -45,6 +45,7 @@ fn scanner_distinguishes_managed_and_conflicted_installs() {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn scanner_matches_stellar_blade_root_relative_managed_manifest() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let exe_dir = tmp.path().join("SB/Binaries/Win64");

@@ -110,6 +110,17 @@ pub fn parse_mangohud_csv_file_with_warmup(
 }
 
 pub fn parse_mangohud_csv(content: &str) -> Result<MangoHudParseResult> {
+    parse_csv(content, true)
+}
+
+/// Capture and grading must retain missing measurements. FPS-derived estimates
+/// remain available through `parse_mangohud_csv` for displaying legacy logs, but
+/// do not count as measured frame times in benchmarks or performance bisects.
+pub fn parse_mangohud_csv_measured(content: &str) -> Result<MangoHudParseResult> {
+    parse_csv(content, false)
+}
+
+fn parse_csv(content: &str, estimate_missing_column: bool) -> Result<MangoHudParseResult> {
     let lines: Vec<&str> = content.lines().collect();
     let Some((header_idx, columns)) = lines.iter().enumerate().find_map(|(idx, line)| {
         let columns = split_csv_line(line);
@@ -137,12 +148,14 @@ pub fn parse_mangohud_csv(content: &str) -> Result<MangoHudParseResult> {
         if !fps.is_finite() || fps <= 0.0 {
             continue;
         }
-        let frame_time_ms = map
-            .get(&fields, map.frame_time_ms)
-            .and_then(parse_number)
-            .or_else(|| Some(1000.0 / fps));
+        let frame_time_ms = match map.frame_time_ms {
+            Some(column) => map.get(&fields, Some(column)).and_then(parse_number),
+            None if estimate_missing_column => Some(1000.0 / fps),
+            None => None,
+        };
         samples.push(PerformanceSample {
-            elapsed_seconds: map.get(&fields, map.elapsed_seconds).and_then(parse_number),
+            elapsed_seconds: map.get(&fields, map.elapsed_seconds).and_then(parse_number)
+                .map(|value| if map.elapsed_nanoseconds { value / 1_000_000_000.0 } else { value }),
             fps,
             frame_time_ms,
             cpu_load: map.get(&fields, map.cpu_load).and_then(parse_number),
@@ -187,7 +200,7 @@ pub fn summarize_samples_with_warmup(
     let mut frame_times: Vec<f64> = summary_samples
         .iter()
         .filter_map(|s| s.frame_time_ms)
-        .filter(|v| v.is_finite() && *v >= 0.0)
+        .filter(|v| v.is_finite() && *v > 0.0)
         .collect();
     frame_times.sort_by(total_cmp);
 
@@ -244,6 +257,7 @@ fn samples_after_warmup(
 #[derive(Debug, Clone, Copy, Default)]
 struct ColumnMap {
     elapsed_seconds: Option<usize>,
+    elapsed_nanoseconds: bool,
     fps: Option<usize>,
     frame_time_ms: Option<usize>,
     cpu_load: Option<usize>,
@@ -266,10 +280,16 @@ impl ColumnMap {
             } else if map.elapsed_seconds.is_none()
                 && (normalized == "time"
                     || normalized == "elapsed"
+                    || normalized == "elapsed_ns"
                     || normalized == "elapsed_time"
+                    || normalized == "elapsed_seconds"
                     || normalized == "time_s")
             {
                 map.elapsed_seconds = Some(idx);
+                // MangoHud's elapsed column is a nanosecond duration, including
+                // when log_versioning=0. Generic time/time_s fields use seconds.
+                // Source: https://github.com/flightlessmango/MangoHud/blob/73931de948402caf3ea80f26d5bbb6b3f1d2c1d9/src/logging.cpp#L200-L230
+                map.elapsed_nanoseconds = matches!(normalized.as_str(), "elapsed" | "elapsed_ns");
             } else if map.cpu_load.is_none()
                 && normalized.contains("cpu")
                 && normalized.contains("load")
@@ -403,11 +423,35 @@ time,fps,frametime,cpu_load,gpu_load
         let csv = "\
 \"GPU Load\",\"Frame Time (ms)\",\"FPS\",\"Elapsed\"
 10,8.0,125,0
-20,16.0,62.5,1
+20,16.0,62.5,1000000000
 ";
         let parsed = parse_mangohud_csv(csv).unwrap();
         assert!((parsed.samples[0].fps - 125.0).abs() < f64::EPSILON);
         assert_eq!(parsed.samples[1].frame_time_ms, Some(16.0));
+        assert_eq!(parsed.samples[1].elapsed_seconds, Some(1.0));
+    }
+
+    #[test]
+    fn mangohud_nanosecond_timestamps_apply_warmup_in_seconds() {
+        let csv = "\
+os,cpu,gpu,ram,kernel,driver,cpuscheduler
+Linux,fixture,fixture,16,fixture,fixture,fixture
+fps,frametime,cpu_load,elapsed
+100,10,20,0
+50,20,30,1000000000
+25,40,40,31000000000
+";
+        let parsed = parse_mangohud_csv_measured(csv).unwrap();
+        assert_eq!(parsed.samples.iter().map(|sample| sample.elapsed_seconds).collect::<Vec<_>>(),
+            [Some(0.0), Some(1.0), Some(31.0)]);
+        assert_eq!(parsed.summary.sample_count, 1);
+        assert_eq!(parsed.summary.median_fps, Some(25.0));
+        assert_eq!(parsed.summary.p99_frame_time_ms, Some(40.0));
+        for column in ["time", "time_s", "elapsed_seconds"] {
+            let parsed = parse_mangohud_csv_measured(&format!("{column},fps\n0,100\n1,50\n31,25\n")).unwrap();
+            assert_eq!(parsed.summary.sample_count, 1);
+            assert_eq!(parsed.samples[2].elapsed_seconds, Some(31.0));
+        }
     }
 
     #[test]
@@ -416,6 +460,18 @@ time,fps,frametime,cpu_load,gpu_load
         let parsed = parse_mangohud_csv(csv).unwrap();
         assert_eq!(parsed.samples[0].frame_time_ms, Some(10.0));
         assert_eq!(parsed.summary.p95_frame_time_ms, Some(20.0));
+    }
+
+    #[test]
+    fn invalid_measured_frame_times_are_not_replaced_with_fps_estimates() {
+        let csv = "time,fps,frametime\n0,60,\n1,60,NaN\n2,60,inf\n3,60,invalid\n4,60,0\n";
+        let parsed = parse_mangohud_csv(csv).unwrap();
+        assert!(parsed.samples[..4].iter().all(|sample| sample.frame_time_ms.is_none()));
+        assert_eq!(parsed.summary.p99_frame_time_ms, None);
+        let measured = parse_mangohud_csv_measured("time,fps\n0,60\n1,60\n").unwrap();
+        assert!(measured.samples.iter().all(|sample| sample.frame_time_ms.is_none()));
+        assert_eq!(measured.summary.median_fps, Some(60.0));
+        assert_eq!(measured.summary.p99_frame_time_ms, None);
     }
 
     #[test]

@@ -95,10 +95,13 @@ impl ArchiveBatchExtractor {
                     return extract_zip(File::open(path)?, path.display().to_string(), requests);
                 }
 
-                if modde_core::bethesda_archive::ArchiveIndex::has_bethesda_magic(path)
-                    .unwrap_or(false)
-                {
+                let mut magic = [0; 4];
+                if File::open(path)?.read_exact(&mut magic).is_ok()
+                    && requests::bytes_have_bethesda_magic(&magic) {
+                    #[cfg(feature = "bethesda-archives")]
                     return extract_bethesda(path, requests);
+                    #[cfg(not(feature = "bethesda-archives"))]
+                    bail!("BSA/BA2 extraction requires the bethesda-archives feature");
                 }
 
                 #[cfg(feature = "rar")]
@@ -122,8 +125,9 @@ impl ArchiveBatchExtractor {
                 }
 
                 bail!(
-                    "unsupported archive format for {}; supported by default: zip, 7z, BSA, BA2{}",
+                    "unsupported archive format for {}; supported: zip, 7z{}{}",
                     path.display(),
+                    if cfg!(feature = "bethesda-archives") { ", BSA, BA2" } else { "" },
                     if cfg!(feature = "rar") { ", rar" } else { "" }
                 )
             }
@@ -215,6 +219,7 @@ fn extract_zip<R: std::io::Read + Seek>(
     Ok(output)
 }
 
+#[cfg(feature = "bethesda-archives")]
 fn extract_bethesda(path: &Path, requests: &[ArchiveRequest]) -> Result<ArchiveBatchOutput> {
     let index = modde_core::bethesda_archive::ArchiveIndex::read(path)
         .with_context(|| format!("failed to read Bethesda archive {}", path.display()))?;

@@ -23,6 +23,7 @@ use crate::cache::{ByteCacheKey, ByteLruCache};
 use crate::decompress::{ArchiveBatchExtractor, ArchiveInput, ArchiveRequest, ArchiveRequestKind};
 use crate::traits::{AnySource, DownloadSource};
 
+#[cfg(feature = "bethesda-archives")]
 use super::bsa_repack;
 use super::diagnostics::{
     ArchiveBatchRecord, ProcessSnapshot, ProgressEvent, WabbajackDiagnostics,

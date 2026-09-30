@@ -139,7 +139,7 @@ impl SaveManager<'_> {
 
         repo.checkout_tree(
             commit.as_object(),
-            Some(git2::build::CheckoutBuilder::new().force()),
+            Some(git2::build::CheckoutBuilder::new().force().remove_untracked(true).remove_ignored(true)),
         )
         .map_err(|e| CoreError::SaveVaultError(format!("checkout failed: {e}")))?;
 

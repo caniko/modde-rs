@@ -21,13 +21,14 @@ pub(super) async fn run_enabled_pipeline(
     profile: &Profile,
     game_plugin: &dyn modde_games::GamePlugin,
     install_dir: &Path,
+    prefix: Option<&Path>,
 ) -> Result<usize> {
     let profile_id = match profile.id {
         Some(id) => id,
         None => return Ok(0),
     };
     let game_mod_dir = game_plugin
-        .mod_root(install_dir)
+        .mod_root_at(install_dir, prefix)
         .context("failed to resolve game mod root for patcher pipeline")?;
     let stages = pm.db().list_patcher_stages(profile_id).await?;
     let enabled: Vec<PatcherStageRow> = stages.into_iter().filter(|stage| stage.enabled).collect();
@@ -40,6 +41,7 @@ pub(super) async fn run_enabled_pipeline(
         &enabled,
         game_plugin,
         install_dir,
+        prefix,
         &game_mod_dir,
     )
     .await?;
@@ -51,6 +53,7 @@ pub(super) async fn run_enabled_pipeline(
             profile,
             game_plugin,
             install_dir,
+            prefix,
             &game_mod_dir,
             stage,
             &mut manifests,
@@ -63,6 +66,7 @@ pub(super) async fn run_enabled_pipeline(
                 &enabled,
                 game_plugin,
                 install_dir,
+                prefix,
                 &game_mod_dir,
                 &original_manifests,
                 &backup,
@@ -112,6 +116,7 @@ pub(super) async fn restore_patcher_pipeline(
     stages: &[PatcherStageRow],
     game_plugin: &dyn modde_games::GamePlugin,
     install_dir: &Path,
+    prefix: Option<&Path>,
     game_mod_dir: &Path,
     manifests: &HashMap<String, Vec<String>>,
     backup: &PatcherPipelineBackup,
@@ -134,7 +139,7 @@ pub(super) async fn restore_patcher_pipeline(
         )
         .await?;
     }
-    reset_managed_outputs(db, profile, stages, game_plugin, install_dir, game_mod_dir).await?;
+    reset_managed_outputs(db, profile, stages, game_plugin, install_dir, prefix, game_mod_dir).await?;
     remove_dir_if_exists(&backup.root)
 }
 
@@ -162,6 +167,7 @@ pub(super) async fn reset_managed_outputs(
     stages: &[PatcherStageRow],
     game_plugin: &dyn modde_games::GamePlugin,
     install_dir: &Path,
+    prefix: Option<&Path>,
     game_mod_dir: &Path,
 ) -> Result<()> {
     if let Some(profile_id) = profile.id {
@@ -180,7 +186,7 @@ pub(super) async fn reset_managed_outputs(
         let generated = stage_generated_dir(profile, &stage.name);
         if generated.exists() {
             game_plugin
-                .deploy_to_install(&generated, install_dir)
+                .deploy_to_install_at(&generated, install_dir, prefix)
                 .with_context(|| {
                     format!(
                         "failed to project managed patcher output for stage '{}'",
@@ -197,6 +203,7 @@ pub(super) async fn run_stage(
     profile: &Profile,
     game_plugin: &dyn modde_games::GamePlugin,
     install_dir: &Path,
+    prefix: Option<&Path>,
     game_mod_dir: &Path,
     stage: &PatcherStageRow,
     manifests: &mut HashMap<String, Vec<String>>,
@@ -230,6 +237,7 @@ pub(super) async fn run_stage(
         profile,
         game_plugin,
         install_dir,
+        prefix,
         game_mod_dir,
         stage,
         &own_before,

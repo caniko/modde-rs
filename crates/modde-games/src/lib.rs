@@ -2,31 +2,45 @@
 //! scanner, save tracker, and tool integrations, exposed through `game_id`-keyed
 //! resolver functions.
 
-use anyhow::{Context, Result};
+#[cfg(feature = "bethesda")]
+use anyhow::Context;
+use anyhow::Result;
 use smallvec::SmallVec;
 
+#[cfg(feature = "bannerlord")]
 pub mod bannerlord;
+#[cfg(feature = "bethesda")]
 pub mod bethesda;
+#[cfg(feature = "bg3")]
 pub mod bg3;
+#[cfg(feature = "cyberpunk")]
 pub mod cyberpunk;
 pub mod detection;
+#[cfg(feature = "gamebryo")]
 pub mod gamebryo;
 pub mod generic;
 pub mod gpu;
 pub mod launcher;
+pub mod library;
+#[cfg(feature = "oblivion-remastered")]
 pub mod oblivion_remastered;
 pub mod optiscaler;
 pub mod policies;
 pub mod registry;
+mod save_fingerprint;
 pub mod save_patterns;
 pub mod scanner_patterns;
+#[cfg(feature = "stardew")]
 pub mod stardew;
 pub mod tools;
 pub mod traits;
+#[cfg(feature = "ue4")]
 pub mod ue4;
+#[cfg(feature = "witcher3")]
 pub mod witcher3;
 
 pub use detection::{DetectedGame, LauncherSource, find_detected_game, scan_installed_games};
+pub use save_fingerprint::save_fingerprint;
 pub use generic::loader::{load_user_games, reload_user_games};
 pub use generic::manage::{
     AddUserGameResult, DetectCandidateDir, add_user_game, detect_candidates, read_user_game_spec,
@@ -158,6 +172,7 @@ pub fn supports_save_profiles(game_id: &str) -> bool {
 }
 
 /// Read the native plugin order for a game from `plugins.txt`, when the game uses one.
+#[cfg(feature = "bethesda")]
 pub fn read_native_plugin_order(game_id: &str) -> Result<Vec<modde_core::PluginEntry>> {
     let plugin = resolve_game_plugin(game_id)
         .ok_or_else(|| anyhow::anyhow!("unsupported game '{game_id}'"))?;
@@ -183,6 +198,7 @@ pub fn read_native_plugin_order(game_id: &str) -> Result<Vec<modde_core::PluginE
 }
 
 /// Persist plugin order back to the game's native `plugins.txt`, when supported.
+#[cfg(feature = "bethesda")]
 pub fn write_native_plugin_order(game_id: &str, plugins: &[modde_core::PluginEntry]) -> Result<()> {
     let plugin = resolve_game_plugin(game_id)
         .ok_or_else(|| anyhow::anyhow!("unsupported game '{game_id}'"))?;
@@ -203,4 +219,16 @@ pub fn write_native_plugin_order(game_id: &str, plugins: &[modde_core::PluginEnt
 
     bethesda::plugins_txt::write_plugins_txt(app_id, folder, &entries)
         .with_context(|| format!("failed to write plugins.txt for '{game_id}'"))
+}
+
+/// Native `plugins.txt` support requires the `bethesda` feature.
+#[cfg(not(feature = "bethesda"))]
+pub fn read_native_plugin_order(game_id: &str) -> Result<Vec<modde_core::PluginEntry>> {
+    anyhow::bail!("native plugin order for '{game_id}' requires the bethesda feature")
+}
+
+/// Native `plugins.txt` support requires the `bethesda` feature.
+#[cfg(not(feature = "bethesda"))]
+pub fn write_native_plugin_order(game_id: &str, _plugins: &[modde_core::PluginEntry]) -> Result<()> {
+    anyhow::bail!("native plugin order for '{game_id}' requires the bethesda feature")
 }

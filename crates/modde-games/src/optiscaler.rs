@@ -119,6 +119,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ue4")]
     fn stellar_blade_resolves_community_optiscaler_profile() {
         let _ = shared_data_dir();
         let profiles = resolve_optiscaler_profiles("stellar-blade");
@@ -152,7 +153,7 @@ mod tests {
         let first = resolve_optiscaler_profiles("stellar-blade");
         let second = resolve_optiscaler_profiles("stellar-blade");
 
-        assert_eq!(first.len(), 1);
+        assert_eq!(first.len(), usize::from(cfg!(feature = "ue4")));
         assert!(std::ptr::eq(first, second));
     }
 }

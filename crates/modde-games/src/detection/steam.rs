@@ -31,10 +31,10 @@ pub(super) fn push_unique_existing_dir(paths: &mut Vec<PathBuf>, path: PathBuf) 
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SteamAppManifest {
-    pub(super) appid: String,
-    pub(super) name: String,
-    pub(super) installdir: String,
+pub(crate) struct SteamAppManifest {
+    pub(crate) appid: String,
+    pub(crate) name: String,
+    pub(crate) installdir: String,
 }
 
 pub(super) fn scan_steam_appmanifests(
@@ -93,14 +93,14 @@ pub(super) fn scan_steam_appmanifests(
     }
 }
 
-pub(super) fn is_steam_appmanifest(path: &Path) -> bool {
+pub(crate) fn is_steam_appmanifest(path: &Path) -> bool {
     let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
     file_name.starts_with("appmanifest_") && file_name.ends_with(".acf")
 }
 
-pub(super) fn parse_steam_appmanifest(content: &str) -> Option<SteamAppManifest> {
+pub(crate) fn parse_steam_appmanifest(content: &str) -> Option<SteamAppManifest> {
     let mut appid = None;
     let mut name = None;
     let mut installdir = None;

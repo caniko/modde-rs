@@ -7,9 +7,8 @@ use modde_core::profile::{
     ActivateResult, LoadOrderLock, LockReason, Profile, ProfileManager, ProfileSource,
 };
 use modde_core::resolver::GameId;
-use modde_core::save::SaveFingerprint;
 
-use super::{compute_fingerprint, resolve_save_dir, supports_save_profiles};
+use super::{compute_fingerprint, installation_context, supports_save_profiles};
 use crate::cli::args::ProfileAction;
 
 /// Human-readable byte size (KB/MB/GB) for `lock-info` output.
@@ -89,16 +88,12 @@ pub async fn handle(action: ProfileAction) -> Result<()> {
             }
         }
         ProfileAction::Switch { name, game } => {
-            let save_dir = resolve_save_dir(&game);
-            let fp = compute_fingerprint(&pm, &name, &game).await;
-            match pm
-                .activate_with_fingerprint(
-                    &name,
-                    &GameId::from(game.as_str()),
-                    save_dir.as_deref(),
-                    fp.as_ref(),
-                )
-                .await?
+            let context = installation_context(&game, &pm).await?;
+            context.require_save_management()?;
+            let save_dir = &context.saves.directory;
+            let current = pm.active(&context.saves.scope).await?;
+            let fp = if let Some(current) = current { compute_fingerprint(&pm, &current.profile.name, &game).await } else { None };
+            match context.activate_profile(&pm, &name, fp.as_ref()).await?
             {
                 ActivateResult::Activated => {
                     info!(profile = %name, "switched to profile");
@@ -139,17 +134,13 @@ pub async fn handle(action: ProfileAction) -> Result<()> {
             println!("Deleted profile: {name}");
         }
         ProfileAction::Try { name, game } => {
-            let save_dir = resolve_save_dir(&game);
-            let fp = compute_fingerprint(&pm, &name, &game).await;
-            pm.try_profile_with_fingerprint(
-                &name,
-                &GameId::from(game.as_str()),
-                save_dir.as_deref(),
-                fp.as_ref(),
-            )
-            .await?;
+            let context = installation_context(&game, &pm).await?;
+            context.require_save_management()?;
+            let current = pm.active(&context.saves.scope).await?;
+            let fp = if let Some(current) = current { compute_fingerprint(&pm, &current.profile.name, &game).await } else { None };
+            context.try_profile(&pm, &name, fp.as_ref()).await?;
             let depth = pm
-                .active(&GameId::from(game.as_str()))
+                .active(&context.saves.scope)
                 .await?
                 .map_or(0, |a| a.experiment_depth);
             println!("Experimenting with profile: {name} (stack depth: {depth})");
@@ -158,39 +149,31 @@ pub async fn handle(action: ProfileAction) -> Result<()> {
             );
         }
         ProfileAction::Rollback { game } => {
-            let save_dir = resolve_save_dir(&game);
+            let context = installation_context(&game, &pm).await?;
+            context.require_save_management()?;
 
             // Compute fingerprint for the current (about-to-be-rolled-back) profile
             let fp = pm
-                .active(&GameId::from(game.as_str()))
+                .active(&context.saves.scope)
                 .await?
                 .and_then(|info| {
                     if !supports_save_profiles(&game).ok()? {
                         return None;
                     }
-                    let game_plugin = modde_games::resolve_game_plugin(&game)?;
-                    let staging_dir = ProfileManager::staging_dir(&info.profile.name);
-                    Some(SaveFingerprint::compute(&info.profile.mods, |mod_id| {
-                        let mod_path = staging_dir.join(mod_id);
-                        game_plugin.classify_mod(&mod_path).affects_saves()
-                    }))
+                    Some(modde_games::save_fingerprint(&info.profile))
                 });
 
-            let restored = pm
-                .rollback_with_fingerprint(
-                    &GameId::from(game.as_str()),
-                    save_dir.as_deref(),
-                    fp.as_ref(),
-                )
-                .await?;
+            let restored = context.rollback_profile(&pm, fp.as_ref()).await?;
             println!("Rolled back to profile: {restored}");
         }
         ProfileAction::Commit { game } => {
-            pm.commit(&GameId::from(game.as_str())).await?;
+            let context = installation_context(&game, &pm).await?;
+            pm.commit(&context.saves.scope).await?;
             println!("Experiment accepted. Rollback stack cleared for game: {game}");
         }
         ProfileAction::Active { game } => {
-            match pm.active(&GameId::from(game.as_str())).await? {
+            let context = installation_context(&game, &pm).await?;
+            match pm.active(&context.saves.scope).await? {
                 Some(info) => {
                     println!(
                         "Active profile: {} (game: {})",
@@ -231,11 +214,12 @@ pub async fn handle(action: ProfileAction) -> Result<()> {
             game,
             unlock,
         } => {
+            let context = installation_context(&game, &pm).await?;
             let id = pm
-                .fork_with_options(
+                .fork_scoped(
                     &source,
                     &name,
-                    &GameId::from(game.as_str()),
+                    &context.saves,
                     modde_core::profile::ForkOptions { unlock },
                 )
                 .await?;

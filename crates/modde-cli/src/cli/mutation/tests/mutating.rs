@@ -34,6 +34,7 @@ fn instance_create_is_mutating() {
 }
 
 #[test]
+#[cfg(feature = "bethesda")]
 fn loot_sort_is_mutating() {
     assert!(command_mutates_state(&loot_sort()));
 }

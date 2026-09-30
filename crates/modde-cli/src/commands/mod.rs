@@ -15,7 +15,9 @@ pub mod hot_deploy;
 pub mod import;
 pub mod install;
 pub mod instance;
+pub mod library;
 pub mod lockfile;
+#[cfg(feature = "bethesda")]
 pub mod loot;
 pub mod nexus;
 pub mod nix_schema;
@@ -45,6 +47,10 @@ use modde_core::PluginEntry;
 use modde_core::profile::{Profile, ProfileManager};
 use modde_core::resolver::GameId;
 use modde_core::save::SaveFingerprint;
+
+pub(super) async fn installation_context(game_id: &str, pm: &ProfileManager) -> Result<modde_games::library::context::InstallationContext> {
+    modde_games::library::context::for_game(&modde_core::settings::AppSettings::load(), game_id, pm.db()).await
+}
 
 /// Resolve the game's save directory via the `GamePlugin` trait.
 ///
@@ -103,13 +109,7 @@ pub async fn compute_fingerprint(
         return None;
     }
     let profile = pm.load(name, Some(&GameId::from(game_id))).await.ok()?;
-    let game_plugin = modde_games::resolve_game_plugin(game_id)?;
-    let staging_dir = ProfileManager::staging_dir(&profile.name);
-
-    Some(SaveFingerprint::compute(&profile.mods, |mod_id| {
-        let mod_path = staging_dir.join(mod_id);
-        game_plugin.classify_mod(&mod_path).affects_saves()
-    }))
+    Some(modde_games::save_fingerprint(&profile))
 }
 
 /// Load a profile by name (optional) and game (optional), falling back to
@@ -175,6 +175,7 @@ pub async fn persist_plugin_order(
     Ok(())
 }
 
+#[cfg(feature = "bethesda")]
 fn validate_native_record_references(profile: &Profile, plugins: &[PluginEntry]) -> Result<()> {
     if !matches!(
         profile.game_id.as_str(),
@@ -226,6 +227,15 @@ fn validate_native_record_references(profile: &Profile, plugins: &[PluginEntry])
         ));
     }
     anyhow::bail!(message)
+}
+
+#[cfg(not(feature = "bethesda"))]
+fn validate_native_record_references(profile: &Profile, _plugins: &[PluginEntry]) -> Result<()> {
+    anyhow::ensure!(
+        !matches!(profile.game_id.as_str(), "skyrim-se" | "skyrim-ae" | "fallout4" | "fallout76" | "starfield"),
+        "native record validation requires the bethesda feature"
+    );
+    Ok(())
 }
 
 #[cfg(test)]

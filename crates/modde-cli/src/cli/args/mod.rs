@@ -6,12 +6,14 @@ use clap::{Parser, Subcommand};
 
 mod game;
 mod install;
+mod library;
 mod profile;
 mod system;
 mod tools;
 
 pub(crate) use game::*;
 pub(crate) use install::*;
+pub(crate) use library::*;
 pub(crate) use profile::*;
 pub(crate) use system::*;
 pub(crate) use tools::*;
@@ -22,6 +24,10 @@ pub(crate) struct Cli {
     /// Override data directory (default: ~/.local/share/modde or $`MODDE_DATA_DIR`)
     #[arg(long, global = true, env = "MODDE_DATA_DIR")]
     pub(crate) data_dir: Option<PathBuf>,
+
+    /// Override the base configuration directory used by modde and its session journal
+    #[arg(long, global = true)]
+    pub(crate) config_dir: Option<PathBuf>,
 
     /// Write a DHAT heap profile. Requires the `heap-profile` cargo feature.
     #[arg(long, global = true, env = "MODDE_HEAP_PROFILE")]
@@ -38,6 +44,11 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 pub(crate) enum Commands {
+    /// Owned game catalogue and saved per-installation launch settings
+    Library {
+        #[command(subcommand)]
+        action: LibraryAction,
+    },
     #[command(hide = true)]
     Dev {
         #[command(subcommand)]
@@ -154,6 +165,7 @@ pub(crate) enum Commands {
         action: UpdateAction,
     },
     /// LOOT masterlist integration (Bethesda plugin sorting)
+    #[cfg(feature = "bethesda")]
     Loot {
         #[command(subcommand)]
         action: LootAction,
@@ -289,5 +301,6 @@ pub(crate) enum Commands {
     /// Import existing TOML profiles into the database
     Import,
     /// Launch the graphical user interface
+    #[cfg(feature = "gui")]
     Gui,
 }
