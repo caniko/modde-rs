@@ -62,9 +62,15 @@ impl GamePlugin for SmapiGame {
     }
 
     fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
-        if prefix.is_none() { return self.save_directory(); }
-        crate::library::context::steam_user_path(install, prefix, "413150",
-            Path::new("AppData/Roaming/StardewValley/Saves"))
+        if prefix.is_none() {
+            return self.save_directory();
+        }
+        crate::library::context::steam_user_path(
+            install,
+            prefix,
+            "413150",
+            Path::new("AppData/Roaming/StardewValley/Saves"),
+        )
     }
 
     fn classify_mod(&self, mod_dir: &Path) -> ModSafety {

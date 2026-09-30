@@ -12,11 +12,11 @@ mod start;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use flow::complete_launch;
 pub use flow::{
     handle_abort, handle_history, handle_mark, handle_retry, handle_run, handle_status,
 };
 pub use start::handle_start;
-pub(crate) use flow::complete_launch;
 
 /// Persisted with a Library request so a store hook or interrupted-client
 /// completion worker can evaluate the same candidate as a direct launch.

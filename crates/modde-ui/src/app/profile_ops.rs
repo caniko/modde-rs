@@ -42,7 +42,8 @@ pub(super) async fn fork_profile(
     settings: modde_core::settings::AppSettings,
 ) -> Result<ProfileWriteOutcome, String> {
     let context = modde_games::library::context::for_game(&settings, game_id.as_str(), &db)
-        .await.map_err(|err| err.to_string())?;
+        .await
+        .map_err(|err| err.to_string())?;
     ProfileManager::with_db(db)
         .fork_scoped(&source, &new_name, &context.saves, Default::default())
         .await
@@ -157,8 +158,13 @@ pub(super) async fn remove_mod_from_profile(
     if let Some(analyzer) = modde_games::resolve_save_dependency_analyzer(profile.game_id.as_str())
     {
         let mut save_roots = Vec::new();
-        let context = modde_games::library::context::for_game(&modde_core::settings::AppSettings::load(), profile.game_id.as_str(), pm.db())
-            .await.map_err(|err| err.to_string())?;
+        let context = modde_games::library::context::for_game(
+            &modde_core::settings::AppSettings::load(),
+            profile.game_id.as_str(),
+            pm.db(),
+        )
+        .await
+        .map_err(|err| err.to_string())?;
         if let Some(save_dir) = context.saves.directory {
             save_roots.push(save_dir);
         }
@@ -258,15 +264,22 @@ pub(super) async fn run_experiment_write(
 ) -> Result<ExperimentWriteOutcome, String> {
     let pm = ProfileManager::with_db(db);
     let context = modde_games::library::context::for_game(&settings, game_id.as_str(), pm.db())
-        .await.map_err(|err| err.to_string())?;
-    context.require_save_management().map_err(|err| err.to_string())?;
-    let fingerprint = pm.active(&context.saves.scope).await.map_err(|err| err.to_string())?
+        .await
+        .map_err(|err| err.to_string())?;
+    context
+        .require_save_management()
+        .map_err(|err| err.to_string())?;
+    let fingerprint = pm
+        .active(&context.saves.scope)
+        .await
+        .map_err(|err| err.to_string())?
         .map(|active| modde_games::save_fingerprint(&active.profile));
     match kind {
         ExperimentWriteKind::Try => {
             let profile_name =
                 profile_name.ok_or_else(|| "No active profile selected".to_string())?;
-            context.try_profile(&pm, &profile_name, fingerprint.as_ref())
+            context
+                .try_profile(&pm, &profile_name, fingerprint.as_ref())
                 .await
                 .map_err(|err| err.to_string())?;
             let next_depth = current_depth.saturating_add(1);
@@ -288,7 +301,9 @@ pub(super) async fn run_experiment_write(
             })
         }
         ExperimentWriteKind::Commit => {
-            pm.commit(&context.saves.scope).await.map_err(|err| err.to_string())?;
+            pm.commit(&context.saves.scope)
+                .await
+                .map_err(|err| err.to_string())?;
             Ok(ExperimentWriteOutcome {
                 previous_profile: None,
                 status_message: "Experiment committed".to_string(),

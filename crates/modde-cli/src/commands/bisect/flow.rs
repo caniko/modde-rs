@@ -71,29 +71,55 @@ pub async fn handle_run(session_id: String) -> Result<()> {
     launch_step(&pm, &session, &candidate, step_id).await
 }
 
-async fn launch_step(pm: &ProfileManager, session: &BisectSession, candidate: &modde_core::profile::Profile, step_id: i64) -> Result<()> {
+async fn launch_step(
+    pm: &ProfileManager,
+    session: &BisectSession,
+    candidate: &modde_core::profile::Profile,
+    step_id: i64,
+) -> Result<()> {
     let pending = if matches!(session.oracle, BisectOracle::Perf { .. }) {
-        run_perf_candidate(pm, candidate, session, step_id).await?.is_none()
+        run_perf_candidate(pm, candidate, session, step_id)
+            .await?
+            .is_none()
     } else {
-        launch_candidate(pm, &candidate.name, session, false).await?.is_none()
+        launch_candidate(pm, &candidate.name, session, false)
+            .await?
+            .is_none()
     };
     if pending {
-        println!("Candidate requested in the store: {}. Its wrapper will complete capture and evaluate the selected oracle.", candidate.name);
+        println!(
+            "Candidate requested in the store: {}. Its wrapper will complete capture and evaluate the selected oracle.",
+            candidate.name
+        );
     }
     Ok(())
 }
 
 pub(crate) async fn complete_launch(
-    pm: &ProfileManager, completion: &super::Completion, status: std::process::ExitStatus, performance_run: Option<&str>,
+    pm: &ProfileManager,
+    completion: &super::Completion,
+    status: std::process::ExitStatus,
+    performance_run: Option<&str>,
 ) -> Result<()> {
     let session_id = completion.session.clone();
     let step_id = completion.step;
     let session = pm.db().load_bisect_session(&session_id).await?;
     let step = pm.db().load_bisect_step(step_id).await?;
-    anyhow::ensure!(step.session_id == session_id, "bisect completion belongs to another session");
-    if matches!(session.status, BisectStatus::Complete | BisectStatus::Inconclusive)
-        && step.result.is_some()
-        && pm.db().list_bisect_steps(&session_id).await?.last().is_some_and(|last| last.id == step_id) {
+    anyhow::ensure!(
+        step.session_id == session_id,
+        "bisect completion belongs to another session"
+    );
+    if matches!(
+        session.status,
+        BisectStatus::Complete | BisectStatus::Inconclusive
+    ) && step.result.is_some()
+        && pm
+            .db()
+            .list_bisect_steps(&session_id)
+            .await?
+            .last()
+            .is_some_and(|last| last.id == step_id)
+    {
         // The result committed before source restoration/cleanup. Resume those
         // operations after a crash rather than silently dropping the receipt.
         restore_source_profile(pm, &session).await?;
@@ -101,18 +127,37 @@ pub(crate) async fn complete_launch(
         return Ok(());
     }
     // A delayed completion must not grade a newer candidate or advance twice.
-    if session.current_step_id != Some(step_id) || session.status != BisectStatus::Waiting { return Ok(()); }
-    anyhow::ensure!(session.current_candidate_profile.as_deref() == Some(step.candidate_profile.as_str()), "bisect candidate changed during play");
-    if let Some(result) = step.result {
-        return complete_and_advance(pm, session_id, step_id, result, step.observed_signal, step.notes).await;
+    if session.current_step_id != Some(step_id) || session.status != BisectStatus::Waiting {
+        return Ok(());
     }
-    let candidate = pm.load(&step.candidate_profile, Some(&session.game_id)).await?;
+    anyhow::ensure!(
+        session.current_candidate_profile.as_deref() == Some(step.candidate_profile.as_str()),
+        "bisect candidate changed during play"
+    );
+    if let Some(result) = step.result {
+        return complete_and_advance(
+            pm,
+            session_id,
+            step_id,
+            result,
+            step.observed_signal,
+            step.notes,
+        )
+        .await;
+    }
+    let candidate = pm
+        .load(&step.candidate_profile, Some(&session.game_id))
+        .await?;
     match session.oracle.clone() {
         BisectOracle::Manual => {
             println!("Mark result with: modde bisect mark {session_id} good|bad");
         }
         BisectOracle::Crash { crash_dir } => {
-            let started = UNIX_EPOCH + Duration::from_millis(completion.started_unix_ms.context("bisect launch time is unavailable; mark this candidate manually")?);
+            let started =
+                UNIX_EPOCH
+                    + Duration::from_millis(completion.started_unix_ms.context(
+                        "bisect launch time is unavailable; mark this candidate manually",
+                    )?);
             let new_log = newest_file_after(&crash_dir, started)?;
             let (result, signal) = if let Some(log) = new_log {
                 analyze_crash_log(pm, &candidate, &log).await?;
@@ -121,7 +166,10 @@ pub(crate) async fn complete_launch(
                     Some(format!("new crash log: {}", log.display())),
                 )
             } else if !status.success() {
-                (BisectResult::Bad, Some(format!("game process failed: {status}")))
+                (
+                    BisectResult::Bad,
+                    Some(format!("game process failed: {status}")),
+                )
             } else {
                 (
                     BisectResult::Good,
@@ -137,13 +185,23 @@ pub(crate) async fn complete_launch(
             alpha_micros,
             min_samples,
         } => {
-            anyhow::ensure!(status.success(), "failed game run cannot be graded as a performance improvement; retry or mark manually");
-            let run_id = performance_run.context("performance capture is unavailable; retry or mark this candidate manually")?;
+            anyhow::ensure!(
+                status.success(),
+                "failed game run cannot be graded as a performance improvement; retry or mark manually"
+            );
+            let run_id = performance_run.context(
+                "performance capture is unavailable; retry or mark this candidate manually",
+            )?;
             let baseline = pm.db().load_performance_run(&baseline_run).await?;
             let candidate_run = pm.db().load_performance_run(run_id).await?;
-            anyhow::ensure!(baseline.status == "complete" && baseline.exit_status == Some(0) && candidate_run.status == "complete"
-                && baseline.summary.sample_count >= min_samples && candidate_run.summary.sample_count >= min_samples,
-                "insufficient completed performance samples; retry or mark this candidate manually");
+            anyhow::ensure!(
+                baseline.status == "complete"
+                    && baseline.exit_status == Some(0)
+                    && candidate_run.status == "complete"
+                    && baseline.summary.sample_count >= min_samples
+                    && candidate_run.summary.sample_count >= min_samples,
+                "insufficient completed performance samples; retry or mark this candidate manually"
+            );
             let baseline_samples = pm.db().list_performance_samples(&baseline_run).await?;
             let candidate_samples = pm.db().list_performance_samples(run_id).await?;
             let verdict = perf_regression_verdict(
@@ -280,7 +338,13 @@ pub async fn handle_retry(session_id: String) -> Result<()> {
     let session = pm.db().load_bisect_session(&session_id).await?;
     let candidate_name = validate_retry(&session)?;
     let candidate = pm.load(candidate_name, Some(&session.game_id)).await?;
-    launch_step(&pm, &session, &candidate, session.current_step_id.context("bisect step missing")?).await
+    launch_step(
+        &pm,
+        &session,
+        &candidate,
+        session.current_step_id.context("bisect step missing")?,
+    )
+    .await
 }
 
 /// Validate that `session` has a pending candidate that can be retried and

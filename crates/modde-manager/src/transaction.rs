@@ -511,18 +511,25 @@ fn validate_catalog(addons: Vec<CatalogEntry>) -> Result<BTreeMap<String, Catalo
             bail!("addon catalog has an empty id");
         }
         if !entry.repository.starts_with("https://github.com/") {
-            bail!("addon catalog entry '{}' is not an https GitHub URL", entry.id);
+            bail!(
+                "addon catalog entry '{}' is not an https GitHub URL",
+                entry.id
+            );
         }
         if entry.branch.is_empty() {
             bail!("addon catalog entry '{}' has no branch", entry.id);
         }
-        if entry.revision.len() != 40
-            || !entry.revision.bytes().all(|c| c.is_ascii_hexdigit())
-        {
-            bail!("addon catalog entry '{}' has no full commit SHA-1", entry.id);
+        if entry.revision.len() != 40 || !entry.revision.bytes().all(|c| c.is_ascii_hexdigit()) {
+            bail!(
+                "addon catalog entry '{}' has no full commit SHA-1",
+                entry.id
+            );
         }
         if entry.directories.is_empty() {
-            bail!("addon catalog entry '{}' has no directory mapping", entry.id);
+            bail!(
+                "addon catalog entry '{}' has no directory mapping",
+                entry.id
+            );
         }
         if map.insert(entry.id.clone(), entry).is_some() {
             bail!("duplicate addon catalog id");
@@ -860,10 +867,7 @@ pub(crate) fn materialize_checkout(
         Ok(_) => {
             let current = source(checkout, true)?;
             if digest_image(&current)? != expected_digest {
-                bail!(
-                    "state checkout changed underneath: {}",
-                    checkout.display()
-                );
+                bail!("state checkout changed underneath: {}", checkout.display());
             }
             return Ok(false);
         }
@@ -875,7 +879,10 @@ pub(crate) fn materialize_checkout(
     files::write_image(checkout, image)?;
     let written = source(checkout, true)?;
     if digest_image(&written)? != expected_digest {
-        bail!("staged checkout verification failed: {}", checkout.display());
+        bail!(
+            "staged checkout verification failed: {}",
+            checkout.display()
+        );
     }
     Ok(true)
 }
@@ -1137,10 +1144,7 @@ mod tests {
         let pfui = &catalog["pfUI"];
         assert_eq!(pfui.repository, "https://github.com/shagu/pfUI.git");
         assert_eq!(pfui.branch, "master");
-        assert_eq!(
-            pfui.revision,
-            "b2f6df84a93a4ce6adbe1fd8f0372454795151f1"
-        );
+        assert_eq!(pfui.revision, "b2f6df84a93a4ce6adbe1fd8f0372454795151f1");
         assert!(pfui.follow);
         // Pin-only entries (dead origins) never fetch.
         assert!(!catalog["aux-addon"].follow);
@@ -1159,10 +1163,7 @@ mod tests {
             "https://github.com/paokkerkir/pfQuest-octo.git"
         );
         assert_eq!(octo.branch, "main");
-        assert_eq!(
-            octo.revision,
-            "dd3dc1fb80afe7a71e5c8ca8c31ca2a3ef57af67"
-        );
+        assert_eq!(octo.revision, "dd3dc1fb80afe7a71e5c8ca8c31ca2a3ef57af67");
         assert!(octo.follow);
         // TurtleWoW click-casting fork (1.12, SuperWoW-optional).
         let clique = &catalog["Clique"];
@@ -1171,10 +1172,7 @@ mod tests {
             "https://github.com/MarcelineVQ/Clique.git"
         );
         assert_eq!(clique.branch, "master");
-        assert_eq!(
-            clique.revision,
-            "872d441ca796e08eba79747909632cf3097100a9"
-        );
+        assert_eq!(clique.revision, "872d441ca796e08eba79747909632cf3097100a9");
         assert!(clique.follow);
     }
 

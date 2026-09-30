@@ -134,21 +134,30 @@ impl ModdeDb {
 
     /// Ordered bottom-to-top snapshot used by save-transition recovery.
     pub async fn experiment_profiles(&self, game_id: &GameId) -> Result<Vec<i64>> {
-        self.db.fetch_all(
-            "SELECT profile_id FROM experiment_stack WHERE game_id = ? ORDER BY depth",
-            &vals![game_id], |r| r.i64(0),
-        ).await
+        self.db
+            .fetch_all(
+                "SELECT profile_id FROM experiment_stack WHERE game_id = ? ORDER BY depth",
+                &vals![game_id],
+                |r| r.i64(0),
+            )
+            .await
     }
 
     /// Idempotent replacement while the mutation lease and recovery journal
     /// protect the operation. A failed write leaves the journal for replay.
-    pub async fn replace_experiment_profiles(&self, game_id: &GameId, profiles: &[i64]) -> Result<()> {
+    pub async fn replace_experiment_profiles(
+        &self,
+        game_id: &GameId,
+        profiles: &[i64],
+    ) -> Result<()> {
         self.clear_experiment_stack(game_id).await?;
         for (depth, profile_id) in profiles.iter().enumerate() {
-            self.db.execute(
-                "INSERT INTO experiment_stack (game_id, profile_id, depth) VALUES (?, ?, ?)",
-                &vals![game_id, *profile_id, depth as i64],
-            ).await?;
+            self.db
+                .execute(
+                    "INSERT INTO experiment_stack (game_id, profile_id, depth) VALUES (?, ?, ?)",
+                    &vals![game_id, *profile_id, depth as i64],
+                )
+                .await?;
         }
         Ok(())
     }

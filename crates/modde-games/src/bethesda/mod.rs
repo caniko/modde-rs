@@ -239,8 +239,14 @@ impl GamePlugin for BethesdaGame {
     }
 
     fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
-        crate::library::context::steam_user_path(install, prefix, self.steam_app_id,
-            &Path::new("Documents/My Games").join(self.my_games_dir).join("Saves"))
+        crate::library::context::steam_user_path(
+            install,
+            prefix,
+            self.steam_app_id,
+            &Path::new("Documents/My Games")
+                .join(self.my_games_dir)
+                .join("Saves"),
+        )
     }
 
     fn classify_mod(&self, mod_dir: &Path) -> ModSafety {

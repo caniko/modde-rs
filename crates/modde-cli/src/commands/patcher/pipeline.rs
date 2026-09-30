@@ -139,7 +139,16 @@ pub(super) async fn restore_patcher_pipeline(
         )
         .await?;
     }
-    reset_managed_outputs(db, profile, stages, game_plugin, install_dir, prefix, game_mod_dir).await?;
+    reset_managed_outputs(
+        db,
+        profile,
+        stages,
+        game_plugin,
+        install_dir,
+        prefix,
+        game_mod_dir,
+    )
+    .await?;
     remove_dir_if_exists(&backup.root)
 }
 

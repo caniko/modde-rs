@@ -152,12 +152,19 @@ impl GamePlugin for LarianBg3Game {
 
     fn mod_root_at(&self, install: &Path, prefix: Option<&Path>) -> Result<PathBuf> {
         if let Some(prefix) = prefix {
-            return Ok(prefix.join("drive_c/users/steamuser/AppData/Local/Larian Studios/Baldur's Gate 3/Mods"));
+            return Ok(prefix.join(
+                "drive_c/users/steamuser/AppData/Local/Larian Studios/Baldur's Gate 3/Mods",
+            ));
         }
         self.mod_root(install)
     }
 
-    fn deploy_to_install_at(&self, staging: &Path, install: &Path, prefix: Option<&Path>) -> Result<()> {
+    fn deploy_to_install_at(
+        &self,
+        staging: &Path,
+        install: &Path,
+        prefix: Option<&Path>,
+    ) -> Result<()> {
         self.deploy(staging, &self.mod_root_at(install, prefix)?)
     }
 
@@ -170,8 +177,14 @@ impl GamePlugin for LarianBg3Game {
     }
 
     fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
-        crate::library::context::steam_user_path(install, prefix, STEAM_APP_ID,
-            Path::new("AppData/Local/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/Savegames"))
+        crate::library::context::steam_user_path(
+            install,
+            prefix,
+            STEAM_APP_ID,
+            Path::new(
+                "AppData/Local/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/Savegames",
+            ),
+        )
     }
 
     fn classify_mod(&self, mod_dir: &Path) -> ModSafety {
@@ -223,8 +236,13 @@ impl GamePlugin for LarianBg3Game {
         }
         mods.sort();
         if !mods.is_empty() {
-            let data_root = mods_dir.parent().context("BG3 mod directory has no data root")?;
-            write_modsettings(&data_root.join("PlayerProfiles/Public/modsettings.lsx"), &mods)?;
+            let data_root = mods_dir
+                .parent()
+                .context("BG3 mod directory has no data root")?;
+            write_modsettings(
+                &data_root.join("PlayerProfiles/Public/modsettings.lsx"),
+                &mods,
+            )?;
         }
         Ok(())
     }

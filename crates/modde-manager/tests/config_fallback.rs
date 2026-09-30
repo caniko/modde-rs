@@ -525,10 +525,7 @@ fn gate_preserves_environment() {
         "gate refused: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        fs::read_to_string(&sentinel).unwrap(),
-        "marker-value-123\n"
-    );
+    assert_eq!(fs::read_to_string(&sentinel).unwrap(), "marker-value-123\n");
 }
 
 /// The complete installed bare-token chain through `gate` (not just
