@@ -80,15 +80,24 @@ fn perf_verdict_cannot_grade_missing_or_sparse_measurements_as_good() {
     for missing_elapsed in [true, false] {
         let mut candidate = baseline.clone();
         for sample in &mut candidate {
-            if missing_elapsed { sample.elapsed_seconds = None; }
-            else { sample.frame_time_ms = None; }
+            if missing_elapsed {
+                sample.elapsed_seconds = None;
+            } else {
+                sample.frame_time_ms = None;
+            }
         }
-        assert!(perf_regression_verdict(&summary, &summary, &baseline, &candidate, config()).is_err());
+        assert!(
+            perf_regression_verdict(&summary, &summary, &baseline, &candidate, config()).is_err()
+        );
     }
-    assert!(perf_regression_verdict(&summary, &summary, &baseline, &baseline[..40], config()).is_err());
+    assert!(
+        perf_regression_verdict(&summary, &summary, &baseline, &baseline[..40], config()).is_err()
+    );
     let mut missing_metric = summary.clone();
     missing_metric.p99_frame_time_ms = None;
-    assert!(perf_regression_verdict(&summary, &missing_metric, &baseline, &baseline, config()).is_err());
+    assert!(
+        perf_regression_verdict(&summary, &missing_metric, &baseline, &baseline, config()).is_err()
+    );
 }
 
 // ── History + retry (DB-seeded) ──────────────────────────────
@@ -102,10 +111,16 @@ async fn performance_baseline_must_match_the_source_profile_and_enabled_mod_orde
     let mut profile = test_profile();
     profile.id = Some(db.create_profile(&profile).await.unwrap());
     db.create_performance_run(&modde_core::db::NewPerformanceRun {
-        run_id: "baseline".into(), game_id: profile.game_id.clone(), profile_id: profile.id,
-        profile_name: profile.name.clone(), mod_snapshot: modde_core::performance::mod_snapshot(&profile.mods),
-        experiment_depth: 0, label: None,
-    }).await.unwrap();
+        run_id: "baseline".into(),
+        game_id: profile.game_id.clone(),
+        profile_id: profile.id,
+        profile_name: profile.name.clone(),
+        mod_snapshot: modde_core::performance::mod_snapshot(&profile.mods),
+        experiment_depth: 0,
+        label: None,
+    })
+    .await
+    .unwrap();
     let baseline = db.load_performance_run("baseline").await.unwrap();
     super::perf::require_baseline_profile(&baseline, &profile).unwrap();
     let mut other = profile.clone();
@@ -126,22 +141,47 @@ async fn performance_baseline_must_match_the_source_profile_and_enabled_mod_orde
 async fn candidate_cleanup_can_resume_after_partial_deletion() {
     let pm = ProfileManager::with_db(ModdeDb::open_memory().await.unwrap());
     let session = seed_session_for_cleanup(&pm).await;
-    let first = pm.db().list_bisect_steps(&session.session_id).await.unwrap().remove(0);
-    pm.delete(&first.candidate_profile, Some(&session.game_id)).await.unwrap();
-    super::candidate::cleanup_candidates(&pm, &session).await.unwrap();
-    super::candidate::cleanup_candidates(&pm, &session).await.unwrap();
-    assert!(pm.list_for_game(&session.game_id).await.unwrap().iter().all(|profile| !profile.name.starts_with("__bisect_")));
+    let first = pm
+        .db()
+        .list_bisect_steps(&session.session_id)
+        .await
+        .unwrap()
+        .remove(0);
+    pm.delete(&first.candidate_profile, Some(&session.game_id))
+        .await
+        .unwrap();
+    super::candidate::cleanup_candidates(&pm, &session)
+        .await
+        .unwrap();
+    super::candidate::cleanup_candidates(&pm, &session)
+        .await
+        .unwrap();
+    assert!(
+        pm.list_for_game(&session.game_id)
+            .await
+            .unwrap()
+            .iter()
+            .all(|profile| !profile.name.starts_with("__bisect_"))
+    );
 }
 
 async fn seed_session_for_cleanup(pm: &ProfileManager) -> modde_core::BisectSession {
     let source = test_profile();
     let source_id = pm.create(&source).await.unwrap();
     let session_id = "cleanup-retry";
-    pm.db().create_bisect_session(&NewBisectSession {
-        session_id: session_id.into(), game_id: source.game_id.clone(), source_profile_id: source_id,
-        source_profile_name: source.name.clone(), oracle: BisectOracle::Manual, save_safety: BisectSaveSafety::Force,
-        keep_profiles: false, suspect_mod_ids: vec!["mod-a".into(), "mod-b".into()],
-    }).await.unwrap();
+    pm.db()
+        .create_bisect_session(&NewBisectSession {
+            session_id: session_id.into(),
+            game_id: source.game_id.clone(),
+            source_profile_id: source_id,
+            source_profile_name: source.name.clone(),
+            oracle: BisectOracle::Manual,
+            save_safety: BisectSaveSafety::Force,
+            keep_profiles: false,
+            suspect_mod_ids: vec!["mod-a".into(), "mod-b".into()],
+        })
+        .await
+        .unwrap();
     for index in 1..=2 {
         let step = new_step(session_id, index, (&["mod-a"], &["mod-b"]));
         let mut candidate = source.clone();
@@ -219,13 +259,54 @@ async fn delayed_launch_completion_cannot_grade_a_new_candidate() {
     let db = ModdeDb::open_memory().await.unwrap();
     let sid = "b-late";
     seed_session(&db, sid).await;
-    let old = db.create_bisect_step(&new_step(sid, 1, (&["mod-a"], &["mod-b"]))).await.unwrap();
-    let next = db.create_bisect_step(&new_step(sid, 2, (&["mod-b"], &["mod-a"]))).await.unwrap();
-    db.update_bisect_session_state(sid, BisectStatus::Waiting, &["mod-a".into(), "mod-b".into()], &[], &[], Some(next), Some("__bisect_b-late_2")).await.unwrap();
+    let old = db
+        .create_bisect_step(&new_step(sid, 1, (&["mod-a"], &["mod-b"])))
+        .await
+        .unwrap();
+    let next = db
+        .create_bisect_step(&new_step(sid, 2, (&["mod-b"], &["mod-a"])))
+        .await
+        .unwrap();
+    db.update_bisect_session_state(
+        sid,
+        BisectStatus::Waiting,
+        &["mod-a".into(), "mod-b".into()],
+        &[],
+        &[],
+        Some(next),
+        Some("__bisect_b-late_2"),
+    )
+    .await
+    .unwrap();
     let pm = modde_core::profile::ProfileManager::with_db(db);
-    complete_launch(&pm, &Completion { session: sid.into(), step: old, started_unix_ms: Some(0) }, std::process::ExitStatus::from_raw(0), None).await.unwrap();
-    assert_eq!(pm.db().load_bisect_session(sid).await.unwrap().current_step_id, Some(next));
-    assert!(pm.db().load_bisect_step(next).await.unwrap().result.is_none());
+    complete_launch(
+        &pm,
+        &Completion {
+            session: sid.into(),
+            step: old,
+            started_unix_ms: Some(0),
+        },
+        std::process::ExitStatus::from_raw(0),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        pm.db()
+            .load_bisect_session(sid)
+            .await
+            .unwrap()
+            .current_step_id,
+        Some(next)
+    );
+    assert!(
+        pm.db()
+            .load_bisect_step(next)
+            .await
+            .unwrap()
+            .result
+            .is_none()
+    );
 }
 
 #[tokio::test]

@@ -154,8 +154,16 @@ fn parse_csv(content: &str, estimate_missing_column: bool) -> Result<MangoHudPar
             None => None,
         };
         samples.push(PerformanceSample {
-            elapsed_seconds: map.get(&fields, map.elapsed_seconds).and_then(parse_number)
-                .map(|value| if map.elapsed_nanoseconds { value / 1_000_000_000.0 } else { value }),
+            elapsed_seconds: map
+                .get(&fields, map.elapsed_seconds)
+                .and_then(parse_number)
+                .map(|value| {
+                    if map.elapsed_nanoseconds {
+                        value / 1_000_000_000.0
+                    } else {
+                        value
+                    }
+                }),
             fps,
             frame_time_ms,
             cpu_load: map.get(&fields, map.cpu_load).and_then(parse_number),
@@ -442,13 +450,21 @@ fps,frametime,cpu_load,elapsed
 25,40,40,31000000000
 ";
         let parsed = parse_mangohud_csv_measured(csv).unwrap();
-        assert_eq!(parsed.samples.iter().map(|sample| sample.elapsed_seconds).collect::<Vec<_>>(),
-            [Some(0.0), Some(1.0), Some(31.0)]);
+        assert_eq!(
+            parsed
+                .samples
+                .iter()
+                .map(|sample| sample.elapsed_seconds)
+                .collect::<Vec<_>>(),
+            [Some(0.0), Some(1.0), Some(31.0)]
+        );
         assert_eq!(parsed.summary.sample_count, 1);
         assert_eq!(parsed.summary.median_fps, Some(25.0));
         assert_eq!(parsed.summary.p99_frame_time_ms, Some(40.0));
         for column in ["time", "time_s", "elapsed_seconds"] {
-            let parsed = parse_mangohud_csv_measured(&format!("{column},fps\n0,100\n1,50\n31,25\n")).unwrap();
+            let parsed =
+                parse_mangohud_csv_measured(&format!("{column},fps\n0,100\n1,50\n31,25\n"))
+                    .unwrap();
             assert_eq!(parsed.summary.sample_count, 1);
             assert_eq!(parsed.samples[2].elapsed_seconds, Some(31.0));
         }
@@ -466,10 +482,19 @@ fps,frametime,cpu_load,elapsed
     fn invalid_measured_frame_times_are_not_replaced_with_fps_estimates() {
         let csv = "time,fps,frametime\n0,60,\n1,60,NaN\n2,60,inf\n3,60,invalid\n4,60,0\n";
         let parsed = parse_mangohud_csv(csv).unwrap();
-        assert!(parsed.samples[..4].iter().all(|sample| sample.frame_time_ms.is_none()));
+        assert!(
+            parsed.samples[..4]
+                .iter()
+                .all(|sample| sample.frame_time_ms.is_none())
+        );
         assert_eq!(parsed.summary.p99_frame_time_ms, None);
         let measured = parse_mangohud_csv_measured("time,fps\n0,60\n1,60\n").unwrap();
-        assert!(measured.samples.iter().all(|sample| sample.frame_time_ms.is_none()));
+        assert!(
+            measured
+                .samples
+                .iter()
+                .all(|sample| sample.frame_time_ms.is_none())
+        );
         assert_eq!(measured.summary.median_fps, Some(60.0));
         assert_eq!(measured.summary.p99_frame_time_ms, None);
     }

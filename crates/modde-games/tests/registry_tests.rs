@@ -63,7 +63,9 @@ fn registry_preserves_known_nexus_metadata() {
     ];
 
     for (game_id, domain, numeric_id) in expected {
-        let Some(game) = modde_games::resolve_game(game_id) else { continue };
+        let Some(game) = modde_games::resolve_game(game_id) else {
+            continue;
+        };
         assert_eq!(game.nexus_domain, domain, "{game_id} Nexus domain");
         assert_eq!(game.nexus_game_id, numeric_id, "{game_id} Nexus numeric ID");
     }
@@ -72,8 +74,16 @@ fn registry_preserves_known_nexus_metadata() {
 #[test]
 fn registry_preserves_wabbajack_normalization() {
     for (name, id, enabled) in [
-        ("Cyberpunk2077", "cyberpunk2077", cfg!(feature = "cyberpunk")),
-        ("SkyrimSpecialEdition", "skyrim-se", cfg!(feature = "bethesda")),
+        (
+            "Cyberpunk2077",
+            "cyberpunk2077",
+            cfg!(feature = "cyberpunk"),
+        ),
+        (
+            "SkyrimSpecialEdition",
+            "skyrim-se",
+            cfg!(feature = "bethesda"),
+        ),
         ("SkyrimAE", "skyrim-ae", cfg!(feature = "bethesda")),
         ("Fallout4", "fallout4", cfg!(feature = "bethesda")),
         ("Fallout76", "fallout76", cfg!(feature = "bethesda")),
@@ -87,25 +97,54 @@ fn registry_preserves_wabbajack_normalization() {
 #[test]
 fn registry_contains_exactly_the_enabled_games() {
     for (enabled, ids) in [
-        (cfg!(feature = "bethesda"), &["skyrim-se", "skyrim-ae", "fallout4", "fallout76", "starfield"][..]),
-        (cfg!(feature = "gamebryo"), &["fallout-new-vegas", "oblivion"][..]),
+        (
+            cfg!(feature = "bethesda"),
+            &[
+                "skyrim-se",
+                "skyrim-ae",
+                "fallout4",
+                "fallout76",
+                "starfield",
+            ][..],
+        ),
+        (
+            cfg!(feature = "gamebryo"),
+            &["fallout-new-vegas", "oblivion"][..],
+        ),
         (cfg!(feature = "cyberpunk"), &["cyberpunk2077"][..]),
         (cfg!(feature = "ue4"), &["stellar-blade", "subnautica2"][..]),
         (cfg!(feature = "bg3"), &["baldurs-gate3"][..]),
         (cfg!(feature = "stardew"), &["stardew-valley"][..]),
         (cfg!(feature = "bannerlord"), &["bannerlord"][..]),
         (cfg!(feature = "witcher3"), &["witcher3"][..]),
-        (cfg!(feature = "oblivion-remastered"), &["oblivion-remastered"][..]),
+        (
+            cfg!(feature = "oblivion-remastered"),
+            &["oblivion-remastered"][..],
+        ),
     ] {
         for id in ids {
             assert_eq!(SUPPORTED_GAME_IDS.contains(id), enabled, "{id}");
             assert_eq!(modde_games::resolve_game(id).is_some(), enabled, "{id}");
-            assert_eq!(modde_games::resolve_game_plugin(id).is_some(), enabled, "{id}");
-            assert_eq!(modde_games::registry::launcher_games().any(|game| game.game_id == *id), enabled && *id != "skyrim-ae", "{id}");
+            assert_eq!(
+                modde_games::resolve_game_plugin(id).is_some(),
+                enabled,
+                "{id}"
+            );
+            assert_eq!(
+                modde_games::registry::launcher_games().any(|game| game.game_id == *id),
+                enabled && *id != "skyrim-ae",
+                "{id}"
+            );
             let spec = modde_games::generic::spec::GameSpec {
-                id: (*id).into(), display_name: "Override".into(), steam_app_id: None,
-                install_dir_name: None, install_path_override: None,
-                executable_dir: ".".into(), mod_dir: None, nexus_domain: None, proxy_dlls: vec![],
+                id: (*id).into(),
+                display_name: "Override".into(),
+                steam_app_id: None,
+                install_dir_name: None,
+                install_path_override: None,
+                executable_dir: ".".into(),
+                mod_dir: None,
+                nexus_domain: None,
+                proxy_dlls: vec![],
             };
             assert!(spec.validate().is_err(), "reserved ID {id} accepted");
         }

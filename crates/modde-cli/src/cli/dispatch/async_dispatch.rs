@@ -19,8 +19,15 @@ pub(super) fn dispatch_async(cli: Cli) -> Result<()> {
                 no_capture,
             } => commands::play::handle(profile, game, no_deploy, no_switch, no_capture).await?,
             Commands::Perf { action } => match action {
-                PerfAction::Sandbox { id, profile, pairs, duration, warmup_seconds } => {
-                    commands::perf::sandbox_pairs(&id, &profile, pairs, duration, warmup_seconds).await?;
+                PerfAction::Sandbox {
+                    id,
+                    profile,
+                    pairs,
+                    duration,
+                    warmup_seconds,
+                } => {
+                    commands::perf::sandbox_pairs(&id, &profile, pairs, duration, warmup_seconds)
+                        .await?;
                 }
                 PerfAction::Run {
                     profile,
@@ -440,7 +447,9 @@ pub(super) fn dispatch_async(cli: Cli) -> Result<()> {
             #[cfg(feature = "gui")]
             Commands::Gui => unreachable!("GUI is dispatched before the async runtime block"),
             #[cfg(feature = "bethesda")]
-            Commands::Loot { .. } => unreachable!("LOOT is dispatched before the async runtime block"),
+            Commands::Loot { .. } => {
+                unreachable!("LOOT is dispatched before the async runtime block")
+            }
         }
         Ok(())
     })

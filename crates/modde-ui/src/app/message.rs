@@ -81,16 +81,35 @@ pub enum Message {
     LibrarySaveLaunch,
     LibraryEditLaunch,
     LibraryBrowseLaunch(crate::views::library::LaunchField),
-    LibraryPathPicked { id: String, revision: u64, field: crate::views::library::LaunchField, path: Option<PathBuf> },
+    LibraryPathPicked {
+        id: String,
+        revision: u64,
+        field: crate::views::library::LaunchField,
+        path: Option<PathBuf>,
+    },
     LibraryImportLaunch,
     LibraryExportLaunch,
-    LibraryLaunchImported { id: String, revision: u64, result: Result<Option<modde_core::library::LaunchSettings>, String> },
+    LibraryLaunchImported {
+        id: String,
+        revision: u64,
+        result: Result<Option<modde_core::library::LaunchSettings>, String>,
+    },
     LibraryInstallHook,
-    LibraryHookInstalled { id: String, revision: u64, result: Result<String, String> },
+    LibraryHookInstalled {
+        id: String,
+        revision: u64,
+        result: Result<String, String>,
+    },
     LibrarySessionTick,
-    LibrarySessionLoaded { revision: u64, result: Result<Option<modde_core::library::PendingSession>, String> },
+    LibrarySessionLoaded {
+        revision: u64,
+        result: Result<Option<modde_core::library::PendingSession>, String>,
+    },
     LibraryHookChanged(bool),
-    LibraryProfilesLoaded { id: String, result: Result<Vec<String>, String> },
+    LibraryProfilesLoaded {
+        id: String,
+        result: Result<Vec<String>, String>,
+    },
     LibraryAdoptSaves,
     LibraryPreferenceSaved(Result<(), String>),
     LibraryFinishSession,
@@ -485,21 +504,51 @@ impl Message {
     /// Requests that can change a live deployment, profile, runner or save set.
     /// Async completion messages remain deliverable while a session is open.
     pub(super) fn mutates_game(&self) -> bool {
-        matches!(self,
-            Self::CreateProfile { .. } | Self::DeleteProfile(_) | Self::ForkProfile { .. }
-            | Self::SubmitNewProfileDialog | Self::AddCustomGameSubmit | Self::RemoveCustomGame(_)
-            | Self::ToggleMod { .. } | Self::AddModFromPath(_) | Self::RemoveMod(_) | Self::Deploy
-            | Self::ReorderMod { .. } | Self::LockMod { .. } | Self::UnlockMod { .. }
-            | Self::InstallCollection { .. } | Self::BrowseInstallMod { .. }
-            | Self::WabbajackStartInstall | Self::StartFOMOD { .. } | Self::FOMODNext | Self::FOMODUndo
-            | Self::SetGamePath { .. } | Self::LibraryManageGame(_) | Self::CreateStockSnapshot | Self::TryProfile
-            | Self::RollbackExperiment | Self::CommitExperiment | Self::RestoreSaveSnapshot(_)
-            | Self::UpdateToolSetting { .. } | Self::ToggleTool { .. } | Self::ApplyTool(_)
-            | Self::RevertTool(_) | Self::ActivateOptiScaler | Self::DeactivateOptiScaler
-            | Self::AdoptOptiScaler | Self::RestoreOptiScalerBackup | Self::ResetOptiScalerConfig
-            | Self::RestoreToolSettings { .. } | Self::InstallOptiScalerRelease | Self::InstallProtonVersion
-            | Self::SaveExecutable | Self::RemoveExecutable(_) | Self::RunExecutable(_)
-            | Self::ClearOverwrite | Self::MoveOverwriteToMod(_)
+        matches!(
+            self,
+            Self::CreateProfile { .. }
+                | Self::DeleteProfile(_)
+                | Self::ForkProfile { .. }
+                | Self::SubmitNewProfileDialog
+                | Self::AddCustomGameSubmit
+                | Self::RemoveCustomGame(_)
+                | Self::ToggleMod { .. }
+                | Self::AddModFromPath(_)
+                | Self::RemoveMod(_)
+                | Self::Deploy
+                | Self::ReorderMod { .. }
+                | Self::LockMod { .. }
+                | Self::UnlockMod { .. }
+                | Self::InstallCollection { .. }
+                | Self::BrowseInstallMod { .. }
+                | Self::WabbajackStartInstall
+                | Self::StartFOMOD { .. }
+                | Self::FOMODNext
+                | Self::FOMODUndo
+                | Self::SetGamePath { .. }
+                | Self::LibraryManageGame(_)
+                | Self::CreateStockSnapshot
+                | Self::TryProfile
+                | Self::RollbackExperiment
+                | Self::CommitExperiment
+                | Self::RestoreSaveSnapshot(_)
+                | Self::UpdateToolSetting { .. }
+                | Self::ToggleTool { .. }
+                | Self::ApplyTool(_)
+                | Self::RevertTool(_)
+                | Self::ActivateOptiScaler
+                | Self::DeactivateOptiScaler
+                | Self::AdoptOptiScaler
+                | Self::RestoreOptiScalerBackup
+                | Self::ResetOptiScalerConfig
+                | Self::RestoreToolSettings { .. }
+                | Self::InstallOptiScalerRelease
+                | Self::InstallProtonVersion
+                | Self::SaveExecutable
+                | Self::RemoveExecutable(_)
+                | Self::RunExecutable(_)
+                | Self::ClearOverwrite
+                | Self::MoveOverwriteToMod(_)
         )
     }
 }

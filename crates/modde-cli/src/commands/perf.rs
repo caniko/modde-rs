@@ -21,12 +21,34 @@ pub async fn handle_run(
     let pm = ProfileManager::open()
         .await
         .context("failed to open profile database")?;
-    let context = modde_games::library::context::for_game(&modde_core::settings::AppSettings::load(), &game_id, pm.db()).await?;
+    let context = modde_games::library::context::for_game(
+        &modde_core::settings::AppSettings::load(),
+        &game_id,
+        pm.db(),
+    )
+    .await?;
     let target = match profile_name.or(context.launch.profile.clone()) {
         Some(name) => name,
-        None => pm.active(&context.saves.scope).await?.context("no active profile for this installation")?.profile.name,
+        None => {
+            pm.active(&context.saves.scope)
+                .await?
+                .context("no active profile for this installation")?
+                .profile
+                .name
+        }
     };
-    run_installation(&pm, &context, &target, duration, label, warmup_seconds, no_deploy, None, None).await?;
+    run_installation(
+        &pm,
+        &context,
+        &target,
+        duration,
+        label,
+        warmup_seconds,
+        no_deploy,
+        None,
+        None,
+    )
+    .await?;
     Ok(())
 }
 
@@ -37,31 +59,57 @@ pub(super) struct Capture {
     pub warmup_seconds: f64,
 }
 
-pub(super) fn require_baseline_configuration(run: &str, context: &InstallationContext) -> Result<()> {
-    let path = modde_core::paths::modde_data_dir().join("performance").join(context.saves.game_id.as_str())
-        .join(run).join("configuration.json");
-    let recorded: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)
-        .context("baseline has no installation configuration; record a new baseline with modde perf run")?)?;
-    anyhow::ensure!(recorded["installation"]["id"].as_str() == Some(context.game.id.as_str())
-        && recorded["save_scope"].as_str() == Some(context.saves.scope.as_str()),
-        "baseline belongs to a different installation or save destination");
-    anyhow::ensure!(recorded["warmup_seconds"].as_f64() == Some(modde_core::performance::DEFAULT_WARMUP_SECONDS),
-        "bisect baseline must use the default warmup so summaries and sample comparisons match");
-    let mut settings: modde_core::library::LaunchSettings = serde_json::from_value(recorded["settings"].clone())?;
-    if let Some(enabled) = recorded["sandbox_override"].as_bool() { settings.sandbox.enabled = enabled; }
+pub(super) fn require_baseline_configuration(
+    run: &str,
+    context: &InstallationContext,
+) -> Result<()> {
+    let path = modde_core::paths::modde_data_dir()
+        .join("performance")
+        .join(context.saves.game_id.as_str())
+        .join(run)
+        .join("configuration.json");
+    let recorded: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).context(
+        "baseline has no installation configuration; record a new baseline with modde perf run",
+    )?)?;
+    anyhow::ensure!(
+        recorded["installation"]["id"].as_str() == Some(context.game.id.as_str())
+            && recorded["save_scope"].as_str() == Some(context.saves.scope.as_str()),
+        "baseline belongs to a different installation or save destination"
+    );
+    anyhow::ensure!(
+        recorded["warmup_seconds"].as_f64()
+            == Some(modde_core::performance::DEFAULT_WARMUP_SECONDS),
+        "bisect baseline must use the default warmup so summaries and sample comparisons match"
+    );
+    let mut settings: modde_core::library::LaunchSettings =
+        serde_json::from_value(recorded["settings"].clone())?;
+    if let Some(enabled) = recorded["sandbox_override"].as_bool() {
+        settings.sandbox.enabled = enabled;
+    }
     settings.profile.clone_from(&context.launch.profile);
     settings.use_active_profile = context.launch.use_active_profile;
-    anyhow::ensure!(settings == context.launch, "launch settings differ from the baseline; restore them or record a new baseline");
+    anyhow::ensure!(
+        settings == context.launch,
+        "launch settings differ from the baseline; restore them or record a new baseline"
+    );
     Ok(())
 }
 
 pub(super) async fn run_installation(
-    pm: &ProfileManager, context: &InstallationContext, target: &str, duration: u64,
-    label: Option<String>, warmup_seconds: f64, no_deploy: bool, sandbox: Option<bool>,
+    pm: &ProfileManager,
+    context: &InstallationContext,
+    target: &str,
+    duration: u64,
+    label: Option<String>,
+    warmup_seconds: f64,
+    no_deploy: bool,
+    sandbox: Option<bool>,
     bisect: Option<super::bisect::Completion>,
 ) -> Result<(String, bool)> {
-    anyhow::ensure!(warmup_seconds.is_finite() && warmup_seconds >= 0.0 && duration as f64 > warmup_seconds,
-        "duration must be positive and longer than the finite, nonnegative warmup");
+    anyhow::ensure!(
+        warmup_seconds.is_finite() && warmup_seconds >= 0.0 && duration as f64 > warmup_seconds,
+        "duration must be positive and longer than the finite, nonnegative warmup"
+    );
     let game = &context.saves.game_id;
     let profile = pm.load(target, Some(game)).await?;
     let run_id = new_run_id(game.as_str());
@@ -85,47 +133,111 @@ pub(super) async fn run_installation(
         .with_context(|| format!("failed to create {}", perf_dir.display()))?;
     let config_path = perf_dir.join("MangoHud.conf");
     write_mangohud_config(&config_path, &perf_dir, &run_id, duration)?;
-    let capture = Capture { run_id: run_id.clone(), directory: perf_dir.clone(), warmup_seconds };
-    modde_core::library::atomic_json(&perf_dir.join("configuration.json"), &serde_json::json!({
-        "installation": context.game, "save_scope": context.saves.scope, "settings": context.launch,
-        "sandbox_override": sandbox, "duration": duration, "warmup_seconds": warmup_seconds,
-        "modde_version": env!("CARGO_PKG_VERSION"), "revision": option_env!("MODDE_GIT_SHA"),
-        "platform": std::env::consts::OS, "architecture": std::env::consts::ARCH,
-        "kernel": std::fs::read_to_string("/proc/sys/kernel/osrelease").ok(),
-        "nvidia_driver": std::fs::read_to_string("/proc/driver/nvidia/version").ok(),
-    }))?;
+    let capture = Capture {
+        run_id: run_id.clone(),
+        directory: perf_dir.clone(),
+        warmup_seconds,
+    };
+    modde_core::library::atomic_json(
+        &perf_dir.join("configuration.json"),
+        &serde_json::json!({
+            "installation": context.game, "save_scope": context.saves.scope, "settings": context.launch,
+            "sandbox_override": sandbox, "duration": duration, "warmup_seconds": warmup_seconds,
+            "modde_version": env!("CARGO_PKG_VERSION"), "revision": option_env!("MODDE_GIT_SHA"),
+            "platform": std::env::consts::OS, "architecture": std::env::consts::ARCH,
+            "kernel": std::fs::read_to_string("/proc/sys/kernel/osrelease").ok(),
+            "nvidia_driver": std::fs::read_to_string("/proc/driver/nvidia/version").ok(),
+        }),
+    )?;
     println!("Performance run: {run_id}");
-    pm.db().mark_performance_run_pending(&run_id, Some(&perf_dir.join(format!("{run_id}.csv")))).await?;
-    let outcome = super::library::play(&context.game.id, super::library::PlayOptions {
-        profile: Some(target.into()), no_deploy, sandbox, require_observed: true,
-        expected_scope: Some(context.saves.scope.clone()), bisect,
-        environment: BTreeMap::from([("MANGOHUD".into(), "1".into()), ("MANGOHUD_CONFIGFILE".into(), config_path.to_string_lossy().into_owned())]),
-        writable: vec![perf_dir], performance: Some(capture), ..Default::default()
-    }).await?;
-    Ok((run_id, matches!(outcome, modde_games::library::launch::LaunchOutcome::Exited(_))))
+    pm.db()
+        .mark_performance_run_pending(&run_id, Some(&perf_dir.join(format!("{run_id}.csv"))))
+        .await?;
+    let outcome = super::library::play(
+        &context.game.id,
+        super::library::PlayOptions {
+            profile: Some(target.into()),
+            no_deploy,
+            sandbox,
+            require_observed: true,
+            expected_scope: Some(context.saves.scope.clone()),
+            bisect,
+            environment: BTreeMap::from([
+                ("MANGOHUD".into(), "1".into()),
+                (
+                    "MANGOHUD_CONFIGFILE".into(),
+                    config_path.to_string_lossy().into_owned(),
+                ),
+            ]),
+            writable: vec![perf_dir],
+            performance: Some(capture),
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok((
+        run_id,
+        matches!(
+            outcome,
+            modde_games::library::launch::LaunchOutcome::Exited(_)
+        ),
+    ))
 }
 
-pub(super) async fn complete_capture(pm: &ProfileManager, capture: &Capture, status: std::process::ExitStatus) -> Result<()> {
+pub(super) async fn complete_capture(
+    pm: &ProfileManager,
+    capture: &Capture,
+    status: std::process::ExitStatus,
+) -> Result<()> {
     let saved = pm.db().load_performance_run(&capture.run_id).await?;
     if saved.status == "complete" {
-        anyhow::ensure!(saved.exit_status == status.code().map(i64::from), "ingested performance exit status does not match the observed game");
+        anyhow::ensure!(
+            saved.exit_status == status.code().map(i64::from),
+            "ingested performance exit status does not match the observed game"
+        );
         return Ok(());
     }
-    let csv = find_mangohud_csv(&capture.directory, &capture.run_id).context("MangoHud did not produce a CSV; run remains pending for ingest")?;
+    let csv = find_mangohud_csv(&capture.directory, &capture.run_id)
+        .context("MangoHud did not produce a CSV; run remains pending for ingest")?;
     let parsed = parse_capture(&csv, capture.warmup_seconds)?;
-    pm.db().complete_performance_run(&capture.run_id, &csv, status.code().map(i64::from), &parsed.summary, &parsed.samples).await?;
+    pm.db()
+        .complete_performance_run(
+            &capture.run_id,
+            &csv,
+            status.code().map(i64::from),
+            &parsed.summary,
+            &parsed.samples,
+        )
+        .await?;
     print_summary(&parsed.summary);
     Ok(())
 }
 
-pub async fn sandbox_pairs(id: &str, profile: &str, pairs: usize, duration: u64, warmup: f64) -> Result<()> {
-    anyhow::ensure!((2..=30).contains(&pairs), "use 2–30 pairs to measure between-run variation");
+pub async fn sandbox_pairs(
+    id: &str,
+    profile: &str,
+    pairs: usize,
+    duration: u64,
+    warmup: f64,
+) -> Result<()> {
+    anyhow::ensure!(
+        (2..=30).contains(&pairs),
+        "use 2–30 pairs to measure between-run variation"
+    );
     let pm = ProfileManager::open().await?;
     let games = modde_games::library::catalogue(&modde_core::settings::AppSettings::load())?.games;
-    let game = games.iter().find(|game| game.id == id).context("installation is unavailable")?;
+    let game = games
+        .iter()
+        .find(|game| game.id == id)
+        .context("installation is unavailable")?;
     let context = modde_games::library::context::for_installation(game, &games, pm.db()).await?;
-    anyhow::ensure!(context.launch.executable.is_some(), "paired automation requires a direct executable; store runs can be captured and compared individually");
-    let report_path = modde_core::paths::modde_data_dir().join("performance").join(format!("sandbox-{}.json", new_run_id(id)));
+    anyhow::ensure!(
+        context.launch.executable.is_some(),
+        "paired automation requires a direct executable; store runs can be captured and compared individually"
+    );
+    let report_path = modde_core::paths::modde_data_dir()
+        .join("performance")
+        .join(format!("sandbox-{}.json", new_run_id(id)));
     let mut results = Vec::new();
     let mut deltas = Vec::new();
     let mut startup_deltas = Vec::new();
@@ -133,43 +245,91 @@ pub async fn sandbox_pairs(id: &str, profile: &str, pairs: usize, duration: u64,
         let mut metrics = [None, None];
         let mut startup = [None, None];
         // Alternate AB/BA order to reduce monotonic temperature/cache bias.
-        for enabled in if pair % 2 == 0 { [false, true] } else { [true, false] } {
-            println!("Pair {}/{pairs}: sandbox {}. Replay the same workload and exit the game.", pair + 1, if enabled { "on" } else { "off" });
-            let (run, complete) = run_installation(&pm, &context, profile, duration,
-                Some(format!("sandbox pair {} {}", pair + 1, if enabled { "on" } else { "off" })), warmup, false, Some(enabled), None).await?;
+        for enabled in if pair % 2 == 0 {
+            [false, true]
+        } else {
+            [true, false]
+        } {
+            println!(
+                "Pair {}/{pairs}: sandbox {}. Replay the same workload and exit the game.",
+                pair + 1,
+                if enabled { "on" } else { "off" }
+            );
+            let (run, complete) = run_installation(
+                &pm,
+                &context,
+                profile,
+                duration,
+                Some(format!(
+                    "sandbox pair {} {}",
+                    pair + 1,
+                    if enabled { "on" } else { "off" }
+                )),
+                warmup,
+                false,
+                Some(enabled),
+                None,
+            )
+            .await?;
             anyhow::ensure!(complete, "paired run is still pending");
             let row = pm.db().load_performance_run(&run).await?;
-            anyhow::ensure!(row.exit_status == Some(0), "benchmark run {run} failed; refusing to treat it as a performance sample");
+            anyhow::ensure!(
+                row.exit_status == Some(0),
+                "benchmark run {run} failed; refusing to treat it as a performance sample"
+            );
             let samples = pm.db().list_performance_samples(&run).await?;
             let p99 = benchmark_p99(&row.summary, &samples, warmup)
                 .with_context(|| format!("run {run} cannot be used in a paired benchmark"))?;
             metrics[usize::from(enabled)] = Some(p99);
-            let recorded: serde_json::Value = serde_json::from_slice(&std::fs::read(modde_core::paths::modde_data_dir().join("performance")
-                .join(context.saves.game_id.as_str()).join(&run).join("session.json"))?)?;
+            let recorded: serde_json::Value = serde_json::from_slice(&std::fs::read(
+                modde_core::paths::modde_data_dir()
+                    .join("performance")
+                    .join(context.saves.game_id.as_str())
+                    .join(&run)
+                    .join("session.json"),
+            )?)?;
             let first_sample = recorded["process"]["first_sample_ms"].as_f64();
             startup[usize::from(enabled)] = first_sample;
-            results.push(serde_json::json!({"pair": pair + 1, "sandbox": enabled, "run": run,
+            results.push(
+                serde_json::json!({"pair": pair + 1, "sandbox": enabled, "run": run,
                 "first_csv_sample_ms": first_sample,
                 "p99_frame_time_ms": p99, "one_percent_low_fps": row.summary.one_percent_low_fps,
-                "median_fps": row.summary.median_fps, "sample_count": row.summary.sample_count}));
-            modde_core::library::atomic_json(&report_path, &serde_json::json!({"complete": false, "runs": results}))?;
+                "median_fps": row.summary.median_fps, "sample_count": row.summary.sample_count}),
+            );
+            modde_core::library::atomic_json(
+                &report_path,
+                &serde_json::json!({"complete": false, "runs": results}),
+            )?;
         }
         let off = metrics[0].context("missing unsandboxed run")?;
         let on = metrics[1].context("missing sandboxed run")?;
         anyhow::ensure!(off > 0.0, "invalid zero baseline frame time");
         deltas.push((on / off - 1.0) * 100.0);
-        if let (Some(off), Some(on)) = (startup[0], startup[1]) { startup_deltas.push(on - off); }
+        if let (Some(off), Some(on)) = (startup[0], startup[1]) {
+            startup_deltas.push(on - off);
+        }
     }
     let mean = deltas.iter().sum::<f64>() / deltas.len() as f64;
-    let sd = (deltas.iter().map(|value| (value - mean).powi(2)).sum::<f64>() / (deltas.len() - 1) as f64).sqrt();
-    modde_core::library::atomic_json(&report_path, &serde_json::json!({
-        "complete": true, "installation": id, "pairs": pairs, "runs": results,
-        "paired_p99_percent_changes": deltas, "mean_percent_change": mean, "sample_stddev_percent_points": sd,
-        "paired_first_sample_latency_changes_ms": startup_deltas,
-        "startup_measure": "Launch to first parseable CSV sample, 100ms polling; not first displayed frame. Missing samples remain unavailable.",
-        "interpretation": "Positive frame-time change is worse. Compare variation and reproduce the same workload; no universal overhead guarantee.",
-    }))?;
-    println!("Paired p99 change: {mean:+.2}% (SD {sd:.2} percentage points). Report: {}", report_path.display());
+    let sd = (deltas
+        .iter()
+        .map(|value| (value - mean).powi(2))
+        .sum::<f64>()
+        / (deltas.len() - 1) as f64)
+        .sqrt();
+    modde_core::library::atomic_json(
+        &report_path,
+        &serde_json::json!({
+            "complete": true, "installation": id, "pairs": pairs, "runs": results,
+            "paired_p99_percent_changes": deltas, "mean_percent_change": mean, "sample_stddev_percent_points": sd,
+            "paired_first_sample_latency_changes_ms": startup_deltas,
+            "startup_measure": "Launch to first parseable CSV sample, 100ms polling; not first displayed frame. Missing samples remain unavailable.",
+            "interpretation": "Positive frame-time change is worse. Compare variation and reproduce the same workload; no universal overhead guarantee.",
+        }),
+    )?;
+    println!(
+        "Paired p99 change: {mean:+.2}% (SD {sd:.2} percentage points). Report: {}",
+        report_path.display()
+    );
     Ok(())
 }
 
@@ -178,19 +338,40 @@ pub async fn handle_ingest(run_id: String, csv: PathBuf, warmup_seconds: f64) ->
         .await
         .context("failed to open database")?;
     let run = db.load_performance_run(&run_id).await?;
-    let configuration = modde_core::paths::modde_data_dir().join("performance")
-        .join(run.game_id.as_str()).join(&run_id).join("configuration.json");
+    let configuration = modde_core::paths::modde_data_dir()
+        .join("performance")
+        .join(run.game_id.as_str())
+        .join(&run_id)
+        .join("configuration.json");
     require_ingest_warmup(&configuration, warmup_seconds)?;
     let parsed = parse_capture(&csv, warmup_seconds)?;
     let exit_status = if let Some(session) = modde_core::library::PendingSession::load_blocking()? {
         session.require_owner()?;
-        let options: super::library::PlayOptions = serde_json::from_value(session.launch_request.clone().context("session has no performance capture")?)?;
-        let capture = options.performance.context("session has no performance capture")?;
-        anyhow::ensure!(session.phase == modde_core::library::SessionPhase::Captured && capture.run_id == run_id,
-            "finish the current game session before ingesting another run");
-        anyhow::ensure!(capture.warmup_seconds == warmup_seconds, "use the recorded warmup ({}) for this session's analysis", capture.warmup_seconds);
-        super::library::observed_status(&session)?.and_then(|status| status.code()).map(i64::from)
-    } else { run.exit_status };
+        let options: super::library::PlayOptions = serde_json::from_value(
+            session
+                .launch_request
+                .clone()
+                .context("session has no performance capture")?,
+        )?;
+        let capture = options
+            .performance
+            .context("session has no performance capture")?;
+        anyhow::ensure!(
+            session.phase == modde_core::library::SessionPhase::Captured
+                && capture.run_id == run_id,
+            "finish the current game session before ingesting another run"
+        );
+        anyhow::ensure!(
+            capture.warmup_seconds == warmup_seconds,
+            "use the recorded warmup ({}) for this session's analysis",
+            capture.warmup_seconds
+        );
+        super::library::observed_status(&session)?
+            .and_then(|status| status.code())
+            .map(i64::from)
+    } else {
+        run.exit_status
+    };
     db.complete_performance_run(&run_id, &csv, exit_status, &parsed.summary, &parsed.samples)
         .await?;
     println!("Ingested performance run: {run_id}");
@@ -206,15 +387,22 @@ fn require_ingest_warmup(configuration: &Path, warmup: f64) -> Result<()> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error).context("reading performance capture configuration"),
     };
-    let recorded: serde_json::Value = serde_json::from_slice(&bytes).context("invalid performance capture configuration")?;
-    let expected = recorded["warmup_seconds"].as_f64().filter(|value| value.is_finite() && *value >= 0.0)
+    let recorded: serde_json::Value =
+        serde_json::from_slice(&bytes).context("invalid performance capture configuration")?;
+    let expected = recorded["warmup_seconds"]
+        .as_f64()
+        .filter(|value| value.is_finite() && *value >= 0.0)
         .context("performance capture configuration has no valid recorded warmup")?;
-    anyhow::ensure!(warmup == expected, "use the recorded warmup ({expected}) when ingesting this captured run");
+    anyhow::ensure!(
+        warmup == expected,
+        "use the recorded warmup ({expected}) when ingesting this captured run"
+    );
     Ok(())
 }
 
 fn parse_capture(path: &Path, warmup: f64) -> Result<modde_core::performance::MangoHudParseResult> {
-    let content = std::fs::read_to_string(path).with_context(|| format!("reading performance capture {}", path.display()))?;
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("reading performance capture {}", path.display()))?;
     let mut parsed = modde_core::performance::parse_mangohud_csv_measured(&content)
         .with_context(|| format!("parsing performance capture {}", path.display()))?;
     let remaining = capture_samples_after_warmup(&parsed.samples, warmup)?;
@@ -224,24 +412,61 @@ fn parse_capture(path: &Path, warmup: f64) -> Result<modde_core::performance::Ma
 
 /// Capture summaries, paired benchmarks and bisects must use the same strict
 /// timestamp boundary rather than the display summary's sparse-trace fallback.
-pub(super) fn capture_samples_after_warmup(samples: &[modde_core::PerformanceSample], warmup: f64) -> Result<Vec<modde_core::PerformanceSample>> {
-    anyhow::ensure!(warmup.is_finite() && warmup >= 0.0, "warmup must be finite and nonnegative");
-    if warmup == 0.0 { return Ok(samples.to_vec()); }
+pub(super) fn capture_samples_after_warmup(
+    samples: &[modde_core::PerformanceSample],
+    warmup: f64,
+) -> Result<Vec<modde_core::PerformanceSample>> {
+    anyhow::ensure!(
+        warmup.is_finite() && warmup >= 0.0,
+        "warmup must be finite and nonnegative"
+    );
+    if warmup == 0.0 {
+        return Ok(samples.to_vec());
+    }
     let start = samples.iter().filter_map(|sample| sample.elapsed_seconds)
         .filter(|time| time.is_finite()).min_by(f64::total_cmp)
         .context("CSV has no elapsed times; cannot apply warmup (use --warmup-seconds 0 for a pre-trimmed trace)")?;
-    let remaining: Vec<_> = samples.iter().filter(|sample| sample.elapsed_seconds.is_some_and(|time| time.is_finite() && time - start >= warmup)).cloned().collect();
-    anyhow::ensure!(!remaining.is_empty(), "CSV ended during warmup; no benchmark samples remain");
+    let remaining: Vec<_> = samples
+        .iter()
+        .filter(|sample| {
+            sample
+                .elapsed_seconds
+                .is_some_and(|time| time.is_finite() && time - start >= warmup)
+        })
+        .cloned()
+        .collect();
+    anyhow::ensure!(
+        !remaining.is_empty(),
+        "CSV ended during warmup; no benchmark samples remain"
+    );
     Ok(remaining)
 }
 
-fn benchmark_p99(summary: &modde_core::PerformanceSummary, samples: &[modde_core::PerformanceSample], warmup: f64) -> Result<f64> {
+fn benchmark_p99(
+    summary: &modde_core::PerformanceSummary,
+    samples: &[modde_core::PerformanceSample],
+    warmup: f64,
+) -> Result<f64> {
     let remaining = capture_samples_after_warmup(samples, warmup)?;
-    let fps_count = remaining.iter().filter(|sample| sample.fps.is_finite() && sample.fps > 0.0).count();
-    let frame_time_count = remaining.iter().filter(|sample| sample.frame_time_ms.is_some_and(|value| value.is_finite() && value > 0.0)).count();
-    anyhow::ensure!(summary.sample_count >= 100 && fps_count >= 100 && frame_time_count >= 100,
-        "fewer than 100 usable post-warmup FPS or frame-time samples; collect a longer valid trace for tail percentiles");
-    summary.p99_frame_time_ms.filter(|value| value.is_finite() && *value > 0.0)
+    let fps_count = remaining
+        .iter()
+        .filter(|sample| sample.fps.is_finite() && sample.fps > 0.0)
+        .count();
+    let frame_time_count = remaining
+        .iter()
+        .filter(|sample| {
+            sample
+                .frame_time_ms
+                .is_some_and(|value| value.is_finite() && value > 0.0)
+        })
+        .count();
+    anyhow::ensure!(
+        summary.sample_count >= 100 && fps_count >= 100 && frame_time_count >= 100,
+        "fewer than 100 usable post-warmup FPS or frame-time samples; collect a longer valid trace for tail percentiles"
+    );
+    summary
+        .p99_frame_time_ms
+        .filter(|value| value.is_finite() && *value > 0.0)
         .context("benchmark has no finite positive p99 frame time")
 }
 
@@ -500,7 +725,11 @@ mod tests {
     fn capture_does_not_turn_an_all_warmup_trace_into_a_measurement() {
         let dir = tempfile::tempdir().unwrap();
         let csv = dir.path().join("run.csv");
-        std::fs::write(&csv, "fps,frametime,elapsed\n60,16.67,0\n60,16.67,1000000000\n").unwrap();
+        std::fs::write(
+            &csv,
+            "fps,frametime,elapsed\n60,16.67,0\n60,16.67,1000000000\n",
+        )
+        .unwrap();
         assert!(parse_capture(&csv, 30.0).is_err());
         assert_eq!(parse_capture(&csv, 0.0).unwrap().summary.sample_count, 2);
         assert!(parse_capture(&csv, f64::NAN).is_err());
@@ -522,10 +751,15 @@ mod tests {
         assert_eq!(parsed.summary.p99_frame_time_ms, Some(16.67));
         assert!(benchmark_p99(&parsed.summary, &parsed.samples, 30.0).is_err());
 
-        let valid: Vec<_> = parsed.samples.iter().cloned().map(|mut sample| {
-            sample.frame_time_ms = Some(16.67);
-            sample
-        }).collect();
+        let valid: Vec<_> = parsed
+            .samples
+            .iter()
+            .cloned()
+            .map(|mut sample| {
+                sample.frame_time_ms = Some(16.67);
+                sample
+            })
+            .collect();
         assert_eq!(benchmark_p99(&parsed.summary, &valid, 30.0).unwrap(), 16.67);
         assert!(benchmark_p99(&parsed.summary, &valid[..129], 30.0).is_err());
         let mut invalid_summary = parsed.summary;
@@ -538,17 +772,34 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let csv = root.path().join("capture.csv");
         for missing in ["", "NaN", "inf", "invalid", "no-column"] {
-            let mut content = if missing == "no-column" { "fps,elapsed\n" } else { "fps,frametime,elapsed\n" }.to_string();
+            let mut content = if missing == "no-column" {
+                "fps,elapsed\n"
+            } else {
+                "fps,frametime,elapsed\n"
+            }
+            .to_string();
             for seconds in 0_u64..130 {
                 let elapsed = seconds * 1_000_000_000;
-                if missing == "no-column" { content.push_str(&format!("60,{elapsed}\n")); }
-                else { content.push_str(&format!("60,{missing},{elapsed}\n")); }
+                if missing == "no-column" {
+                    content.push_str(&format!("60,{elapsed}\n"));
+                } else {
+                    content.push_str(&format!("60,{missing},{elapsed}\n"));
+                }
             }
             std::fs::write(&csv, content).unwrap();
             let parsed = parse_capture(&csv, 30.0).unwrap();
             assert_eq!(parsed.summary.sample_count, 100);
-            assert!(parsed.samples.iter().all(|sample| sample.frame_time_ms.is_none()), "{missing}");
-            assert!(benchmark_p99(&parsed.summary, &parsed.samples, 30.0).is_err(), "{missing}");
+            assert!(
+                parsed
+                    .samples
+                    .iter()
+                    .all(|sample| sample.frame_time_ms.is_none()),
+                "{missing}"
+            );
+            assert!(
+                benchmark_p99(&parsed.summary, &parsed.samples, 30.0).is_err(),
+                "{missing}"
+            );
         }
     }
 
@@ -559,7 +810,11 @@ mod tests {
         let mut content = "fps,frametime,elapsed\n".to_string();
         for seconds in 0_u64..130 {
             let elapsed = seconds * 1_000_000_000;
-            let (fps, frame_time) = if seconds < 30 { (10, 100.0) } else { (60, 16.67) };
+            let (fps, frame_time) = if seconds < 30 {
+                (10, 100.0)
+            } else {
+                (60, 16.67)
+            };
             content.push_str(&format!("{fps},{frame_time},{elapsed}\n"));
         }
         std::fs::write(&csv, content).unwrap();
@@ -567,7 +822,10 @@ mod tests {
         assert_eq!(parsed.summary.sample_count, 100);
         assert_eq!(parsed.summary.one_percent_low_fps, Some(60.0));
         assert_eq!(parsed.samples[30].elapsed_seconds, Some(30.0));
-        assert_eq!(benchmark_p99(&parsed.summary, &parsed.samples, 30.0).unwrap(), 16.67);
+        assert_eq!(
+            benchmark_p99(&parsed.summary, &parsed.samples, 30.0).unwrap(),
+            16.67
+        );
         assert!(parse_capture(&csv, 130.0).is_err());
     }
 

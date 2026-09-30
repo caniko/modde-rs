@@ -1,5 +1,13 @@
 #![allow(clippy::wildcard_imports)]
-#[cfg(any(feature = "bethesda", feature = "cyberpunk", feature = "gamebryo", feature = "bg3", feature = "oblivion-remastered", feature = "ue4", feature = "witcher3"))]
+#[cfg(any(
+    feature = "bethesda",
+    feature = "cyberpunk",
+    feature = "gamebryo",
+    feature = "bg3",
+    feature = "oblivion-remastered",
+    feature = "ue4",
+    feature = "witcher3"
+))]
 use super::classifiers::*;
 use super::*;
 

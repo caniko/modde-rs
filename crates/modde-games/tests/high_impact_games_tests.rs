@@ -1,4 +1,12 @@
-#![cfg(all(feature = "gamebryo", feature = "bg3", feature = "stardew", feature = "bannerlord", feature = "witcher3", feature = "oblivion-remastered", feature = "ue4"))]
+#![cfg(all(
+    feature = "gamebryo",
+    feature = "bg3",
+    feature = "stardew",
+    feature = "bannerlord",
+    feature = "witcher3",
+    feature = "oblivion-remastered",
+    feature = "ue4"
+))]
 
 use std::path::Path;
 

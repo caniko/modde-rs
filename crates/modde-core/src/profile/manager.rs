@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use super::{ActivateResult, ActiveProfileInfo, ForkOptions, Profile, validate_profile_name};
 use crate::db::{ModdeDb, ProfileSummary};
 use crate::error::{CoreError, Result};
+use crate::library::SaveContext;
 use crate::resolver::GameId;
 use crate::save::{SaveFingerprint, SaveManager};
-use crate::library::SaveContext;
 
 pub struct ProfileManager {
     db: ModdeDb,
@@ -136,10 +136,16 @@ impl ProfileManager {
         save_dir: Option<&Path>,
         fingerprint: Option<&SaveFingerprint>,
     ) -> Result<ActivateResult> {
-        self.activate_scoped(name, &SaveContext::legacy(game_id, save_dir), fingerprint).await
+        self.activate_scoped(name, &SaveContext::legacy(game_id, save_dir), fingerprint)
+            .await
     }
 
-    pub async fn activate_scoped(&self, name: &str, context: &SaveContext, fingerprint: Option<&SaveFingerprint>) -> Result<ActivateResult> {
+    pub async fn activate_scoped(
+        &self,
+        name: &str,
+        context: &SaveContext,
+        fingerprint: Option<&SaveFingerprint>,
+    ) -> Result<ActivateResult> {
         let game_id = &context.game_id;
         let scope = &context.scope;
         let profile = self.db.load_profile(name, game_id).await?;
@@ -189,10 +195,16 @@ impl ProfileManager {
         save_dir: Option<&Path>,
         fingerprint: Option<&SaveFingerprint>,
     ) -> Result<()> {
-        self.try_profile_scoped(name, &SaveContext::legacy(game_id, save_dir), fingerprint).await
+        self.try_profile_scoped(name, &SaveContext::legacy(game_id, save_dir), fingerprint)
+            .await
     }
 
-    pub async fn try_profile_scoped(&self, name: &str, context: &SaveContext, fingerprint: Option<&SaveFingerprint>) -> Result<()> {
+    pub async fn try_profile_scoped(
+        &self,
+        name: &str,
+        context: &SaveContext,
+        fingerprint: Option<&SaveFingerprint>,
+    ) -> Result<()> {
         let game_id = &context.game_id;
         let scope = &context.scope;
         let (current_id, current_name) = self
@@ -236,10 +248,15 @@ impl ProfileManager {
         save_dir: Option<&Path>,
         fingerprint: Option<&SaveFingerprint>,
     ) -> Result<String> {
-        self.rollback_scoped(&SaveContext::legacy(game_id, save_dir), fingerprint).await
+        self.rollback_scoped(&SaveContext::legacy(game_id, save_dir), fingerprint)
+            .await
     }
 
-    pub async fn rollback_scoped(&self, context: &SaveContext, fingerprint: Option<&SaveFingerprint>) -> Result<String> {
+    pub async fn rollback_scoped(
+        &self,
+        context: &SaveContext,
+        fingerprint: Option<&SaveFingerprint>,
+    ) -> Result<String> {
         let game_id = &context.game_id;
         let scope = &context.scope;
         let prev_id = self
@@ -256,7 +273,9 @@ impl ProfileManager {
 
         let prev_profile = self.db.load_profile_by_id(prev_id).await?;
         if prev_profile.game_id != *game_id {
-            return Err(CoreError::Other("experiment profile belongs to a different game".into()));
+            return Err(CoreError::Other(
+                "experiment profile belongs to a different game".into(),
+            ));
         }
 
         if let Some(dir) = context.directory.as_deref() {
@@ -323,10 +342,22 @@ impl ProfileManager {
         game_id: &GameId,
         options: ForkOptions,
     ) -> Result<i64> {
-        self.fork_scoped(source_name, new_name, &SaveContext::legacy(game_id, None), options).await
+        self.fork_scoped(
+            source_name,
+            new_name,
+            &SaveContext::legacy(game_id, None),
+            options,
+        )
+        .await
     }
 
-    pub async fn fork_scoped(&self, source_name: &str, new_name: &str, context: &SaveContext, options: ForkOptions) -> Result<i64> {
+    pub async fn fork_scoped(
+        &self,
+        source_name: &str,
+        new_name: &str,
+        context: &SaveContext,
+        options: ForkOptions,
+    ) -> Result<i64> {
         let game_id = &context.game_id;
         validate_profile_name(new_name)?;
         let source = self.db.load_profile(source_name, game_id).await?;

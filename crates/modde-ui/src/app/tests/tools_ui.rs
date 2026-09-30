@@ -397,15 +397,30 @@ fn experiment_try_then_commit_write_completion_updates_state() {
             .expect("load experiment profile");
 
     let mut app = test_app();
-    app.settings.set_game_path(&GameId::from("cyberpunk2077"), install.path().into());
-    let game = modde_games::library::catalogue(&app.settings).unwrap().games.into_iter()
-        .find(|game| game.install_path.as_deref() == Some(install.path())).unwrap();
+    app.settings
+        .set_game_path(&GameId::from("cyberpunk2077"), install.path().into());
+    let game = modde_games::library::catalogue(&app.settings)
+        .unwrap()
+        .games
+        .into_iter()
+        .find(|game| game.install_path.as_deref() == Some(install.path()))
+        .unwrap();
     modde_core::library::LibraryPreferences::update(|prefs| {
-        prefs.launches.insert(game.id, modde_core::library::LaunchSettings {
-            save_directory: Some(saves.path().into()), ..Default::default()
-        });
-    }).unwrap();
-    let context = crate::app::block_on(modde_games::library::context::for_game(&app.settings, "cyberpunk2077", pm.db())).unwrap();
+        prefs.launches.insert(
+            game.id,
+            modde_core::library::LaunchSettings {
+                save_directory: Some(saves.path().into()),
+                ..Default::default()
+            },
+        );
+    })
+    .unwrap();
+    let context = crate::app::block_on(modde_games::library::context::for_game(
+        &app.settings,
+        "cyberpunk2077",
+        pm.db(),
+    ))
+    .unwrap();
     crate::app::block_on(pm.activate_scoped("experiment-profile", &context.saves, None)).unwrap();
     drop(pm);
     app.selected_game = Some("cyberpunk2077".to_string());

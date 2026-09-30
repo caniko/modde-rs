@@ -6,7 +6,6 @@
 
     harbor-macos-sdk-pin.url = "git+https://github.com/caniko/harbor-macos-sdk-pin.git";
 
-
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
     crane.follows = "harbor-rs/crane";
@@ -78,7 +77,10 @@
         };
         lib = nixpkgs.lib;
 
-        toolchain = harbor-rs.lib.mkToolchain {inherit pkgs; toolchainProfile = "nightly";};
+        toolchain = harbor-rs.lib.mkToolchain {
+          inherit pkgs;
+          toolchainProfile = "nightly";
+        };
         inherit (toolchain) craneLib;
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
@@ -445,7 +447,10 @@
         aarch64LinuxTargetSuffix =
           lib.strings.replaceStrings ["-"] ["_"] aarch64LinuxTarget;
         pkgsAarch64Linux = pkgs.pkgsCross.aarch64-multiplatform;
-        toolchainAarch64 = harbor-rs.lib.mkToolchain {pkgs = pkgsAarch64Linux; toolchainProfile = "nightly";};
+        toolchainAarch64 = harbor-rs.lib.mkToolchain {
+          pkgs = pkgsAarch64Linux;
+          toolchainProfile = "nightly";
+        };
         craneLibAarch64 = toolchainAarch64.craneLib;
         darwinSigtool = pkgs.darwin.sigtool;
         # Ad-hoc sign the cross-built Mach-O binaries. sigtool's `codesign`
@@ -1331,11 +1336,10 @@
           # Shell boundary: default stays iced-only, website tooling stays in
           # docs. Name-based so this half never evaluates plinth itself; the
           # docs-membership assert below is what keeps plinth pinned working.
-          devshell-no-dioxus =
-            assert lib.assertMsg (lib.all (p: !lib.elem (lib.getName p) ["dioxus-cli" "plinth-project" "visual-rubric"]) nativeDevPackages)
-              "default devShell must not include website tooling (dioxus/plinth); use `nix develop .#docs`";
-            assert lib.assertMsg (builtins.elem plinthProject docsPackages)
-              "docs shell must include plinthProject; website tooling belongs there, not in default";
+          devshell-no-dioxus = assert lib.assertMsg (lib.all (p: !lib.elem (lib.getName p) ["dioxus-cli" "plinth-project" "visual-rubric"]) nativeDevPackages)
+          "default devShell must not include website tooling (dioxus/plinth); use `nix develop .#docs`";
+          assert lib.assertMsg (builtins.elem plinthProject docsPackages)
+          "docs shell must include plinthProject; website tooling belongs there, not in default";
             pkgs.runCommand "modde-devshell-no-dioxus" {} ''touch "$out"' '';
           hm-module = pkgs.runCommand "modde-hm-module-check" {} ''
             cat > ready <<'EOF'
@@ -1781,7 +1785,7 @@
                 fi
 
                 simit init release --check
-                simit init ci --ci-provider crow --platform forgejo --runtime nix --runner codefloe-global --workspace --check
+                simit init ci --ci-provider actions --platform github --runtime nix --runner ubuntu-24.04 --workspace --check
                 nix flake check --keep-going
                 cargo test --workspace --all-features
                 cargo clippy --workspace --all-targets --all-features -- --deny warnings
@@ -2051,7 +2055,19 @@
         inherit mkOutputs;
       };
       simitConfig = {
-        ci.check_command = "cargo run -p modde-xtask -- check";
+        ci = {
+          platform = "github";
+          provider = "actions";
+          runner = "ubuntu-24.04";
+          runtime = "nix";
+          workspace = true;
+          required_gates = [
+            {
+              id = "modde-check";
+              run = "nix develop -c cargo run -p modde-xtask -- check";
+            }
+          ];
+        };
         release.publish.enforcement = "activated-remote";
         release.publish.channels = {
           apt = "required";

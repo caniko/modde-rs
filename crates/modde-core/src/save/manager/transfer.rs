@@ -40,9 +40,14 @@ impl SaveManager<'_> {
         // disappear from the vault, including when the live set becomes empty.
         for entry in std::fs::read_dir(&vault_path)? {
             let entry = entry?;
-            if entry.file_name() == ".git" { continue; }
-            if entry.file_type()?.is_dir() { std::fs::remove_dir_all(entry.path())?; }
-            else { std::fs::remove_file(entry.path())?; }
+            if entry.file_name() == ".git" {
+                continue;
+            }
+            if entry.file_type()?.is_dir() {
+                std::fs::remove_dir_all(entry.path())?;
+            } else {
+                std::fs::remove_file(entry.path())?;
+            }
         }
 
         let count =

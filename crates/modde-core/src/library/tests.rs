@@ -21,7 +21,8 @@ fn old_session_journals_never_authorize_preparation_rollback() {
     let session: PendingSession = serde_json::from_value(serde_json::json!({
         "installation": "old", "name": "Example", "game_id": "example", "scope": "example",
         "profile": "base", "save_directory": "/saves", "capture": true
-    })).unwrap();
+    }))
+    .unwrap();
     assert_eq!(session.phase, SessionPhase::Launching);
     assert!(!session.phase.is_preparation());
 }
@@ -32,11 +33,20 @@ fn updates_preserve_other_installations_and_reject_corruption() {
     let path = dir.path().join("library.json");
     LibraryPreferences::update_at(&path, |settings| {
         settings.favorites.insert("steam:1".into());
-    }).unwrap();
+    })
+    .unwrap();
     LibraryPreferences::update_at(&path, |settings| {
-        settings.launches.insert("install-b".into(), LaunchSettings::default());
-    }).unwrap();
-    assert!(LibraryPreferences::load_at(&path).unwrap().favorites.contains("steam:1"));
+        settings
+            .launches
+            .insert("install-b".into(), LaunchSettings::default());
+    })
+    .unwrap();
+    assert!(
+        LibraryPreferences::load_at(&path)
+            .unwrap()
+            .favorites
+            .contains("steam:1")
+    );
     std::fs::write(&path, "broken").unwrap();
     assert!(LibraryPreferences::update_at(&path, |_| {}).is_err());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken");
@@ -61,14 +71,29 @@ fn reassociation_preserves_identity_settings_and_legacy_binding() {
     let mut settings = LaunchSettings::default();
     settings.sandbox.enabled = true;
     prefs.launches.insert(old.clone(), settings.clone());
-    prefs.legacy_save_bindings.insert("example".into(), LegacySaveBinding {
-        installation: old.clone(), save_directory: None,
-    });
-    let id = prefs.bind_installation(&[dir.path().to_path_buf()], &[old.clone(), store], &["steam:42".into()]).unwrap();
+    prefs.legacy_save_bindings.insert(
+        "example".into(),
+        LegacySaveBinding {
+            installation: old.clone(),
+            save_directory: None,
+        },
+    );
+    let id = prefs
+        .bind_installation(
+            &[dir.path().to_path_buf()],
+            &[old.clone(), store],
+            &["steam:42".into()],
+        )
+        .unwrap();
     assert_eq!(id, old);
     assert_eq!(prefs.launch_for(&id), settings);
     assert_eq!(prefs.legacy_save_bindings["example"].installation, id);
-    assert_eq!(prefs.bind_installation(&[dir.path().into()], &[], &["gog:99".into()]).unwrap(), id);
+    assert_eq!(
+        prefs
+            .bind_installation(&[dir.path().into()], &[], &["gog:99".into()])
+            .unwrap(),
+        id
+    );
 }
 
 #[test]
@@ -78,7 +103,11 @@ fn conflicting_existing_identities_require_explicit_reconciliation() {
     prefs.launches.insert("a".into(), LaunchSettings::default());
     prefs.launches.insert("b".into(), LaunchSettings::default());
     let before = prefs.clone();
-    assert!(prefs.bind_installation(&[dir.path().into()], &["a".into(), "b".into()], &[]).is_err());
+    assert!(
+        prefs
+            .bind_installation(&[dir.path().into()], &["a".into(), "b".into()], &[])
+            .is_err()
+    );
     assert_eq!(prefs, before);
 }
 
@@ -111,7 +140,13 @@ fn retargeted_alias_cannot_transfer_an_installation_identity() {
     let before = prefs.clone();
     std::fs::remove_file(&alias).unwrap();
     std::os::unix::fs::symlink(&b, &alias).unwrap();
-    assert!(prefs.bind_installation(&[alias], &[], &[]).unwrap_err().to_string().contains("rebind"));
+    assert!(
+        prefs
+            .bind_installation(&[alias], &[], &[])
+            .unwrap_err()
+            .to_string()
+            .contains("rebind")
+    );
     assert_eq!(prefs, before);
     assert_eq!(prefs.bind_installation(&[a], &[], &[]).unwrap(), id);
     assert_ne!(prefs.bind_installation(&[b], &[], &[]).unwrap(), id);
@@ -129,7 +164,8 @@ fn legacy_alias_records_do_not_follow_a_new_target() {
     std::os::unix::fs::symlink(&b, &alias).unwrap();
     let mut prefs: LibraryPreferences = serde_json::from_value(serde_json::json!({
         "installations": {"old": {"paths": [a, alias], "entitlements": []}}
-    })).unwrap();
+    }))
+    .unwrap();
     assert!(prefs.bind_installation(&[alias], &[], &[]).is_err());
     assert_ne!(prefs.bind_installation(&[b], &[], &[]).unwrap(), "old");
 }

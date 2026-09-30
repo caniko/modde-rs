@@ -97,7 +97,8 @@ impl ArchiveBatchExtractor {
 
                 let mut magic = [0; 4];
                 if File::open(path)?.read_exact(&mut magic).is_ok()
-                    && requests::bytes_have_bethesda_magic(&magic) {
+                    && requests::bytes_have_bethesda_magic(&magic)
+                {
                     #[cfg(feature = "bethesda-archives")]
                     return extract_bethesda(path, requests);
                     #[cfg(not(feature = "bethesda-archives"))]
@@ -127,7 +128,11 @@ impl ArchiveBatchExtractor {
                 bail!(
                     "unsupported archive format for {}; supported: zip, 7z{}{}",
                     path.display(),
-                    if cfg!(feature = "bethesda-archives") { ", BSA, BA2" } else { "" },
+                    if cfg!(feature = "bethesda-archives") {
+                        ", BSA, BA2"
+                    } else {
+                        ""
+                    },
                     if cfg!(feature = "rar") { ", rar" } else { "" }
                 )
             }

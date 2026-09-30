@@ -17,24 +17,51 @@ pub(super) async fn run_perf_candidate(
     let context = super::candidate::installation(pm, session).await?;
     if let modde_core::BisectOracle::Perf { baseline_run, .. } = &session.oracle {
         let baseline = pm.db().load_performance_run(baseline_run).await?;
-        anyhow::ensure!(baseline.status == "complete" && baseline.exit_status == Some(0),
-            "baseline must retain a completed, successful observed exit; record a new baseline");
-        let source = pm.load(&session.source_profile_name, Some(&session.game_id)).await?;
+        anyhow::ensure!(
+            baseline.status == "complete" && baseline.exit_status == Some(0),
+            "baseline must retain a completed, successful observed exit; record a new baseline"
+        );
+        let source = pm
+            .load(&session.source_profile_name, Some(&session.game_id))
+            .await?;
         require_baseline_profile(&baseline, &source)?;
         crate::commands::perf::require_baseline_configuration(baseline_run, &context)?;
     }
-    let (run, complete) = crate::commands::perf::run_installation(pm, &context, &profile.name, 300,
-        Some(format!("bisect step {step_id}")), DEFAULT_WARMUP_SECONDS, false, None,
-        Some(super::Completion { session: session.session_id.clone(), step: step_id, started_unix_ms: None })).await?;
+    let (run, complete) = crate::commands::perf::run_installation(
+        pm,
+        &context,
+        &profile.name,
+        300,
+        Some(format!("bisect step {step_id}")),
+        DEFAULT_WARMUP_SECONDS,
+        false,
+        None,
+        Some(super::Completion {
+            session: session.session_id.clone(),
+            step: step_id,
+            started_unix_ms: None,
+        }),
+    )
+    .await?;
     Ok(complete.then_some(run))
 }
 
-pub(super) fn require_baseline_profile(baseline: &modde_core::db::PerformanceRunRow, profile: &Profile) -> Result<()> {
-    anyhow::ensure!(profile.id.is_some() && baseline.profile_id == profile.id && baseline.game_id == profile.game_id,
-        "baseline belongs to another source profile; record a new baseline for this profile");
-    let recorded: Vec<modde_core::performance::PerformanceModSnapshot> = serde_json::from_str(&baseline.mod_snapshot_json)?;
-    anyhow::ensure!(recorded == modde_core::performance::mod_snapshot(&profile.mods),
-        "source profile's enabled mod order or versions differ from the baseline; record a new baseline");
+pub(super) fn require_baseline_profile(
+    baseline: &modde_core::db::PerformanceRunRow,
+    profile: &Profile,
+) -> Result<()> {
+    anyhow::ensure!(
+        profile.id.is_some()
+            && baseline.profile_id == profile.id
+            && baseline.game_id == profile.game_id,
+        "baseline belongs to another source profile; record a new baseline for this profile"
+    );
+    let recorded: Vec<modde_core::performance::PerformanceModSnapshot> =
+        serde_json::from_str(&baseline.mod_snapshot_json)?;
+    anyhow::ensure!(
+        recorded == modde_core::performance::mod_snapshot(&profile.mods),
+        "source profile's enabled mod order or versions differ from the baseline; record a new baseline"
+    );
     Ok(())
 }
 
@@ -59,8 +86,14 @@ pub(super) fn perf_regression_verdict(
     candidate_samples: &[PerformanceSample],
     config: PerfRegressionConfig,
 ) -> Result<PerfRegressionVerdict> {
-    let baseline_filtered = crate::commands::perf::capture_samples_after_warmup(baseline_samples, DEFAULT_WARMUP_SECONDS)?;
-    let candidate_filtered = crate::commands::perf::capture_samples_after_warmup(candidate_samples, DEFAULT_WARMUP_SECONDS)?;
+    let baseline_filtered = crate::commands::perf::capture_samples_after_warmup(
+        baseline_samples,
+        DEFAULT_WARMUP_SECONDS,
+    )?;
+    let candidate_filtered = crate::commands::perf::capture_samples_after_warmup(
+        candidate_samples,
+        DEFAULT_WARMUP_SECONDS,
+    )?;
     let baseline_fps = fps_values(&baseline_filtered);
     let candidate_fps = fps_values(&candidate_filtered);
     let baseline_frame_times = frame_time_values(&baseline_filtered);
@@ -69,13 +102,28 @@ pub(super) fn perf_regression_verdict(
     // A missing timestamp/metric is not evidence of an improvement. Check the
     // actual post-warmup series as well as the stored summary before grading.
     let minimum = config.min_samples.max(2);
-    anyhow::ensure!([baseline_fps.len(), candidate_fps.len(), baseline_frame_times.len(), candidate_frame_times.len()]
-        .into_iter().all(|count| count >= minimum),
-        "insufficient usable post-warmup samples; retry or mark this candidate manually");
-    anyhow::ensure!([baseline.p99_frame_time_ms, candidate.p99_frame_time_ms,
-        baseline.one_percent_low_fps, candidate.one_percent_low_fps]
-        .into_iter().all(|metric| metric.is_some_and(|value| value.is_finite() && value > 0.0)),
-        "performance summary has missing or invalid metrics; retry or mark this candidate manually");
+    anyhow::ensure!(
+        [
+            baseline_fps.len(),
+            candidate_fps.len(),
+            baseline_frame_times.len(),
+            candidate_frame_times.len()
+        ]
+        .into_iter()
+        .all(|count| count >= minimum),
+        "insufficient usable post-warmup samples; retry or mark this candidate manually"
+    );
+    anyhow::ensure!(
+        [
+            baseline.p99_frame_time_ms,
+            candidate.p99_frame_time_ms,
+            baseline.one_percent_low_fps,
+            candidate.one_percent_low_fps
+        ]
+        .into_iter()
+        .all(|metric| metric.is_some_and(|value| value.is_finite() && value > 0.0)),
+        "performance summary has missing or invalid metrics; retry or mark this candidate manually"
+    );
 
     let p99_regressed = baseline
         .p99_frame_time_ms
@@ -231,12 +279,39 @@ mod tests {
 
     #[test]
     fn warmup_excludes_missing_nonfinite_and_early_timestamps() {
-        let samples: Vec<_> = [Some(0.0), None, Some(f64::NAN), Some(29.0), Some(30.0), Some(31.0)]
-            .into_iter().map(|elapsed_seconds| PerformanceSample {
-                elapsed_seconds, fps: 60.0, frame_time_ms: Some(16.67), cpu_load: None, gpu_load: None,
-            }).collect();
-        let filtered = crate::commands::perf::capture_samples_after_warmup(&samples, DEFAULT_WARMUP_SECONDS).unwrap();
-        assert_eq!(filtered.iter().map(|sample| sample.elapsed_seconds).collect::<Vec<_>>(), [Some(30.0), Some(31.0)]);
-        assert!(crate::commands::perf::capture_samples_after_warmup(&samples[1..3], DEFAULT_WARMUP_SECONDS).is_err());
+        let samples: Vec<_> = [
+            Some(0.0),
+            None,
+            Some(f64::NAN),
+            Some(29.0),
+            Some(30.0),
+            Some(31.0),
+        ]
+        .into_iter()
+        .map(|elapsed_seconds| PerformanceSample {
+            elapsed_seconds,
+            fps: 60.0,
+            frame_time_ms: Some(16.67),
+            cpu_load: None,
+            gpu_load: None,
+        })
+        .collect();
+        let filtered =
+            crate::commands::perf::capture_samples_after_warmup(&samples, DEFAULT_WARMUP_SECONDS)
+                .unwrap();
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|sample| sample.elapsed_seconds)
+                .collect::<Vec<_>>(),
+            [Some(30.0), Some(31.0)]
+        );
+        assert!(
+            crate::commands::perf::capture_samples_after_warmup(
+                &samples[1..3],
+                DEFAULT_WARMUP_SECONDS
+            )
+            .is_err()
+        );
     }
 }

@@ -26,10 +26,17 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
     std::os::unix::fs::symlink(&runner, &link).unwrap();
     let install = root.path().join("game");
     std::fs::create_dir(&install).unwrap();
-    let game = LibraryGame::new(Store::Local, "custom".into(), "Custom".into(), Some(install.clone()));
+    let game = LibraryGame::new(
+        Store::Local,
+        "custom".into(),
+        "Custom".into(),
+        Some(install.clone()),
+    );
     let mut settings = LaunchSettings::default();
     settings.sandbox.enabled = true;
-    settings.environment.insert("HOME".into(), home.to_string_lossy().into_owned());
+    settings
+        .environment
+        .insert("HOME".into(), home.to_string_lossy().into_owned());
     settings.runner = Some(link.clone());
     settings.executable = Some(install.join("Game.exe"));
     settings.wrappers = vec![vec![wrapper.to_string_lossy().into_owned()]];
@@ -37,8 +44,11 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
     // Construct only; no bubblewrap or fixture executable is run here.
     let command = launch::direct_command(&game, &settings).unwrap();
     let args: Vec<_> = command.get_args().map(PathBuf::from).collect();
-    let readonly: Vec<_> = args.windows(3).filter(|chunk| chunk[0] == Path::new("--ro-bind"))
-        .map(|chunk| chunk[1].clone()).collect();
+    let readonly: Vec<_> = args
+        .windows(3)
+        .filter(|chunk| chunk[0] == Path::new("--ro-bind"))
+        .map(|chunk| chunk[1].clone())
+        .collect();
     assert!(readonly.contains(&wrapper.canonicalize().unwrap()));
     assert!(readonly.contains(&runner.canonicalize().unwrap()));
     assert!(readonly.contains(&root.path().join("wine-runtime")));
@@ -50,10 +60,18 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
     settings.runner = None;
     settings.executable = None;
     settings.wrappers.clear();
-    let supplied = vec![wrapper.into_os_string(), link.into_os_string(), install.join("Game.exe").into_os_string()];
+    let supplied = vec![
+        wrapper.into_os_string(),
+        link.into_os_string(),
+        install.join("Game.exe").into_os_string(),
+    ];
     let command = launch::boundary_command(&game, &settings, &supplied).unwrap();
     let args: Vec<_> = command.get_args().map(PathBuf::from).collect();
-    assert!(args.windows(3).any(|chunk| chunk[0] == Path::new("--ro-bind") && chunk[1] == root.path().join("wine-runtime")));
+    assert!(
+        args.windows(3)
+            .any(|chunk| chunk[0] == Path::new("--ro-bind")
+                && chunk[1] == root.path().join("wine-runtime"))
+    );
     assert!(args.ends_with(&[runner, install.join("Game.exe")]));
 
     // UMU's container root and physical pfx stay distinct in a sandbox too.
@@ -62,15 +80,28 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
     let prefix = compat.join("pfx");
     std::fs::create_dir_all(prefix.join("drive_c")).unwrap();
     settings.prefix = Some(prefix.clone());
-    settings.environment.insert("STEAM_COMPAT_DATA_PATH".into(), compat.to_string_lossy().into_owned());
-    settings.environment.insert("WINEPREFIX".into(), compat.to_string_lossy().into_owned());
+    settings.environment.insert(
+        "STEAM_COMPAT_DATA_PATH".into(),
+        compat.to_string_lossy().into_owned(),
+    );
+    settings
+        .environment
+        .insert("WINEPREFIX".into(), compat.to_string_lossy().into_owned());
     let command = launch::boundary_command(&game, &settings, &supplied).unwrap();
     let args: Vec<_> = command.get_args().map(PathBuf::from).collect();
-    assert!(args.windows(3).any(|chunk| chunk[0] == Path::new("--bind") && chunk[1] == compat));
-    assert!(args.windows(3).any(|chunk| chunk[0] == Path::new("--bind") && chunk[1] == prefix));
-    let wine_environment: Vec<_> = args.windows(3).filter(|chunk|
-        chunk[0] == Path::new("--setenv") && chunk[1] == Path::new("WINEPREFIX"))
-        .map(|chunk| chunk[2].clone()).collect();
+    assert!(
+        args.windows(3)
+            .any(|chunk| chunk[0] == Path::new("--bind") && chunk[1] == compat)
+    );
+    assert!(
+        args.windows(3)
+            .any(|chunk| chunk[0] == Path::new("--bind") && chunk[1] == prefix)
+    );
+    let wine_environment: Vec<_> = args
+        .windows(3)
+        .filter(|chunk| chunk[0] == Path::new("--setenv") && chunk[1] == Path::new("WINEPREFIX"))
+        .map(|chunk| chunk[2].clone())
+        .collect();
     assert!(!wine_environment.is_empty());
     assert!(wine_environment.iter().all(|path| *path == compat));
 
@@ -84,14 +115,30 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
     settings.executable = Some(install.join("Game.exe"));
     let command = launch::direct_command(&game, &settings).unwrap();
     let args: Vec<_> = command.get_args().map(PathBuf::from).collect();
-    assert!(args.windows(3).any(|chunk| chunk[0] == Path::new("--ro-bind") && chunk[1] == root.path().join("umu-runtime")));
-    assert!(!args.windows(3).any(|chunk| chunk[0] == Path::new("--ro-bind") && chunk[1] == home));
+    assert!(
+        args.windows(3)
+            .any(|chunk| chunk[0] == Path::new("--ro-bind")
+                && chunk[1] == root.path().join("umu-runtime"))
+    );
+    assert!(
+        !args
+            .windows(3)
+            .any(|chunk| chunk[0] == Path::new("--ro-bind") && chunk[1] == home)
+    );
     assert!(args.ends_with(&[umu.clone(), install.join("Game.exe")]));
     settings.runner = None;
     settings.executable = None;
-    let supplied = vec![home.join("wrapper").into_os_string(), alias.into_os_string(), install.join("Game.exe").into_os_string()];
+    let supplied = vec![
+        home.join("wrapper").into_os_string(),
+        alias.into_os_string(),
+        install.join("Game.exe").into_os_string(),
+    ];
     let command = launch::boundary_command(&game, &settings, &supplied).unwrap();
     let args: Vec<_> = command.get_args().map(PathBuf::from).collect();
-    assert!(args.windows(3).any(|chunk| chunk[0] == Path::new("--ro-bind") && chunk[1] == root.path().join("umu-runtime")));
+    assert!(
+        args.windows(3)
+            .any(|chunk| chunk[0] == Path::new("--ro-bind")
+                && chunk[1] == root.path().join("umu-runtime"))
+    );
     assert!(args.ends_with(&[umu, install.join("Game.exe")]));
 }

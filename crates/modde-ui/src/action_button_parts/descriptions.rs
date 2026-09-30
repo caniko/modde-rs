@@ -218,17 +218,37 @@ impl ButtonActionDescription for ButtonAction {
                 "Reload detected games and manager instances for the library."
             }
             ButtonAction::FavoriteLibraryEntry(_) => "Save or remove this game as a favorite.",
-            ButtonAction::InstallLibraryEntry(_) => "Open this game's installation action in its store.",
-            ButtonAction::SaveLibraryLaunch => "Save the selected installation's launch configuration.",
+            ButtonAction::InstallLibraryEntry(_) => {
+                "Open this game's installation action in its store."
+            }
+            ButtonAction::SaveLibraryLaunch => {
+                "Save the selected installation's launch configuration."
+            }
             ButtonAction::EditLibraryLaunch => "Show or hide settings for this installation.",
-            ButtonAction::BrowseLibraryLaunch(_) => "Choose a file or folder for this launch setting.",
-            ButtonAction::ImportLibraryLaunch => "Load a launch settings JSON file into this draft for review.",
-            ButtonAction::ExportLibraryLaunch => "Export the current launch settings draft as JSON.",
-            ButtonAction::InstallLibraryHook => "Generate the command wrapper used by Steam or Heroic to launch this installation.",
-            ButtonAction::AdoptLibrarySaves => "Adopt existing saves into the saved profile without changing live files.",
-            ButtonAction::FinishLibrarySession => "Confirm the game has exited and capture this session's saves.",
-            ButtonAction::SkipLibraryAnalysis => "Keep captured saves and leave performance/bisect results for manual handling.",
-            ButtonAction::SyncLibrarySteam => "Refresh owned Steam games using MODDE_STEAM_API_KEY.",
+            ButtonAction::BrowseLibraryLaunch(_) => {
+                "Choose a file or folder for this launch setting."
+            }
+            ButtonAction::ImportLibraryLaunch => {
+                "Load a launch settings JSON file into this draft for review."
+            }
+            ButtonAction::ExportLibraryLaunch => {
+                "Export the current launch settings draft as JSON."
+            }
+            ButtonAction::InstallLibraryHook => {
+                "Generate the command wrapper used by Steam or Heroic to launch this installation."
+            }
+            ButtonAction::AdoptLibrarySaves => {
+                "Adopt existing saves into the saved profile without changing live files."
+            }
+            ButtonAction::FinishLibrarySession => {
+                "Confirm the game has exited and capture this session's saves."
+            }
+            ButtonAction::SkipLibraryAnalysis => {
+                "Keep captured saves and leave performance/bisect results for manual handling."
+            }
+            ButtonAction::SyncLibrarySteam => {
+                "Refresh owned Steam games using MODDE_STEAM_API_KEY."
+            }
             ButtonAction::SelectLibraryEntry(_) => {
                 "Select this library entry and show its launch details."
             }
