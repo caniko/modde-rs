@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::SaveManager;
+use super::helpers::is_live_metadata;
 use crate::db::SaveEntry;
 use crate::error::Result;
 use crate::resolver::GameId;
@@ -19,9 +20,13 @@ impl SaveManager<'_> {
             return Ok(None);
         }
 
-        let count = std::fs::read_dir(game_save_dir)?
-            .filter_map(std::result::Result::ok)
-            .count();
+        let mut count = 0;
+        for entry in std::fs::read_dir(game_save_dir)? {
+            let entry = entry?;
+            if !is_live_metadata(&entry.file_name().to_string_lossy()) {
+                count += 1;
+            }
+        }
 
         if count > 0 { Ok(Some(count)) } else { Ok(None) }
     }

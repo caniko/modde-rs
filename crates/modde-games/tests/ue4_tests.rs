@@ -59,6 +59,22 @@ fn test_ue4_game_can_opt_into_save_profiles() {
 // ── GamePlugin: paths ───────────────────────────────────────────────
 
 #[test]
+fn user_configuration_follows_secondary_library_and_explicit_prefix() {
+    let root = TempDir::new().unwrap();
+    let install = root.path().join("secondary/steamapps/common/Stellar Blade");
+    let steam_prefix = root.path().join("secondary/steamapps/compatdata/3489700/pfx");
+    let custom_prefix = root.path().join("custom-prefix");
+    std::fs::create_dir_all(&install).unwrap();
+    std::fs::create_dir_all(&steam_prefix).unwrap();
+    std::fs::create_dir_all(&custom_prefix).unwrap();
+    let relative = "drive_c/users/steamuser/AppData/Local/SB/Saved/Config/Windows";
+    assert_eq!(STELLAR_BLADE.resolve_deploy_target("ue4-saved-config", &install), Some(steam_prefix.join(relative)));
+    assert_eq!(STELLAR_BLADE.resolve_deploy_target_at("ue4-saved-config", &install, Some(&custom_prefix)), Some(custom_prefix.join(relative)));
+    assert_eq!(STELLAR_BLADE.save_directory_at(&install, Some(&custom_prefix)), Some(custom_prefix.join("drive_c/users/steamuser/AppData/Local/SB/Saved/SaveGames")));
+    assert!(STELLAR_BLADE.resolve_deploy_target("ue4-saved-config", &root.path().join("local-copy")).is_none());
+}
+
+#[test]
 fn test_stellar_blade_mod_directory() {
     let install = Path::new("/fake/game/Stellar Blade");
     let mod_dir = STELLAR_BLADE.mod_directory(install);

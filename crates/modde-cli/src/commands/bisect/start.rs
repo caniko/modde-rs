@@ -55,6 +55,7 @@ pub async fn handle_start(
         anyhow::bail!("bisect requires at least two enabled mods");
     }
 
+    let context = modde_games::library::context::for_game(&modde_core::settings::AppSettings::load(), &game, pm.db()).await?;
     let oracle = match oracle {
         BisectOracleArg::Manual => BisectOracle::Manual,
         BisectOracleArg::Crash => {
@@ -83,6 +84,9 @@ pub async fn handle_start(
                     baseline.game_id
                 );
             }
+            anyhow::ensure!(baseline.exit_status == Some(0), "baseline must have a successful observed game exit");
+            super::perf::require_baseline_profile(&baseline, &profile)?;
+            crate::commands::perf::require_baseline_configuration(&baseline_run, &context)?;
             BisectOracle::Perf {
                 baseline_run,
                 p99_frame_time_percent: perf_p99_frame_time_percent,
@@ -94,6 +98,9 @@ pub async fn handle_start(
     };
 
     let session_id = format!("b{}", time_id());
+    modde_core::library::atomic_json(&super::candidate::pin_path(&session_id), &super::candidate::InstallationPin {
+        installation: context.game.id, save_scope: context.saves.scope,
+    })?;
     pm.db()
         .create_bisect_session(&NewBisectSession {
             session_id: session_id.clone(),

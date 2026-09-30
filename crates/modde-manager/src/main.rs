@@ -1076,6 +1076,12 @@ fn capture_all(config: &Config) -> Result<()> {
 }
 
 fn assert_stopped(instance: &Instance) -> Result<()> {
+    if instance.root.exists() {
+        let anchor = files::Anchor::open(&instance.root)?;
+        if !matches!(anchor.read(Path::new(".modde-library-session.json"), false)?, files::Image::Missing) {
+            bail!("modde Library owns an unfinished session in {}; finish or recover that session before changing this instance", instance.root.display());
+        }
+    }
     for process in &instance.processes {
         if process.trim().is_empty() {
             bail!("empty process pattern");

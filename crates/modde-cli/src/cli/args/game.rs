@@ -274,6 +274,18 @@ pub(crate) enum LootAction {
 
 #[derive(Subcommand)]
 pub(crate) enum PerfAction {
+    /// Repeated paired sandbox-off/on runs for an exact direct installation
+    Sandbox {
+        id: String,
+        #[arg(long)]
+        profile: String,
+        #[arg(long, default_value_t = 3)]
+        pairs: usize,
+        #[arg(long, default_value_t = 300)]
+        duration: u64,
+        #[arg(long, default_value_t = 30.0)]
+        warmup_seconds: f64,
+    },
     /// Launch a profile with per-run `MangoHud` CSV capture
     Run {
         /// Profile to activate and benchmark (uses active profile if omitted)

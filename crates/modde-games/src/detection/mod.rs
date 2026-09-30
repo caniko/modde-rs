@@ -226,7 +226,7 @@ fn update_detection_cache(detected: &[DetectedGame]) {
 }
 
 mod heroic;
-mod steam;
+pub(crate) mod steam;
 
 #[cfg(test)]
 mod tests;

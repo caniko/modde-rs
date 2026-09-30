@@ -7,6 +7,18 @@ use crate::error::{CoreError, Result};
 use crate::resolver::GameId;
 
 impl SaveManager<'_> {
+    /// Resolve revision syntax before a capture or restore can move HEAD.
+    pub fn resolve_snapshot(game_id: &GameId, revision: &str) -> Result<String> {
+        let repo = Self::vault_repo(game_id)?;
+        let commit = repo.revparse_single(revision).and_then(|object| object.peel_to_commit())
+            .map_err(|error| CoreError::SaveVaultError(format!("invalid save snapshot '{revision}': {error}")))?;
+        Ok(commit.id().to_string())
+    }
+
+    pub fn profile_snapshot(game_id: &GameId, profile_name: &str) -> Result<String> {
+        Self::resolve_snapshot(game_id, &format!("refs/heads/{}", sanitize_branch_name(profile_name)))
+    }
+
     pub fn init_vault(game_id: &GameId) -> Result<Repository> {
         let vault_path = crate::paths::save_vault_dir(game_id);
         if vault_path.join(".git").exists() {
@@ -104,7 +116,7 @@ impl SaveManager<'_> {
             .revparse_single(&refname)
             .map_err(|e| CoreError::SaveVaultError(format!("failed to resolve branch: {e}")))?;
 
-        repo.checkout_tree(&obj, Some(git2::build::CheckoutBuilder::new().force()))
+        repo.checkout_tree(&obj, Some(git2::build::CheckoutBuilder::new().force().remove_untracked(true).remove_ignored(true)))
             .map_err(|e| CoreError::SaveVaultError(format!("checkout failed: {e}")))?;
 
         repo.set_head(&refname)

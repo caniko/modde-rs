@@ -132,6 +132,27 @@ impl ModdeDb {
 
     // ── Experiment Stack ──────────────────────────────────────────
 
+    /// Ordered bottom-to-top snapshot used by save-transition recovery.
+    pub async fn experiment_profiles(&self, game_id: &GameId) -> Result<Vec<i64>> {
+        self.db.fetch_all(
+            "SELECT profile_id FROM experiment_stack WHERE game_id = ? ORDER BY depth",
+            &vals![game_id], |r| r.i64(0),
+        ).await
+    }
+
+    /// Idempotent replacement while the mutation lease and recovery journal
+    /// protect the operation. A failed write leaves the journal for replay.
+    pub async fn replace_experiment_profiles(&self, game_id: &GameId, profiles: &[i64]) -> Result<()> {
+        self.clear_experiment_stack(game_id).await?;
+        for (depth, profile_id) in profiles.iter().enumerate() {
+            self.db.execute(
+                "INSERT INTO experiment_stack (game_id, profile_id, depth) VALUES (?, ?, ?)",
+                &vals![game_id, *profile_id, depth as i64],
+            ).await?;
+        }
+        Ok(())
+    }
+
     /// Push a profile onto the experiment stack for a game.
     pub async fn push_experiment(&self, game_id: &GameId, profile_id: i64) -> Result<()> {
         let depth = self.experiment_depth(game_id).await?;
@@ -145,7 +166,15 @@ impl ModdeDb {
         Ok(())
     }
 
-    /// Pop the top entry from the experiment stack, returning the `profile_id`.
+    /// Read the top experiment without removing the rollback destination.
+    pub async fn peek_experiment(&self, game_id: &GameId) -> Result<Option<i64>> {
+        self.db.fetch_optional(
+            "SELECT profile_id FROM experiment_stack WHERE game_id = ? ORDER BY depth DESC LIMIT 1",
+            &vals![game_id], |r| r.i64(0),
+        ).await
+    }
+
+    /// Pop only after a successful save/profile switch.
     pub async fn pop_experiment(&self, game_id: &GameId) -> Result<Option<i64>> {
         let top = self
             .db

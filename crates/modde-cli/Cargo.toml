@@ -162,6 +162,7 @@ zip = { workspace = true }
 url = { workspace = true }
 notify = { workspace = true }
 open = { workspace = true }
+tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
@@ -170,7 +171,6 @@ libc = { workspace = true }
 winreg = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 insta = { workspace = true }
 wiremock = { workspace = true }

@@ -128,6 +128,11 @@ impl GamePlugin for BannerlordGame {
         true
     }
 
+    fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
+        crate::library::context::steam_user_path(install, prefix, "261550",
+            Path::new("Documents/Mount and Blade II Bannerlord/Game Saves/Native"))
+    }
+
     fn classify_mod(&self, mod_dir: &Path) -> ModSafety {
         BANNERLORD_CONTENT_POLICY.classify_mod(mod_dir)
     }

@@ -15,6 +15,7 @@ pub mod hot_deploy;
 pub mod installer;
 pub mod instance;
 pub mod ipc;
+pub mod library;
 pub mod link;
 pub mod lockfile;
 pub mod manifest;

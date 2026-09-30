@@ -14,8 +14,6 @@ pub(super) fn generate_wrapper_unix(
     wrapper_dir: &Path,
     restore_commands: &[(String, String)],
     tool_env_vars: &[(String, String)],
-    game_id: &GameId,
-    modde_bin: &str,
 ) -> (PathBuf, String) {
     let wrapper_path = wrapper_dir.join("modde-launch-wrapper.sh");
 
@@ -41,13 +39,8 @@ pub(super) fn generate_wrapper_unix(
         script.push('\n');
     }
 
-    script.push_str("\"$@\"\n");
-    script.push_str("status=$?\n\n");
-    script.push_str(&format!(
-        "# Auto-capture saves after game exit\n\
-         \"{modde_bin}\" save auto-capture --game {game_id} 2>/dev/null &\n\n\
-         exit $status\n"
-    ));
+    // Only the installation-scoped Library supervisor may capture saves.
+    script.push_str("exec \"$@\"\n");
 
     (wrapper_path, script)
 }
@@ -58,8 +51,6 @@ pub(super) fn generate_wrapper_windows(
     wrapper_dir: &Path,
     restore_commands: &[(String, String)],
     tool_env_vars: &[(String, String)],
-    game_id: &GameId,
-    modde_bin: &str,
 ) -> (PathBuf, String) {
     let wrapper_path = wrapper_dir.join("modde-launch-wrapper.cmd");
 
@@ -87,11 +78,7 @@ pub(super) fn generate_wrapper_windows(
 
     script.push_str("%*\r\n");
     script.push_str("set status=%ERRORLEVEL%\r\n\r\n");
-    script.push_str(&format!(
-        "REM Auto-capture saves after game exit\r\n\
-         start \"\" /B \"{modde_bin}\" save auto-capture --game {game_id} 2>nul\r\n\r\n\
-         exit /b %status%\r\n"
-    ));
+    script.push_str("exit /b %status%\r\n");
 
     (wrapper_path, script)
 }
@@ -130,16 +117,11 @@ pub fn generate_launch_wrapper(
     let wrapper_dir = modde_core::paths::modde_data_dir().join("bin");
     std::fs::create_dir_all(&wrapper_dir).context("failed to create modde bin directory")?;
 
-    let modde_bin = std::env::current_exe()
-        .map_or_else(|_| "modde".to_string(), |p| p.to_string_lossy().to_string());
-
     #[cfg(unix)]
     let (wrapper_path, script) = generate_wrapper_unix(
         &wrapper_dir,
         &restore_commands,
         tool_env_vars,
-        game_id,
-        &modde_bin,
     );
 
     #[cfg(windows)]
@@ -147,8 +129,6 @@ pub fn generate_launch_wrapper(
         &wrapper_dir,
         &restore_commands,
         tool_env_vars,
-        game_id,
-        &modde_bin,
     );
 
     std::fs::write(&wrapper_path, &script)
@@ -214,6 +194,14 @@ pub fn register_heroic_wrapper(
     let wrappers = wrapper_options
         .as_array_mut()
         .context("wrapperOptions is not an array")?;
+
+    // Installing/deploying through a legacy entry point must not reinsert the
+    // old wrapper around an exact-install Library boundary.
+    let library_hooks = modde_core::paths::modde_data_dir().join("launch-hooks");
+    if wrappers.iter().filter_map(|entry| entry.get("exe").and_then(Value::as_str))
+        .any(|exe| Path::new(exe).starts_with(&library_hooks)) {
+        return Ok(None);
+    }
 
     let wrapper_exe = wrapper_path.to_string_lossy().to_string();
 

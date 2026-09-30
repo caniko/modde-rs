@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 use crate::resolver::GameId;
 
 static DATA_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+static CONFIG_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 
 /// Set a custom data directory. Must be called before any path functions.
 pub fn set_data_dir(path: PathBuf) {
@@ -12,6 +13,13 @@ pub fn set_data_dir(path: PathBuf) {
     // of which installs its own tempdir data dir — from racing on the OnceLock
     // and panicking the loser.
     let _ = DATA_DIR_OVERRIDE.set(path);
+}
+
+/// Override the base configuration directory before initializing any services.
+/// Embedders and test harnesses can isolate configuration and session leases
+/// without changing process-wide environment variables. First caller wins.
+pub fn set_config_dir(path: PathBuf) {
+    let _ = CONFIG_DIR_OVERRIDE.set(path);
 }
 
 /// Platform-aware base data directory.
@@ -37,6 +45,16 @@ pub fn data_dir() -> PathBuf {
 /// - Windows: `%APPDATA%`
 #[must_use]
 pub fn config_dir() -> PathBuf {
+    if let Some(dir) = CONFIG_DIR_OVERRIDE.get() {
+        return dir.clone();
+    }
+    user_config_dir()
+}
+
+/// The desktop user's configuration root. A modde --config-dir override must
+/// not redirect game saves, provider discovery, or audio authentication.
+#[must_use]
+pub fn user_config_dir() -> PathBuf {
     #[cfg(target_os = "linux")]
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         return PathBuf::from(xdg);

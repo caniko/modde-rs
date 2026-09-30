@@ -8,13 +8,32 @@ use anyhow::{Context, Result};
 
 use modde_core::bisect::apply_result;
 use modde_core::profile::{ActivateResult, Profile, ProfileManager};
-use modde_core::save::SaveFingerprint;
 use modde_core::{BisectResult, BisectSaveSafety, BisectSession, BisectStatus, GameId};
 
-use crate::commands::deploy;
 use crate::commands::{
-    compute_fingerprint, load_plugin_order, resolve_save_dir, supports_save_profiles,
+    compute_fingerprint, load_plugin_order, supports_save_profiles,
 };
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(super) struct InstallationPin {
+    pub installation: String,
+    pub save_scope: GameId,
+}
+
+pub(super) fn pin_path(session: &str) -> PathBuf {
+    modde_core::paths::modde_data_dir().join("bisect").join(format!("{session}.installation.json"))
+}
+
+pub(super) async fn installation(pm: &ProfileManager, session: &BisectSession) -> Result<modde_games::library::context::InstallationContext> {
+    let pin: InstallationPin = serde_json::from_slice(&std::fs::read(pin_path(&session.session_id))
+        .context("bisect has no installation pin; start a new installation-scoped bisect")?)?;
+    let games = modde_games::library::catalogue(&modde_core::settings::AppSettings::load())?.games;
+    let game = games.iter().find(|game| game.id == pin.installation).context("bisect installation is unavailable")?;
+    let context = modde_games::library::context::for_installation(game, &games, pm.db()).await?;
+    anyhow::ensure!(context.saves.game_id == session.game_id && context.saves.scope == pin.save_scope,
+        "bisect installation/save destination changed; restore the pinned configuration");
+    Ok(context)
+}
 
 pub(super) async fn create_candidate_profile(
     pm: &ProfileManager,
@@ -55,20 +74,8 @@ pub(super) fn enforce_save_safety(
     if !matches!(supports_save_profiles(session.game_id.as_str()), Ok(true)) {
         return Ok(());
     }
-    let Some(game_plugin) = modde_games::resolve_game_plugin(session.game_id.as_str()) else {
-        return Ok(());
-    };
-    let source_staging = ProfileManager::staging_dir(&source.name);
-    let source_fp = SaveFingerprint::compute(&source.mods, |mod_id| {
-        game_plugin
-            .classify_mod(&source_staging.join(mod_id))
-            .affects_saves()
-    });
-    let candidate_fp = SaveFingerprint::compute(&candidate.mods, |mod_id| {
-        game_plugin
-            .classify_mod(&source_staging.join(mod_id))
-            .affects_saves()
-    });
+    let source_fp = modde_games::save_fingerprint(source);
+    let candidate_fp = modde_games::save_fingerprint(candidate);
     if source_fp.hash == candidate_fp.hash {
         return Ok(());
     }
@@ -93,32 +100,21 @@ pub(super) fn enforce_save_safety(
 pub(super) async fn launch_candidate(
     pm: &ProfileManager,
     profile_name: &str,
-    game_id: &GameId,
+    session: &BisectSession,
     no_deploy: bool,
 ) -> Result<Option<std::process::ExitStatus>> {
-    let save_dir = resolve_save_dir(game_id.as_str());
-    let fp = compute_fingerprint(pm, profile_name, game_id.as_str()).await;
-    match pm
-        .activate_with_fingerprint(profile_name, game_id, save_dir.as_deref(), fp.as_ref())
-        .await?
-    {
-        ActivateResult::Activated => {}
-        ActivateResult::AdoptionRequired { save_count } => {
-            anyhow::bail!(
-                "Found {save_count} unadopted save(s) in the game directory. Run `modde save adopt --game {game_id} --profile {profile_name}` first."
-            );
-        }
+    let context = installation(pm, session).await?;
+    let current = pm.db().load_bisect_session(&session.session_id).await?;
+    anyhow::ensure!(current.current_candidate_profile.as_deref() == Some(profile_name), "bisect candidate changed before launch");
+    match crate::commands::library::play(&context.game.id, crate::commands::library::PlayOptions {
+        profile: Some(profile_name.into()), no_deploy, require_observed: true,
+        expected_scope: Some(context.saves.scope),
+        bisect: Some(super::Completion { session: session.session_id.clone(), step: current.current_step_id.context("bisect step missing")?, started_unix_ms: None }),
+        ..Default::default()
+    }).await? {
+        modde_games::library::launch::LaunchOutcome::Exited(status) => Ok(Some(status)),
+        modde_games::library::launch::LaunchOutcome::Requested => Ok(None),
     }
-    if !no_deploy {
-        deploy::handle(Some(profile_name.to_string()), Some(game_id.to_string())).await?;
-    }
-    let detected = modde_games::find_detected_game(game_id)
-        .ok_or_else(|| anyhow::anyhow!("could not detect launcher for '{game_id}'"))?;
-    println!(
-        "Launching candidate profile '{profile_name}' via {}...",
-        detected.source
-    );
-    detected.source.launch()
 }
 
 pub(super) async fn complete_and_advance(
@@ -172,8 +168,8 @@ pub(super) async fn complete_and_advance(
         .await?;
     let updated = pm.db().load_bisect_session(&session_id).await?;
     if matches!(status, BisectStatus::Complete | BisectStatus::Inconclusive) {
-        cleanup_candidates(pm, &updated).await?;
         restore_source_profile(pm, &updated).await?;
+        cleanup_candidates(pm, &updated).await?;
     }
     print_completion_if_any(pm, &updated).await?;
     if status == BisectStatus::Active {
@@ -203,8 +199,8 @@ pub(super) async fn finish_without_candidate(
         )
         .await?;
     let updated = pm.db().load_bisect_session(&session.session_id).await?;
-    cleanup_candidates(pm, &updated).await?;
     restore_source_profile(pm, &updated).await?;
+    cleanup_candidates(pm, &updated).await?;
     print_completion_if_any(pm, &updated).await
 }
 
@@ -251,7 +247,10 @@ pub(super) async fn cleanup_candidates(pm: &ProfileManager, session: &BisectSess
         .await?
     {
         if profile.starts_with("__bisect_") {
-            let _ = pm.delete(&profile, Some(&session.game_id)).await;
+            match pm.delete(&profile, Some(&session.game_id)).await {
+                Ok(()) | Err(modde_core::error::CoreError::ProfileNotFound(_)) => {}
+                Err(error) => return Err(error).with_context(|| format!("removing bisect candidate {profile}")),
+            }
         }
     }
     Ok(())
@@ -261,16 +260,14 @@ pub(super) async fn restore_source_profile(
     pm: &ProfileManager,
     session: &BisectSession,
 ) -> Result<()> {
-    let save_dir = resolve_save_dir(session.game_id.as_str());
-    let fp = compute_fingerprint(pm, &session.source_profile_name, session.game_id.as_str()).await;
-    let _ = pm
-        .activate_with_fingerprint(
-            &session.source_profile_name,
-            &session.game_id,
-            save_dir.as_deref(),
-            fp.as_ref(),
-        )
-        .await;
+    let context = installation(pm, session).await?;
+    let active = pm.active(&context.saves.scope).await?;
+    if active.as_ref().is_some_and(|active| active.profile.name == session.source_profile_name) { return Ok(()); }
+    let fp = if let Some(active) = active { compute_fingerprint(pm, &active.profile.name, session.game_id.as_str()).await } else { None };
+    match context.activate_profile(pm, &session.source_profile_name, fp.as_ref()).await? {
+        ActivateResult::Activated => {}
+        ActivateResult::AdoptionRequired { .. } => anyhow::bail!("adopt this installation's saves before restoring the bisect source"),
+    }
     Ok(())
 }
 

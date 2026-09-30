@@ -5,6 +5,7 @@ use super::args::*;
 
 pub(super) fn command_mutates_state(cmd: &Commands) -> bool {
     match cmd {
+        Commands::Library { action } => !matches!(action, LibraryAction::List { .. } | LibraryAction::Status | LibraryAction::Supervise { .. } | LibraryAction::Configure { file: None, .. }),
         // Pure read paths.
         Commands::Dev { .. }
         | Commands::Detect
@@ -45,7 +46,7 @@ pub(super) fn command_mutates_state(cmd: &Commands) -> bool {
         Commands::Update { action } => matches!(action, UpdateAction::Apply { .. }),
 
         Commands::Perf { action } => {
-            matches!(action, PerfAction::Run { .. } | PerfAction::Ingest { .. })
+            matches!(action, PerfAction::Run { .. } | PerfAction::Ingest { .. } | PerfAction::Sandbox { .. })
         }
 
         // `instance list` is read-only; create/switch flip the active
@@ -146,6 +147,7 @@ pub(super) fn command_runs_lazy_product_update_check(cmd: &Commands) -> bool {
     !matches!(
         cmd,
         Commands::Config { .. }
+            | Commands::Library { .. }
             | Commands::Dev { .. }
             | Commands::Lock { .. }
             | Commands::Update {

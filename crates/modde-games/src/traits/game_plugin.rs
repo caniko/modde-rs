@@ -32,6 +32,11 @@ pub trait GamePlugin: Send + Sync {
         Ok(self.mod_directory(install))
     }
 
+    /// Prefix-aware deployment root; install-relative games use the default.
+    fn mod_root_at(&self, install: &Path, _prefix: Option<&Path>) -> Result<PathBuf> {
+        self.mod_root(install)
+    }
+
     /// Deploy staged mods into the game's mod directory.
     /// Default: recursive symlink farm via `modde_core::fs::deploy_symlinks`.
     fn deploy(&self, staging: &Path, target: &Path) -> Result<()> {
@@ -46,6 +51,12 @@ pub trait GamePlugin: Send + Sync {
     fn deploy_to_install(&self, staging: &Path, install: &Path) -> Result<()> {
         let target = self.mod_root(install)?;
         self.deploy(staging, &target)
+    }
+
+    /// Preserve multi-root deployment strategies while allowing prefix-scoped
+    /// games to override their user-data target.
+    fn deploy_to_install_at(&self, staging: &Path, install: &Path, _prefix: Option<&Path>) -> Result<()> {
+        self.deploy_to_install(staging, install)
     }
 
     /// Whether this game supports experimental path-level live VFS patching.
@@ -69,8 +80,19 @@ pub trait GamePlugin: Send + Sync {
         Ok(())
     }
 
+    /// Run post-deployment configuration against the selected prefix.
+    fn post_deploy_at(&self, install: &Path, _prefix: Option<&Path>) -> Result<()> {
+        self.post_deploy(install)
+    }
+
     /// Return the save directory for this game, if known.
     fn save_directory(&self) -> Option<PathBuf> {
+        None
+    }
+
+    /// Exact-install save discovery. Return None when this plugin cannot resolve
+    /// the supplied prefix; callers can then require an explicit save path.
+    fn save_directory_at(&self, _install: &Path, _prefix: Option<&Path>) -> Option<PathBuf> {
         None
     }
 
@@ -92,6 +114,12 @@ pub trait GamePlugin: Send + Sync {
     /// system (e.g. the Wine prefix doesn't exist yet).
     fn resolve_deploy_target(&self, _id: &str, _install: &Path) -> Option<PathBuf> {
         None
+    }
+
+    /// Prefix-aware counterpart used by installation-scoped deployment.
+    fn resolve_deploy_target_at(&self, id: &str, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
+        if prefix.is_some() { return None; }
+        self.resolve_deploy_target(id, install)
     }
 
     /// Whether this game participates in modde's per-profile save layer.

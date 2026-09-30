@@ -240,12 +240,8 @@ pub async fn handle_run_stage(
                 modde_games::supported_game_ids().join(", ")
             )
         })?;
-    let install_dir = game_plugin.detect_install().ok_or_else(|| {
-        anyhow::anyhow!(
-            "could not detect install directory for {}",
-            game_plugin.display_name()
-        )
-    })?;
+    let context = crate::commands::installation_context(profile.game_id.as_str(), &pm).await?;
+    let install_dir = context.game.install_path.context("installation missing")?;
     let profile_id = require_profile_id(&profile)?;
     let stage = pm
         .db()
@@ -258,7 +254,7 @@ pub async fn handle_run_stage(
             )
         })?;
     let game_mod_dir = game_plugin
-        .mod_root(&install_dir)
+        .mod_root_at(&install_dir, context.prefix.as_deref())
         .context("failed to resolve game mod root for patcher pipeline")?;
     let stages = pm.db().list_patcher_stages(profile_id).await?;
     let mut manifests = load_stage_manifests(pm.db(), profile_id, &stages).await?;
@@ -267,6 +263,7 @@ pub async fn handle_run_stage(
         &profile,
         game_plugin,
         &install_dir,
+        context.prefix.as_deref(),
         &game_mod_dir,
         &stage,
         &mut manifests,
@@ -289,23 +286,20 @@ pub async fn handle_run(profile_name: Option<String>, game_id: Option<String>) -
                 modde_games::supported_game_ids().join(", ")
             )
         })?;
-    let install_dir = game_plugin.detect_install().ok_or_else(|| {
-        anyhow::anyhow!(
-            "could not detect install directory for {}",
-            game_plugin.display_name()
-        )
-    })?;
+    let context = crate::commands::installation_context(profile.game_id.as_str(), &pm).await?;
+    let install_dir = context.game.install_path.context("installation missing")?;
 
-    let ran = run_enabled_pipeline(&pm, &profile, game_plugin, &install_dir).await?;
+    let ran = run_enabled_pipeline(&pm, &profile, game_plugin, &install_dir, context.prefix.as_deref()).await?;
     println!("Ran {ran} patcher stage(s) for {}", profile.name);
     Ok(())
 }
 
-pub async fn run_enabled_for_deploy(
+pub async fn run_enabled_for_deploy_at(
     pm: &ProfileManager,
     profile: &Profile,
     game_plugin: &dyn modde_games::GamePlugin,
     install_dir: &Path,
+    prefix: Option<&Path>,
 ) -> Result<usize> {
-    run_enabled_pipeline(pm, profile, game_plugin, install_dir).await
+    run_enabled_pipeline(pm, profile, game_plugin, install_dir, prefix).await
 }

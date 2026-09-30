@@ -21,10 +21,13 @@ pub mod gamebryo;
 pub mod generic;
 pub mod gpu;
 pub mod launcher;
+pub mod library;
+#[cfg(feature = "oblivion-remastered")]
 pub mod oblivion_remastered;
 pub mod optiscaler;
 pub mod policies;
 pub mod registry;
+mod save_fingerprint;
 pub mod save_patterns;
 pub mod scanner_patterns;
 #[cfg(feature = "stardew")]
@@ -37,6 +40,7 @@ pub mod ue4;
 pub mod witcher3;
 
 pub use detection::{DetectedGame, LauncherSource, find_detected_game, scan_installed_games};
+pub use save_fingerprint::save_fingerprint;
 pub use generic::loader::{load_user_games, reload_user_games};
 pub use generic::manage::{
     AddUserGameResult, DetectCandidateDir, add_user_game, detect_candidates, read_user_game_spec,

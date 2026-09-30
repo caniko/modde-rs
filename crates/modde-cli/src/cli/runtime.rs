@@ -26,6 +26,17 @@ use super::mutation::{
 };
 
 pub(crate) fn run() -> Result<()> {
+    let cli = Cli::parse();
+    if let Some(dir) = cli.config_dir.clone() { modde_core::paths::set_config_dir(std::path::absolute(dir)?); }
+    if let Some(dir) = cli.data_dir.clone() { modde_core::paths::set_data_dir(std::path::absolute(dir)?); }
+    if let super::args::Commands::Library { action: super::args::LibraryAction::Supervise { request } } = &cli.command {
+        // The subreaper must own only game descendants, without another runtime
+        // or telemetry worker sharing its process-wide child-reaping policy.
+        return crate::commands::library::supervise(request);
+    }
+    if let super::args::Commands::Library { action: super::args::LibraryAction::CompleteObserved { observation } } = &cli.command {
+        return crate::commands::library::complete_observed(observation);
+    }
     #[cfg(not(feature = "remote-telemetry"))]
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -40,17 +51,12 @@ pub(crate) fn run() -> Result<()> {
     #[cfg(feature = "remote-telemetry")]
     init_remote_telemetry(&telemetry_runtime)?;
 
-    let cli = Cli::parse();
     #[cfg(feature = "remote-telemetry")]
     {
         assert!(!cli.debug_panic, "remote telemetry debug panic");
     }
 
     let _heap_profiler = start_heap_profiler(cli.heap_profile.as_deref())?;
-
-    if let Some(dir) = cli.data_dir.clone() {
-        modde_core::paths::set_data_dir(dir);
-    }
 
     // GUI launches its own runtime (iced), so handle it outside tokio.
     #[cfg(feature = "gui")]
@@ -66,7 +72,36 @@ pub(crate) fn run() -> Result<()> {
     let mutates_state = command_mutates_state(&cli.command);
     let lazy_update_check = !mutates_state && command_runs_lazy_product_update_check(&cli.command);
 
+    let mutation_guard = if mutates_state {
+        let wrapping = matches!(&cli.command, super::args::Commands::Library { action: super::args::LibraryAction::Wrap { .. } });
+        let start = std::time::Instant::now();
+        let guard = loop {
+            match modde_core::library::mutation_lock() {
+                Ok(guard) => break guard,
+                Err(_) if wrapping && start.elapsed() < std::time::Duration::from_secs(5) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                Err(error) => return Err(error),
+            }
+        };
+        if !matches!(&cli.command, super::args::Commands::Library { action: super::args::LibraryAction::Finish { .. } | super::args::LibraryAction::Recover | super::args::LibraryAction::Wrap { .. } })
+            && let Some(session) = modde_core::library::PendingSession::load_blocking()? {
+            let ingesting_completion = matches!(&cli.command, super::args::Commands::Perf { action: super::args::PerfAction::Ingest { run_id, .. } }
+                if session.phase == modde_core::library::SessionPhase::Captured
+                && session.launch_request.as_ref().and_then(|r| r.get("performance")).and_then(|r| r.get("run_id")).and_then(serde_json::Value::as_str) == Some(run_id.as_str()));
+            if !ingesting_completion {
+                anyhow::bail!("{} has an unfinished {:?} session; use `modde library recover` for preparation, or `modde library finish` after the game exits", session.name, session.phase);
+            }
+        }
+        Some(guard)
+    } else { None };
+
     let result = run_command(cli);
+    // The request is durable before releasing this lease. Some URI handlers
+    // wait for the store/game; its wrapper must be free to claim the request.
+    let store_uri = if mutates_state && result.is_ok() {
+        crate::commands::library::pending_store_uri()?
+    } else { None };
+    drop(mutation_guard);
+    if let Some(uri) = store_uri { open::that(uri)?; }
     if mutates_state && result.is_ok() {
         let _ = modde_core::ipc::notify_refresh();
     }

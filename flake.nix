@@ -399,6 +399,7 @@
               for bin in "$out"/bin/*; do
                 wrapProgram "$bin" \
                   ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix LD_LIBRARY_PATH : ${linuxLdPath} \\"}
+                  ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix PATH : ${lib.makeBinPath [pkgs.bubblewrap pkgs.coreutils pkgs.systemd]} \\"}
                   --set-default SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
                   --set-default NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               done
@@ -631,7 +632,8 @@
                     "build-commands" = [
                       "install -Dm0644 cargo/config .cargo/config.toml"
                       "cargo --offline fetch --locked --manifest-path Cargo.toml --verbose"
-                      "cargo build --offline --release --locked --bin modde-ui --verbose"
+                      "cargo build --offline --release --locked --bin modde --bin modde-ui --verbose"
+                      "install -Dm0755 target/release/modde \${FLATPAK_DEST}/bin/modde"
                       "install -Dm0755 target/release/modde-ui \${FLATPAK_DEST}/bin/modde-ui"
                       "install -Dm0644 dist/modde-ui.desktop \${FLATPAK_DEST}/share/applications/\${FLATPAK_ID}.desktop"
                       "install -Dm0644 dist/com.tartanoglu.modde.png \${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/\${FLATPAK_ID}.png"

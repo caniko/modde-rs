@@ -13,6 +13,12 @@ use crate::resolver::GameId;
 use crate::save::SaveFingerprint;
 
 impl SaveManager<'_> {
+    /// Recovery of a first activation whose original live save set was empty.
+    /// Steam Cloud metadata and modde's parked profiles are preserved.
+    pub fn clear_live_saves(game_save_dir: &Path) -> Result<()> {
+        clear_active_save_dir(game_save_dir)
+    }
+
     pub fn capture_with_fingerprint(
         &self,
         game_id: &GameId,
@@ -30,13 +36,17 @@ impl SaveManager<'_> {
         Self::checkout_branch(game_id, profile_name)?;
 
         remove_live_metadata_from_vault(&vault_path)?;
+        // Capture is a snapshot, not an overlay: deleted live files must also
+        // disappear from the vault, including when the live set becomes empty.
+        for entry in std::fs::read_dir(&vault_path)? {
+            let entry = entry?;
+            if entry.file_name() == ".git" { continue; }
+            if entry.file_type()?.is_dir() { std::fs::remove_dir_all(entry.path())?; }
+            else { std::fs::remove_file(entry.path())?; }
+        }
 
         let count =
             copy_dir_contents_filtered(game_save_dir, &vault_path, |name| !is_live_metadata(name))?;
-
-        if count == 0 {
-            return Ok(0);
-        }
 
         // Stage and commit
         let mut index = repo
@@ -167,9 +177,23 @@ impl SaveManager<'_> {
     ) -> Result<()> {
         if let Some(current) = current_profile {
             self.capture_with_fingerprint(game_id, current, game_save_dir, fingerprint)?;
-            park_active_saves(game_save_dir, current)?;
         }
 
+        self.activate_captured(game_id, new_profile, current_profile, game_save_dir)
+    }
+
+    /// Replace live saves after the caller has captured the outgoing profile.
+    /// A write-ahead journal can be persisted between capture and this step.
+    pub fn activate_captured(
+        &self,
+        game_id: &GameId,
+        new_profile: &str,
+        current_profile: Option<&str>,
+        game_save_dir: &Path,
+    ) -> Result<()> {
+        if let Some(current) = current_profile {
+            park_active_saves(game_save_dir, current)?;
+        }
         Self::ensure_branch(game_id, new_profile)?;
         self.deploy(game_id, new_profile, game_save_dir)?;
 

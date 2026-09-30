@@ -7,6 +7,7 @@ use crate::db::{ModdeDb, ProfileSummary};
 use crate::error::{CoreError, Result};
 use crate::resolver::GameId;
 use crate::save::{SaveFingerprint, SaveManager};
+use crate::library::SaveContext;
 
 pub struct ProfileManager {
     db: ModdeDb,
@@ -135,27 +136,33 @@ impl ProfileManager {
         save_dir: Option<&Path>,
         fingerprint: Option<&SaveFingerprint>,
     ) -> Result<ActivateResult> {
+        self.activate_scoped(name, &SaveContext::legacy(game_id, save_dir), fingerprint).await
+    }
+
+    pub async fn activate_scoped(&self, name: &str, context: &SaveContext, fingerprint: Option<&SaveFingerprint>) -> Result<ActivateResult> {
+        let game_id = &context.game_id;
+        let scope = &context.scope;
         let profile = self.db.load_profile(name, game_id).await?;
         let profile_id = profile
             .id
             .ok_or_else(|| CoreError::Other("profile has no database ID".into()))?;
 
-        if let Some(dir) = save_dir {
+        if let Some(dir) = context.directory.as_deref() {
             let sm = SaveManager::new(&self.db);
 
             // Check for unadopted saves
-            if let Some(count) = sm.detect_unadopted(game_id, dir).await? {
+            if let Some(count) = sm.detect_unadopted(scope, dir).await? {
                 return Ok(ActivateResult::AdoptionRequired { save_count: count });
             }
 
             // Get current active profile (if any) to capture its saves
-            let current = self.db.get_active_profile(game_id).await?;
+            let current = self.db.get_active_profile(scope).await?;
             let current_name = current.map(|(_, name)| name);
 
-            sm.activate_with_fingerprint(game_id, name, current_name.as_deref(), dir, fingerprint)?;
+            sm.activate_with_fingerprint(scope, name, current_name.as_deref(), dir, fingerprint)?;
         }
 
-        self.db.set_active_profile(game_id, profile_id).await?;
+        self.db.set_active_profile(scope, profile_id).await?;
 
         Ok(ActivateResult::Activated)
     }
@@ -182,9 +189,15 @@ impl ProfileManager {
         save_dir: Option<&Path>,
         fingerprint: Option<&SaveFingerprint>,
     ) -> Result<()> {
+        self.try_profile_scoped(name, &SaveContext::legacy(game_id, save_dir), fingerprint).await
+    }
+
+    pub async fn try_profile_scoped(&self, name: &str, context: &SaveContext, fingerprint: Option<&SaveFingerprint>) -> Result<()> {
+        let game_id = &context.game_id;
+        let scope = &context.scope;
         let (current_id, current_name) = self
             .db
-            .get_active_profile(game_id)
+            .get_active_profile(scope)
             .await?
             .ok_or_else(|| CoreError::NoActiveProfile(game_id.to_string()))?;
 
@@ -194,14 +207,14 @@ impl ProfileManager {
             .ok_or_else(|| CoreError::Other("profile has no database ID".into()))?;
 
         // Push current profile onto experiment stack (before switching)
-        self.db.push_experiment(game_id, current_id).await?;
+        self.db.push_experiment(scope, current_id).await?;
 
-        if let Some(dir) = save_dir {
+        if let Some(dir) = context.directory.as_deref() {
             let sm = SaveManager::new(&self.db);
-            sm.activate_with_fingerprint(game_id, name, Some(&current_name), dir, fingerprint)?;
+            sm.activate_with_fingerprint(scope, name, Some(&current_name), dir, fingerprint)?;
         }
 
-        self.db.set_active_profile(game_id, new_id).await?;
+        self.db.set_active_profile(scope, new_id).await?;
 
         Ok(())
     }
@@ -223,24 +236,33 @@ impl ProfileManager {
         save_dir: Option<&Path>,
         fingerprint: Option<&SaveFingerprint>,
     ) -> Result<String> {
+        self.rollback_scoped(&SaveContext::legacy(game_id, save_dir), fingerprint).await
+    }
+
+    pub async fn rollback_scoped(&self, context: &SaveContext, fingerprint: Option<&SaveFingerprint>) -> Result<String> {
+        let game_id = &context.game_id;
+        let scope = &context.scope;
         let prev_id = self
             .db
-            .pop_experiment(game_id)
+            .peek_experiment(scope)
             .await?
             .ok_or_else(|| CoreError::NotInExperiment(game_id.to_string()))?;
 
         let (_current_id, current_name) = self
             .db
-            .get_active_profile(game_id)
+            .get_active_profile(scope)
             .await?
             .ok_or_else(|| CoreError::NoActiveProfile(game_id.to_string()))?;
 
         let prev_profile = self.db.load_profile_by_id(prev_id).await?;
+        if prev_profile.game_id != *game_id {
+            return Err(CoreError::Other("experiment profile belongs to a different game".into()));
+        }
 
-        if let Some(dir) = save_dir {
+        if let Some(dir) = context.directory.as_deref() {
             let sm = SaveManager::new(&self.db);
             sm.activate_with_fingerprint(
-                game_id,
+                scope,
                 &prev_profile.name,
                 Some(&current_name),
                 dir,
@@ -248,7 +270,8 @@ impl ProfileManager {
             )?;
         }
 
-        self.db.set_active_profile(game_id, prev_id).await?;
+        self.db.set_active_profile(scope, prev_id).await?;
+        self.db.pop_experiment(scope).await?;
 
         Ok(prev_profile.name.clone())
     }
@@ -300,6 +323,11 @@ impl ProfileManager {
         game_id: &GameId,
         options: ForkOptions,
     ) -> Result<i64> {
+        self.fork_scoped(source_name, new_name, &SaveContext::legacy(game_id, None), options).await
+    }
+
+    pub async fn fork_scoped(&self, source_name: &str, new_name: &str, context: &SaveContext, options: ForkOptions) -> Result<i64> {
+        let game_id = &context.game_id;
         validate_profile_name(new_name)?;
         let source = self.db.load_profile(source_name, game_id).await?;
 
@@ -328,7 +356,7 @@ impl ProfileManager {
         let new_id = self.db.create_profile(&new_profile).await?;
 
         // Fork the save branch
-        SaveManager::fork_saves(game_id, source_name, new_name)?;
+        SaveManager::fork_saves(&context.scope, source_name, new_name)?;
 
         Ok(new_id)
     }
