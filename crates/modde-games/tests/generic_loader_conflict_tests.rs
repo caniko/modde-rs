@@ -26,9 +26,9 @@ fn load_user_games_warns_and_skips_conflicting_or_invalid_specs() {
     assert!(logs_contain("bad.toml"));
     assert!(logs_contain("skyrim-se.toml"));
 
-    let plugin = resolve_game_plugin("skyrim-se").expect("built-in game should still resolve");
-    assert_eq!(
-        plugin.display_name(),
-        "The Elder Scrolls V: Skyrim Special Edition"
-    );
+    let plugin = resolve_game_plugin("skyrim-se");
+    assert_eq!(plugin.is_some(), cfg!(feature = "bethesda"));
+    if let Some(plugin) = plugin {
+        assert_eq!(plugin.display_name(), "The Elder Scrolls V: Skyrim Special Edition");
+    }
 }

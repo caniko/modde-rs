@@ -156,6 +156,7 @@ fn load_diagnostics_blocking(
     let active_plugins = load_active_plugins_blocking(&pm, &profile);
     let integrity = Modde::verify_staging_integrity(&ProfileManager::staging_dir(&profile.name));
     let engine = match profile.game_id.as_str() {
+        #[cfg(feature = "bethesda")]
         "skyrim-se" | "skyrim-ae" | "fallout4" | "fallout76" => {
             modde_games::bethesda::diagnostics::bethesda_diagnostics()
         }

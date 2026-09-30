@@ -29,7 +29,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [features]
-default = ["postgres"]
+default = ["postgres", "bethesda-archives"]
+bethesda-archives = ["dep:flate2", "dep:lz4_flex"]
 # Enable the PostgreSQL backend in addition to the always-present SQLite backend.
 postgres = ["sqlx/postgres"]
 linux-integrations = []
@@ -50,8 +51,8 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 semver = { workspace = true }
-flate2 = { workspace = true }
-lz4_flex = { workspace = true }
+flate2 = { workspace = true, optional = true }
+lz4_flex = { workspace = true, optional = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 sqlx = { workspace = true }

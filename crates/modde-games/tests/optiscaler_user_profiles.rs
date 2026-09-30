@@ -75,6 +75,7 @@ fn shared_data_dir() -> &'static std::path::PathBuf {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn optiscaler_user_profile_appears_for_built_in_game() {
     let _ = shared_data_dir();
 

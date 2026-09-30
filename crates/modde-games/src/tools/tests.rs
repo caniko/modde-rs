@@ -95,6 +95,7 @@ fn proton_is_registered() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
 fn proton_launch_integration_is_exposed() {
     let tool = super::resolve_tool("proton").expect("proton tool should resolve");
     let mut config = tool.default_config();
@@ -129,6 +130,7 @@ fn proton_launch_integration_is_exposed() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
 fn mangohud_exposes_goverlay_config_keys() {
     let tool = super::resolve_tool("mangohud").expect("mangohud tool should resolve");
     let specs = tool.settings_schema();
@@ -159,7 +161,7 @@ fn mangohud_exposes_goverlay_config_keys() {
 
 #[test]
 fn optiscaler_release_provider_filters_installable_assets() {
-    let tool = super::resolve_tool("optiscaler").expect("optiscaler tool should resolve");
+    let tool: &dyn super::GameTool = &super::optiscaler::OPTISCALER;
     assert!(tool.supports_releases());
     let release = super::ToolReleaseSummary {
         tag: "v1".to_string(),
@@ -185,6 +187,7 @@ fn optiscaler_release_provider_filters_installable_assets() {
 }
 
 #[test]
+#[cfg(feature = "cyberpunk")]
 fn tool_context_derives_executable_dir_from_game_plugin() {
     let root = std::path::PathBuf::from("/tmp/modde-test-cyberpunk");
     let context =
@@ -213,6 +216,7 @@ fn optiscaler_restore_commands_use_supplied_executable_dir() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
 fn protonup_rs_install_args_are_non_interactive() {
     let args = super::proton::protonup_rs_install_args("GE-Proton10-34", "steam");
     assert_eq!(
@@ -229,6 +233,7 @@ fn protonup_rs_install_args_are_non_interactive() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
 fn ge_proton_release_filter_accepts_real_tags() {
     assert!(super::proton::is_ge_proton_version("GE-Proton10-34"));
     assert!(super::proton::is_ge_proton_version("Proton-GE-Proton8-32"));
@@ -238,6 +243,7 @@ fn ge_proton_release_filter_accepts_real_tags() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
 fn proton_version_options_preserve_catalog_order_and_dedup() {
     let options = super::proton::merge_proton_version_options(
         vec![
@@ -291,7 +297,7 @@ async fn optiscaler_install_release_from_path_extracts_local_archive() {
     zip.write_all(b"dll-bytes").expect("write dll");
     zip.finish().expect("finish archive");
 
-    let tool = super::resolve_tool("optiscaler").expect("optiscaler tool should resolve");
+    let tool: &dyn super::GameTool = &super::optiscaler::OPTISCALER;
     let config = tool.default_config();
     let updated = tool
         .install_release_from_path(

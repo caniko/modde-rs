@@ -1,3 +1,5 @@
+#![cfg(all(feature = "bethesda", feature = "cyberpunk"))]
+
 //! Tests for `classify_mod_by_content` and the per-game `classify_mod` methods.
 
 use modde_games::bethesda::{FALLOUT4, SKYRIM_SE};

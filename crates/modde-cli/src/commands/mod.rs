@@ -16,6 +16,7 @@ pub mod import;
 pub mod install;
 pub mod instance;
 pub mod lockfile;
+#[cfg(feature = "bethesda")]
 pub mod loot;
 pub mod nexus;
 pub mod nix_schema;
@@ -175,6 +176,7 @@ pub async fn persist_plugin_order(
     Ok(())
 }
 
+#[cfg(feature = "bethesda")]
 fn validate_native_record_references(profile: &Profile, plugins: &[PluginEntry]) -> Result<()> {
     if !matches!(
         profile.game_id.as_str(),
@@ -226,6 +228,15 @@ fn validate_native_record_references(profile: &Profile, plugins: &[PluginEntry])
         ));
     }
     anyhow::bail!(message)
+}
+
+#[cfg(not(feature = "bethesda"))]
+fn validate_native_record_references(profile: &Profile, _plugins: &[PluginEntry]) -> Result<()> {
+    anyhow::ensure!(
+        !matches!(profile.game_id.as_str(), "skyrim-se" | "skyrim-ae" | "fallout4" | "fallout76" | "starfield"),
+        "native record validation requires the bethesda feature"
+    );
+    Ok(())
 }
 
 #[cfg(test)]

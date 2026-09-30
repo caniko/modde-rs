@@ -1,4 +1,5 @@
 pub mod backup;
+#[cfg(feature = "bethesda-archives")]
 pub mod bethesda_archive;
 pub mod bisect;
 pub mod collision;

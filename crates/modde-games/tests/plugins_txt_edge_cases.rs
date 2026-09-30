@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use std::path::Path;
 
 use modde_games::bethesda::plugins_txt::{

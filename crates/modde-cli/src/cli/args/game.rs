@@ -255,6 +255,7 @@ pub(crate) enum UpdateAction {
 }
 
 #[derive(Subcommand)]
+#[cfg(feature = "bethesda")]
 pub(crate) enum LootAction {
     /// Sort plugins using LOOT masterlist rules
     Sort {

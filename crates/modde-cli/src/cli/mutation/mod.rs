@@ -22,8 +22,9 @@ pub(super) fn command_mutates_state(cmd: &Commands) -> bool {
                 | LockAction::Import { dry_run: true, .. },
         }
         | Commands::Verify { .. }
-        | Commands::Collisions { .. }
-        | Commands::Gui => false,
+        | Commands::Collisions { .. } => false,
+        #[cfg(feature = "gui")]
+        Commands::Gui => false,
 
         Commands::Config { action } => matches!(
             action,
@@ -52,6 +53,7 @@ pub(super) fn command_mutates_state(cmd: &Commands) -> bool {
         Commands::Instance { action } => !matches!(action, InstanceAction::List),
 
         // Loot validate just reports, sort rewrites the load order.
+        #[cfg(feature = "bethesda")]
         Commands::Loot { action } => matches!(action, LootAction::Sort { .. }),
 
         Commands::Patcher { action } => !matches!(
@@ -137,10 +139,13 @@ pub(super) fn command_mutates_state(cmd: &Commands) -> bool {
 }
 
 pub(super) fn command_runs_lazy_product_update_check(cmd: &Commands) -> bool {
+    #[cfg(feature = "gui")]
+    if matches!(cmd, Commands::Gui) {
+        return false;
+    }
     !matches!(
         cmd,
-        Commands::Gui
-            | Commands::Config { .. }
+        Commands::Config { .. }
             | Commands::Dev { .. }
             | Commands::Lock { .. }
             | Commands::Update {

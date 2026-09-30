@@ -28,6 +28,6 @@ fn optiscaler_bad_sidecar_logs_and_skips() {
     let _ = shared_data_dir();
 
     let profiles = resolve_optiscaler_profiles("stellar-blade");
-    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles.len(), usize::from(cfg!(feature = "ue4")));
     assert!(logs_contain("skipping user OptiScaler profile spec"));
 }

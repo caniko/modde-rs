@@ -299,6 +299,7 @@ fn seven_z_duplicate_bytes_and_write_rejects_size_mismatch() {
 }
 
 #[tokio::test]
+#[cfg(feature = "bethesda-archives")]
 async fn zip_entry_can_satisfy_nested_bsa_request() {
     let temp = tempfile::tempdir().unwrap();
     let bsa_root = temp.path().join("bsa-root");

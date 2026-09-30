@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use modde_games::bethesda::ini::patch_ini_content;
 
 // ── Existing key replacement ────────────────────────────────────────

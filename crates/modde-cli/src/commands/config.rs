@@ -13,7 +13,9 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::ValueEnum;
 
-use modde_core::db::{ModdeDb, build_pg_options, describe_pg_options};
+use modde_core::db::ModdeDb;
+#[cfg(feature = "postgres")]
+use modde_core::db::{build_pg_options, describe_pg_options};
 use modde_core::settings::{AppSettings, DatabaseSettings, DbBackend};
 
 /// Stored database fields that `config set-database --clear` can unset.
@@ -31,7 +33,9 @@ pub enum ClearDatabaseField {
 enum Source {
     Env(&'static str),
     Settings,
+    #[cfg(feature = "postgres")]
     Default,
+    #[cfg(feature = "postgres")]
     Unset,
 }
 
@@ -40,12 +44,15 @@ impl Source {
         match self {
             Self::Env(key) => key,
             Self::Settings => "settings.toml",
+            #[cfg(feature = "postgres")]
             Self::Default => "backend default",
+            #[cfg(feature = "postgres")]
             Self::Unset => "unset",
         }
     }
 }
 
+#[cfg(feature = "postgres")]
 struct ResolvedField<T> {
     value: T,
     source: Source,
@@ -55,6 +62,7 @@ fn env_var(key: &'static str) -> Option<String> {
     std::env::var(key).ok()
 }
 
+#[cfg(feature = "postgres")]
 fn resolved_string(
     env_key: &'static str,
     setting: Option<String>,
@@ -84,6 +92,7 @@ fn resolved_string(
     }
 }
 
+#[cfg(feature = "postgres")]
 fn resolved_path(
     env_key: &'static str,
     setting: Option<PathBuf>,
@@ -106,6 +115,7 @@ fn resolved_path(
     }
 }
 
+#[cfg(feature = "postgres")]
 fn resolved_port(setting: Option<u16>) -> Result<ResolvedField<u16>> {
     if let Some(raw) = env_var("MODDE_DATABASE_PORT") {
         let port = raw.parse::<u16>().map_err(|e| {
@@ -132,6 +142,7 @@ fn print_field(name: &str, value: &str, source: Source) {
     println!("  {name}: {value} (from {})", source.label());
 }
 
+#[cfg(feature = "postgres")]
 fn redact_url(raw: &str) -> String {
     let Ok(mut url) = url::Url::parse(raw) else {
         return "<unparseable url; redacted>".to_string();
@@ -142,9 +153,15 @@ fn redact_url(raw: &str) -> String {
     url.to_string()
 }
 
+#[cfg(feature = "postgres")]
 fn postgres_summary(db: &DatabaseSettings) -> Result<String> {
     let opts = build_pg_options(db, &|key| std::env::var(key).ok())?;
     Ok(describe_pg_options(&opts))
+}
+
+#[cfg(not(feature = "postgres"))]
+fn postgres_summary(_db: &DatabaseSettings) -> Result<String> {
+    bail!("PostgreSQL support requires the postgres feature")
 }
 
 /// Print the resolved database configuration and its source.
@@ -171,6 +188,9 @@ pub fn handle_show() -> Result<()> {
         DbBackend::Sqlite => {
             println!("  sqlite path: {}", modde_core::paths::db_path().display());
         }
+        #[cfg(not(feature = "postgres"))]
+        DbBackend::Postgres => bail!("PostgreSQL support requires the postgres feature"),
+        #[cfg(feature = "postgres")]
         DbBackend::Postgres => {
             let url = resolved_string("MODDE_DATABASE_URL", db.url.clone(), None);
             let resolved = build_pg_options(db, &|key| std::env::var(key).ok());

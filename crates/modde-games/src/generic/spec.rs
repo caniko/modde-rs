@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::registry::SUPPORTED_GAME_IDS;
+use crate::registry::RESERVED_GAME_IDS;
 
 /// Deserialized configuration for a user-defined generic game.
 #[derive(Debug, Clone, Deserialize)]
@@ -70,7 +70,7 @@ impl GameSpec {
             );
         }
 
-        if SUPPORTED_GAME_IDS.contains(&self.id.as_str()) {
+        if RESERVED_GAME_IDS.contains(&self.id.as_str()) {
             bail!("game id '{}' collides with a built-in game", self.id);
         }
 

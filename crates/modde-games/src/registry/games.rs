@@ -1,30 +1,43 @@
 #![allow(clippy::wildcard_imports)]
-use super::classifiers::{
-    bethesda_collision_classifier, cyberpunk_collision_classifier, gamebryo_collision_classifier,
-    generic_collision_classifier, pak_collision_classifier, ue4_collision_classifier,
-    witcher_collision_classifier,
-};
+#[cfg(any(feature = "bethesda", feature = "cyberpunk", feature = "gamebryo", feature = "bg3", feature = "oblivion-remastered", feature = "ue4", feature = "witcher3"))]
+use super::classifiers::*;
 use super::*;
 
 pub const SUPPORTED_GAME_IDS: &[&str] = &[
+    #[cfg(feature = "bethesda")]
     "skyrim-se",
+    #[cfg(feature = "bethesda")]
     "skyrim-ae",
+    #[cfg(feature = "bethesda")]
     "fallout4",
+    #[cfg(feature = "bethesda")]
     "fallout76",
+    #[cfg(feature = "bethesda")]
     "starfield",
+    #[cfg(feature = "cyberpunk")]
     "cyberpunk2077",
+    #[cfg(feature = "ue4")]
     "stellar-blade",
+    #[cfg(feature = "bg3")]
     "baldurs-gate3",
+    #[cfg(feature = "stardew")]
     "stardew-valley",
+    #[cfg(feature = "gamebryo")]
     "fallout-new-vegas",
+    #[cfg(feature = "gamebryo")]
     "oblivion",
+    #[cfg(feature = "oblivion-remastered")]
     "oblivion-remastered",
+    #[cfg(feature = "bannerlord")]
     "bannerlord",
+    #[cfg(feature = "witcher3")]
     "witcher3",
+    #[cfg(feature = "ue4")]
     "subnautica2",
 ];
 
 pub static GAME_REGISTRY: &[GameRegistration] = &[
+    #[cfg(feature = "bethesda")]
     GameRegistration {
         game_id: "skyrim-se",
         display_name: "The Elder Scrolls V: Skyrim Special Edition",
@@ -47,6 +60,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "bethesda")]
     GameRegistration {
         game_id: "skyrim-ae",
         display_name: "The Elder Scrolls V: Skyrim Anniversary Edition",
@@ -71,6 +85,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "bethesda")]
     GameRegistration {
         game_id: "fallout4",
         display_name: "Fallout 4",
@@ -93,6 +108,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "bethesda")]
     GameRegistration {
         game_id: "fallout76",
         display_name: "Fallout 76",
@@ -115,6 +131,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "bethesda")]
     GameRegistration {
         game_id: "starfield",
         display_name: "Starfield",
@@ -137,6 +154,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "cyberpunk")]
     GameRegistration {
         game_id: "cyberpunk2077",
         display_name: "Cyberpunk 2077",
@@ -159,6 +177,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Experimental,
         optiscaler_profiles: crate::cyberpunk::CYBERPUNK_OPTISCALER_PROFILES,
     },
+    #[cfg(feature = "ue4")]
     GameRegistration {
         game_id: "stellar-blade",
         display_name: "Stellar Blade",
@@ -186,6 +205,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: crate::ue4::STELLAR_BLADE_OPTISCALER_PROFILES,
     },
+    #[cfg(feature = "bg3")]
     GameRegistration {
         game_id: "baldurs-gate3",
         display_name: "Baldur's Gate 3",
@@ -208,6 +228,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Experimental,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "stardew")]
     GameRegistration {
         game_id: "stardew-valley",
         display_name: "Stardew Valley",
@@ -230,6 +251,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "gamebryo")]
     GameRegistration {
         game_id: "fallout-new-vegas",
         display_name: "Fallout: New Vegas",
@@ -252,6 +274,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "gamebryo")]
     GameRegistration {
         game_id: "oblivion",
         display_name: "The Elder Scrolls IV: Oblivion",
@@ -274,6 +297,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "oblivion-remastered")]
     GameRegistration {
         game_id: "oblivion-remastered",
         display_name: "The Elder Scrolls IV: Oblivion Remastered",
@@ -296,6 +320,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "bannerlord")]
     GameRegistration {
         game_id: "bannerlord",
         display_name: "Mount & Blade II: Bannerlord",
@@ -318,6 +343,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "witcher3")]
     GameRegistration {
         game_id: "witcher3",
         display_name: "The Witcher 3: Wild Hunt",
@@ -340,6 +366,7 @@ pub static GAME_REGISTRY: &[GameRegistration] = &[
         hot_deploy: HotDeploySupport::Unsupported,
         optiscaler_profiles: &[],
     },
+    #[cfg(feature = "ue4")]
     GameRegistration {
         game_id: "subnautica2",
         display_name: "Subnautica 2",

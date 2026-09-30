@@ -228,6 +228,7 @@ async fn analyze_profile(
         .map(|plugin| plugin.plugin_name.clone())
         .collect::<Vec<_>>();
     let engine = match game_id {
+        #[cfg(feature = "bethesda")]
         "skyrim-se" | "skyrim-ae" | "fallout4" | "fallout76" => {
             modde_games::bethesda::diagnostics::bethesda_diagnostics()
         }

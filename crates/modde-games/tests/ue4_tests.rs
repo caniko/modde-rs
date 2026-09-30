@@ -1,3 +1,5 @@
+#![cfg(feature = "ue4")]
+
 use std::path::Path;
 
 use modde_core::collision::CollisionSeverity;

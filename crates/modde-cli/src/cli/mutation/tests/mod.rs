@@ -81,6 +81,7 @@ fn instance_create() -> Commands {
     }
 }
 
+#[cfg(feature = "bethesda")]
 fn loot_validate() -> Commands {
     Commands::Loot {
         action: LootAction::Validate {
@@ -89,6 +90,7 @@ fn loot_validate() -> Commands {
     }
 }
 
+#[cfg(feature = "bethesda")]
 fn loot_sort() -> Commands {
     Commands::Loot {
         action: LootAction::Sort {

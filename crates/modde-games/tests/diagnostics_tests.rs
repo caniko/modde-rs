@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use std::path::PathBuf;
 
 use modde_core::diagnostics::{DiagContext, DiagnosticRule, Severity};

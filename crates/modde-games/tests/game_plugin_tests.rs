@@ -1,3 +1,5 @@
+#![cfg(all(feature = "bethesda", feature = "cyberpunk"))]
+
 use std::path::Path;
 
 use modde_games::bethesda::{FALLOUT4, FALLOUT76, SKYRIM_AE, SKYRIM_SE, STARFIELD};

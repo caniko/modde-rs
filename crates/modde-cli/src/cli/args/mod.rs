@@ -154,6 +154,7 @@ pub(crate) enum Commands {
         action: UpdateAction,
     },
     /// LOOT masterlist integration (Bethesda plugin sorting)
+    #[cfg(feature = "bethesda")]
     Loot {
         #[command(subcommand)]
         action: LootAction,
@@ -289,5 +290,6 @@ pub(crate) enum Commands {
     /// Import existing TOML profiles into the database
     Import,
     /// Launch the graphical user interface
+    #[cfg(feature = "gui")]
     Gui,
 }

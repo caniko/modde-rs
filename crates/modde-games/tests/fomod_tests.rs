@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use modde_games::bethesda::fomod::*;
 
 #[test]

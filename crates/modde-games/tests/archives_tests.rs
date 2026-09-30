@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use std::path::Path;
 
 use modde_games::bethesda::archives::{BSA_EXTENSIONS, is_archive, staging_path};

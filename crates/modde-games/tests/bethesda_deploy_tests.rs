@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 //! Comprehensive tests for Bethesda game plugin deployment,
 //! INI patching edge cases, and plugins.txt parsing.
 

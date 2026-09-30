@@ -28,7 +28,19 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [features]
-default = []
+default = ["all-games", "bethesda-archives", "postgres", "linux-integrations", "macos-integrations"]
+all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
+bethesda = ["modde-games/bethesda", "bethesda-archives"]
+gamebryo = ["modde-games/gamebryo", "bethesda-archives"]
+cyberpunk = ["modde-games/cyberpunk"]
+ue4 = ["modde-games/ue4"]
+bg3 = ["modde-games/bg3"]
+stardew = ["modde-games/stardew"]
+bannerlord = ["modde-games/bannerlord"]
+witcher3 = ["modde-games/witcher3"]
+oblivion-remastered = ["modde-games/oblivion-remastered", "bethesda-archives"]
+bethesda-archives = ["modde-core/bethesda-archives", "dep:lz4_flex"]
+postgres = ["modde-core/postgres"]
 rar = ["dep:unrar"]
 linux-integrations = ["modde-core/linux-integrations", "modde-games/linux-integrations"]
 macos-integrations = ["modde-core/macos-integrations", "modde-games/macos-integrations"]
@@ -52,7 +64,7 @@ keyring-core = { workspace = true }
 aes = { workspace = true }
 ctr = { workspace = true }
 base64 = { workspace = true }
-lz4_flex = { workspace = true }
+lz4_flex = { workspace = true, optional = true }
 zip = { workspace = true }
 tempfile = { workspace = true }
 smallvec = { workspace = true }

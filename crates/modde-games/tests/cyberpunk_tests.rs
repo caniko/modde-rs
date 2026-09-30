@@ -1,3 +1,5 @@
+#![cfg(feature = "cyberpunk")]
+
 use modde_games::GamePlugin;
 use modde_games::HotDeploySupport;
 use modde_games::cyberpunk::Cyberpunk2077;

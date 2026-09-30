@@ -16,6 +16,7 @@ fn write_heroic_installed(dir: &std::path::Path, entries: &[(&str, &str)]) {
 }
 
 #[test]
+#[cfg(feature = "cyberpunk")]
 fn scan_heroic_gog_detects_known_game() {
     let tmp = tempfile::tempdir().unwrap();
     let install_dir = tmp.path().join("cyberpunk");
@@ -133,6 +134,7 @@ fn scan_heroic_empty_installed_array() {
 }
 
 #[test]
+#[cfg(feature = "cyberpunk")]
 fn scan_heroic_sideload_matches_by_dirname() {
     let tmp = tempfile::tempdir().unwrap();
     // Create a dir named like the Cyberpunk Steam dir
@@ -185,6 +187,7 @@ fn scan_heroic_sideload_missing_file_is_no_op() {
 
 // ── Steam library scanning ────────────────────────────────────────
 
+#[cfg(feature = "ue4")]
 fn write_steam_appmanifest(
     steamapps_dir: &std::path::Path,
     appid: &str,
@@ -232,6 +235,7 @@ fn parse_steam_appmanifest_reads_required_fields() {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn scan_steam_library_detects_manifest_installdir_in_standard_library() {
     let tmp = tempfile::tempdir().unwrap();
     let steamapps = tmp.path().join("steamapps");
@@ -252,6 +256,7 @@ fn scan_steam_library_detects_manifest_installdir_in_standard_library() {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn scan_steam_library_detects_manifest_installdir_in_nested_steamapps_library() {
     let tmp = tempfile::tempdir().unwrap();
     let reported_library = tmp.path().join("steamapps");
@@ -269,6 +274,7 @@ fn scan_steam_library_detects_manifest_installdir_in_nested_steamapps_library() 
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn scan_steam_library_uses_manifest_installdir_not_known_steam_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let steamapps = tmp.path().join("steamapps");

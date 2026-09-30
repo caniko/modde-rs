@@ -11,17 +11,22 @@ authors.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["wow"]
+wow = ["dep:anyhow", "dep:clap", "dep:libc", "dep:nix-manager-core", "dep:serde", "dep:serde_json", "dep:serde_yaml_ng", "dep:sha2", "dep:tempfile"]
+
 [[bin]]
 name = "modde-manager"
 path = "src/main.rs"
+required-features = ["wow"]
 
 [dependencies]
-anyhow = { workspace = true }
-clap = { workspace = true }
-libc = { workspace = true }
-nix-manager-core = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-serde_yaml_ng = { workspace = true }
-sha2 = { workspace = true }
-tempfile = { workspace = true }
+anyhow = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+libc = { workspace = true, optional = true }
+nix-manager-core = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+serde_yaml_ng = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }

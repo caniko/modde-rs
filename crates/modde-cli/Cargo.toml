@@ -82,30 +82,43 @@ assets = [
 ]
 
 [features]
-default = ["rar", "linux-integrations", "macos-integrations"]
+default = ["gui", "all-games", "bethesda-archives", "postgres", "rar", "linux-integrations", "macos-integrations"]
+all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
+bethesda = ["modde-games/bethesda", "modde-sources/bethesda", "modde-ui?/bethesda"]
+gamebryo = ["modde-games/gamebryo", "modde-sources/gamebryo", "modde-ui?/gamebryo"]
+cyberpunk = ["modde-games/cyberpunk", "modde-sources/cyberpunk", "modde-ui?/cyberpunk"]
+ue4 = ["modde-games/ue4", "modde-sources/ue4", "modde-ui?/ue4"]
+bg3 = ["modde-games/bg3", "modde-sources/bg3", "modde-ui?/bg3"]
+stardew = ["modde-games/stardew", "modde-sources/stardew", "modde-ui?/stardew"]
+bannerlord = ["modde-games/bannerlord", "modde-sources/bannerlord", "modde-ui?/bannerlord"]
+witcher3 = ["modde-games/witcher3", "modde-sources/witcher3", "modde-ui?/witcher3"]
+oblivion-remastered = ["modde-games/oblivion-remastered", "modde-sources/oblivion-remastered", "modde-ui?/oblivion-remastered"]
+bethesda-archives = ["modde-sources/bethesda-archives", "modde-ui?/bethesda-archives"]
+postgres = ["modde-core/postgres", "modde-ui?/postgres"]
+gui = ["dep:modde-ui"]
 rar = ["modde-sources/rar"]
 linux-integrations = [
   "modde-core/linux-integrations",
   "modde-games/linux-integrations",
   "modde-sources/linux-integrations",
-  "modde-ui/linux-integrations",
+  "modde-ui?/linux-integrations",
 ]
 macos-integrations = [
   "modde-core/macos-integrations",
   "modde-games/macos-integrations",
   "modde-sources/macos-integrations",
-  "modde-ui/macos-integrations",
+  "modde-ui?/macos-integrations",
 ]
 windows-integrations = [
   "modde-core/windows-integrations",
   "modde-games/windows-integrations",
   "modde-sources/windows-integrations",
-  "modde-ui/windows-integrations",
+  "modde-ui?/windows-integrations",
 ]
 heap-profile = []
 # Hidden `modde dev screenshot` command for headless GUI asset capture.
 # Non-default; enables the modde-ui headless screenshot backend.
-screenshot = ["modde-ui/screenshot"]
+screenshot = ["gui", "modde-ui/screenshot"]
 remote-telemetry = [
   "dep:detritus",
   "dep:detritus-protocol",
@@ -124,7 +137,7 @@ path = "src/main.rs"
 modde-core = { workspace = true }
 modde-sources = { workspace = true }
 modde-games = { workspace = true }
-modde-ui = { workspace = true }
+modde-ui = { workspace = true, optional = true }
 modde-oracle-api = { workspace = true, optional = true }
 clap = { workspace = true }
 clap_complete = { workspace = true }

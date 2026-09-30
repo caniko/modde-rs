@@ -16,7 +16,9 @@ use tracing_subscriber::prelude::*;
 #[cfg(feature = "remote-telemetry")]
 use crate::telemetry;
 
-use super::args::{Cli, Commands};
+use super::args::Cli;
+#[cfg(feature = "gui")]
+use super::args::Commands;
 use super::dispatch::run_command;
 use super::mutation::{
     command_mutates_state, command_runs_lazy_product_update_check,
@@ -51,6 +53,7 @@ pub(crate) fn run() -> Result<()> {
     }
 
     // GUI launches its own runtime (iced), so handle it outside tokio.
+    #[cfg(feature = "gui")]
     if matches!(cli.command, Commands::Gui) {
         modde_ui::app::run().map_err(|e| anyhow::anyhow!("GUI error: {e}"))?;
         return Ok(());

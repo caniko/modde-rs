@@ -4,6 +4,11 @@ use super::*;
 impl WabbajackInstaller {
     /// Run the full install pipeline, sending progress updates via channel.
     pub async fn install(&self, progress_tx: mpsc::UnboundedSender<InstallProgress>) -> Result<()> {
+        #[cfg(not(feature = "bethesda-archives"))]
+        anyhow::ensure!(
+            !self.manifest.install_directives().iter().any(|directive| matches!(directive, InstallDirective::CreateBSA { .. })),
+            "CreateBSA requires the bethesda-archives feature"
+        );
         let staging_store = StagingStore::new(&self.staging_dir);
         staging_store.prepare_resumable().await?;
         let _diagnostics_heartbeat = self.diagnostics.as_ref().map(|diagnostics| {

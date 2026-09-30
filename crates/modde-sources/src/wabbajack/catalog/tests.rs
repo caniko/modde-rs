@@ -68,7 +68,7 @@ fn filter_entries_matches_normalized_wabbajack_game_names() {
         },
     );
 
-    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered.len(), usize::from(cfg!(feature = "bethesda")));
 }
 
 #[test]

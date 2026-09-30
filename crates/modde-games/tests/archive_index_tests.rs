@@ -1,3 +1,5 @@
+#![cfg(feature = "bethesda")]
+
 use std::io::Write;
 
 use modde_games::bethesda::archive_index::ArchiveIndex;

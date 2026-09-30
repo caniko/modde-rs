@@ -48,6 +48,7 @@ fn collisions_is_read_only() {
 fn gui_is_read_only() {
     // The GUI command launches the GUI itself; pushing to
     // ourselves at startup would be confusing and pointless.
+    #[cfg(feature = "gui")]
     assert!(!command_mutates_state(&Commands::Gui));
 }
 
@@ -62,6 +63,7 @@ fn instance_list_is_read_only() {
 }
 
 #[test]
+#[cfg(feature = "bethesda")]
 fn loot_validate_is_read_only() {
     assert!(!command_mutates_state(&loot_validate()));
 }
