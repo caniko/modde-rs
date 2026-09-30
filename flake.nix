@@ -26,12 +26,7 @@
       inputs.plinth.follows = "plinth";
     };
 
-    plinth = {
-      url = "git+https://github.com/caniko/plinth.git";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.rust-overlay.follows = "rust-overlay";
-      inputs.crane.follows = "crane";
-    };
+    plinth.follows = "visual-rubric/plinth";
 
     visual-rubric = {
       url = "git+https://github.com/caniko/visual-rubric.git";
@@ -241,6 +236,92 @@
             openssl
           ]
           ++ linuxBuildInputs;
+
+        # Default shell: application development only (build, run, test,
+        # lint, debug). Packaging/signing/VM tools live in releaseTools,
+        # website tooling (dioxus via plinthProject/visualRubric) in docs —
+        # see devshell-no-dioxus below.
+        nativeDevPackages = with pkgs;
+          [
+            cargo-audit
+            cargo-deny
+            cargo-llvm-cov
+            cargo-nextest
+            curl
+            file
+            findutils
+            git
+            gnugrep
+            gnupg
+            gnutar
+            gzip
+            jq
+            just
+            openssh
+            pre-commit
+            rust-analyzer
+            stdenv.cc
+            toolchain.rustToolchain
+            simitCli
+            alejandra
+            _7zz
+            unrar
+            prettier
+            taplo
+            unzip
+            util-linux
+            wget
+            zip
+          ]
+          ++ nativeBuildInputs
+          ++ buildInputs;
+
+        # Release-only tooling: packaging, signing, image/VM/container
+        # workflows (see scripts/release-local-check.sh). Explicitly
+        # activated via `nix develop .#release`, never in default.
+        releaseTools = with pkgs; [
+          appstream
+          cargo-about
+          cargo-cyclonedx
+          cargo-deb
+          cargo-sbom
+          coprCli
+          cosign
+          debootstrap
+          dnf5
+          dpkg
+          flatpak
+          flatpak-builder
+          forgejo-cli
+          grype
+          minisign
+          nodejs
+          osslsigncode
+          pacman
+          podman
+          qemu
+          reprepro
+          rpm
+          wineWow64Packages.stable
+        ];
+
+        docsPackages = with pkgs;
+          [
+            cargo-deny
+            cargo-nextest
+            git
+            mdbook
+            plinthProject
+            pre-commit
+            rust-analyzer
+            stdenv.cc
+            toolchain.rustToolchain
+            visualRubric
+            jq
+            taplo
+          ]
+          ++ nativeBuildInputs
+          ++ buildInputs;
 
         src = lib.fileset.toSource {
           root = ./.;
@@ -1245,6 +1326,15 @@
             diff -u ${./nix/release-supporting-tools.nix} "$TMPDIR/release-supporting-tools.nix"
             touch "$out"
           '';
+          # Shell boundary: default stays iced-only, website tooling stays in
+          # docs. Name-based so this half never evaluates plinth itself; the
+          # docs-membership assert below is what keeps plinth pinned working.
+          devshell-no-dioxus =
+            assert lib.assertMsg (lib.all (p: !lib.elem (lib.getName p) ["dioxus-cli" "plinth-project" "visual-rubric"]) nativeDevPackages)
+              "default devShell must not include website tooling (dioxus/plinth); use `nix develop .#docs`";
+            assert lib.assertMsg (builtins.elem plinthProject docsPackages)
+              "docs shell must include plinthProject; website tooling belongs there, not in default";
+            pkgs.runCommand "modde-devshell-no-dioxus" {} ''touch "$out"' '';
           hm-module = pkgs.runCommand "modde-hm-module-check" {} ''
             cat > ready <<'EOF'
             ${activationReady}
@@ -1589,66 +1679,7 @@
             inherit (toolchain) craneLib;
             pkgConfigDeps = buildInputs;
 
-            packages = with pkgs;
-              [
-                appstream
-                cargo-about
-                cargo-audit
-                cargo-cyclonedx
-                cargo-deb
-                cargo-deny
-                cargo-llvm-cov
-                cargo-nextest
-                cargo-sbom
-                coprCli
-                cosign
-                curl
-                debootstrap
-                dnf5
-                dpkg
-                file
-                findutils
-                flatpak
-                flatpak-builder
-                forgejo-cli
-                git
-                gnugrep
-                gnupg
-                gnutar
-                grype
-                gzip
-                jq
-                minisign
-                nodejs
-                openssh
-                osslsigncode
-                pacman
-                podman
-                pre-commit
-                qemu
-                reprepro
-                rpm
-                rust-analyzer
-                stdenv.cc
-                toolchain.rustToolchain
-                simitCli
-                plinthProject
-                visualRubric
-                alejandra
-                just
-                _7zz
-                unrar
-                mdbook
-                prettier
-                taplo
-                unzip
-                util-linux
-                wineWow64Packages.stable
-                wget
-                zip
-              ]
-              ++ nativeBuildInputs
-              ++ buildInputs;
+            packages = nativeDevPackages;
 
             extraEnv = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
               LD_LIBRARY_PATH = linuxLdPath;
@@ -1656,23 +1687,15 @@
           })
           // {
             docs = pkgs.mkShell {
-              packages = with pkgs;
-                [
-                  cargo-deny
-                  cargo-nextest
-                  git
-                  mdbook
-                  plinthProject
-                  pre-commit
-                  rust-analyzer
-                  stdenv.cc
-                  toolchain.rustToolchain
-                  visualRubric
-                  jq
-                  taplo
-                ]
-                ++ nativeBuildInputs
-                ++ buildInputs;
+              packages = docsPackages;
+              shellHook = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+                export LD_LIBRARY_PATH="${linuxLdPath}"
+              '';
+            };
+            # Release engineering: dev packages plus packaging/signing/VM
+            # tooling. Explicitly activated via `nix develop .#release`.
+            release = pkgs.mkShell {
+              packages = nativeDevPackages ++ releaseTools;
               shellHook = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
                 export LD_LIBRARY_PATH="${linuxLdPath}"
               '';

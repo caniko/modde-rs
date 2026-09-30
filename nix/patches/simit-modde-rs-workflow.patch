@@ -1,8 +1,7 @@
 diff --git a/src/commands/copr.rs b/src/commands/copr.rs
-index de93bbb..3048628 100644
 --- a/src/commands/copr.rs
 +++ b/src/commands/copr.rs
-@@ -8,7 +8,7 @@ use crate::cli::{CoprAction, CoprCommand, CoprRenderArgs};
+@@ -8,7 +8,7 @@
  use crate::config::{CoprOverrides, ProjectConfig, ResolvedCopr};
  use crate::render::{copr_makefile, rpm_spec};
  
@@ -12,10 +11,9 @@ index de93bbb..3048628 100644
  pub fn run(command: CoprCommand) -> Result<()> {
      match command.action {
 diff --git a/src/readme_badges.rs b/src/readme_badges.rs
-index 15c57d4..c796753 100644
 --- a/src/readme_badges.rs
 +++ b/src/readme_badges.rs
-@@ -184,7 +184,7 @@ fn badges(
+@@ -184,7 +184,7 @@
              "COPR",
              "configured",
              "3f51b5",
@@ -25,10 +23,9 @@ index 15c57d4..c796753 100644
      }
      if config.apt.is_some() {
 diff --git a/src/render/release_workflow.rs b/src/render/release_workflow.rs
-index 64f008d..333f689 100644
 --- a/src/render/release_workflow.rs
 +++ b/src/render/release_workflow.rs
-@@ -961,7 +961,7 @@ fn push_build_srpm(w: &mut String, copr: &ResolvedCopr) {
+@@ -1036,7 +1036,7 @@
      w.push_str("      - name: Build SRPM for COPR\n        run: |\n          set -euo pipefail\n          . ./release-env\n");
      writeln!(
          w,
@@ -37,15 +34,17 @@ index 64f008d..333f689 100644
          repo = copr.repo
      )
      .expect("write");
-@@ -980,14 +980,14 @@ fn push_build_srpm(w: &mut String, copr: &ResolvedCopr) {
+@@ -1055,14 +1055,14 @@
          repo = copr.repo
      )
      .expect("write");
 -    w.push_str("          rm -rf srpms && mkdir -p srpms\n");
-+    w.push_str("          rm -rf target/modde-release/root-artifacts/srpms && mkdir -p target/modde-release/root-artifacts/srpms\n");
-     writeln!(
-         w,
+-    writeln!(
+-        w,
 -        "          rpmbuild -bs {spec} --define \"_sourcedir $(pwd)\" --define \"_srcrpmdir $(pwd)/srpms\"",
++    w.push_str("          rm -rf target/modde-release/root-artifacts/srpms && mkdir -p target/modde-release/root-artifacts/srpms\n");
++    writeln!(
++        w,
 +        "          rpmbuild -bs {spec} --define \"_sourcedir $(pwd)\" --define \"_srcrpmdir $(pwd)/target/modde-release/root-artifacts/srpms\"",
          spec = copr.spec_path
      )
@@ -55,15 +54,15 @@ index 64f008d..333f689 100644
      w.push_str("          SCRIPT\n");
  }
  
-@@ -1034,6 +1034,7 @@ fn push_build_artifacts(w: &mut String, artifacts: &ArtifactsConfig) {
-                 writeln!(w, "          {sub}").expect("write");
+@@ -1142,6 +1142,7 @@
+                 }
              }
          }
 +        w.push_str("          rm -rf release\n          cp -a target/modde-release/root-artifacts/release ./release\n");
      }
- }
- 
-@@ -1641,11 +1642,12 @@ fn push_publish_aur(w: &mut String, aur: &ResolvedAur, activated_remote: bool) {
+     if !bundle_attrs.is_empty() && platform == Platform::Github {
+         w.push_str("          rm -f target/simit-release-bundle-*\n");
+@@ -1780,11 +1781,12 @@
          w.push_str("          test -n \"${AUR_SSH_KEY:-}\"\n");
      }
      w.push_str(
@@ -77,7 +76,7 @@ index 64f008d..333f689 100644
      w.push_str("          checksum_for() { awk -v a=\"$1\" '$2 == a { print $1 }' release/SHA256SUMS.txt; }\n");
      let source_archive = pkgbuild_source_archive(aur);
      let bin_archive = pkgbuild_binary_archive(aur);
-@@ -1686,7 +1688,7 @@ fn push_publish_aur(w: &mut String, aur: &ResolvedAur, activated_remote: bool) {
+@@ -1825,7 +1827,7 @@
      w.push_str(
          "              *) echo \"unknown AUR package: $pkg\" >&2; exit 1 ;;\n            esac\n",
      );
@@ -86,7 +85,7 @@ index 64f008d..333f689 100644
      w.push_str("            git -C \"aur-${pkg}\" add PKGBUILD .SRCINFO\n");
      w.push_str("            if git -C \"aur-${pkg}\" diff --cached --quiet; then echo \"AUR ${pkg} already at ${VERSION}\"; return 0; fi\n");
      w.push_str("            git -C \"aur-${pkg}\" -c user.email='ci@localhost' -c user.name='release bot' commit -m \"${VERSION}\"\n");
-@@ -1728,7 +1730,7 @@ fn push_publish_copr(w: &mut String, copr: &ResolvedCopr, activated_remote: bool
+@@ -1867,7 +1869,7 @@
      if activated_remote {
          push_active_or_skip_prelude(w);
          w.push_str("          if [ -z \"$COPR_LOGIN\" ] || [ -z \"$COPR_USERNAME\" ] || [ -z \"$COPR_TOKEN\" ]; then publisher_missing copr 'COPR credentials unset'; fi\n");
@@ -95,7 +94,7 @@ index 64f008d..333f689 100644
      } else {
          w.push_str("          if [ -z \"$COPR_LOGIN\" ] || [ -z \"$COPR_USERNAME\" ] || [ -z \"$COPR_TOKEN\" ]; then echo 'COPR credentials are required because COPR publishing is configured.' >&2; exit 1; fi\n");
      }
-@@ -1737,7 +1739,7 @@ fn push_publish_copr(w: &mut String, copr: &ResolvedCopr, activated_remote: bool
+@@ -1876,7 +1878,7 @@
      w.push_str("          chmod 600 ~/.config/copr\n");
      writeln!(
          w,
@@ -104,7 +103,7 @@ index 64f008d..333f689 100644
          copr.nix_tool
      )
      .expect("write");
-@@ -1866,25 +1868,7 @@ fn push_windows_signing(w: &mut String, windows: &WindowsSigningConfig) {
+@@ -2009,25 +2011,7 @@
      let dir = &windows.dir;
      let tar = windows.tar_archive.replace("{version}", "${VERSION}");
      let zip = windows.zip_archive.replace("{version}", "${VERSION}");
@@ -131,7 +130,7 @@ index 64f008d..333f689 100644
      w.push_str("        run: |\n          set -euo pipefail\n          . ./release-env\n");
      let exes = windows
          .binaries
-@@ -1893,30 +1877,7 @@ fn push_windows_signing(w: &mut String, windows: &WindowsSigningConfig) {
+@@ -2036,30 +2020,7 @@
          .collect::<Vec<_>>()
          .join(" ");
      writeln!(w, "          for exe in {exes}; do test -s \"$exe\"; done").expect("write");
@@ -163,7 +162,7 @@ index 64f008d..333f689 100644
      let basenames = windows
          .binaries
          .iter()
-@@ -2124,6 +2085,7 @@ fn push_publish_chocolatey(
+@@ -2267,6 +2228,7 @@
          .replace("{version}", "${VERSION}")
          .replace("{arch}", "x86_64");
      let key_env = &chocolatey.api_key_env;
@@ -171,21 +170,23 @@ index 64f008d..333f689 100644
      w.push_str("      - name: Publish Chocolatey package\n        env:\n");
      // Source the key from an Actions secret, unless the runner already provides
      // it in the job environment (e.g. a Forgejo runner credential).
-@@ -2152,9 +2114,12 @@ fn push_publish_chocolatey(
+@@ -2295,9 +2257,12 @@
      } else {
          writeln!(w, "          ZIP=\"release/{zip}\"; test -s \"$ZIP\"").expect("write");
      }
+-    writeln!(
+-        w,
+-        "          nix shell {} -c simit dist chocolatey bump \\",
 +    writeln!(w, "          CHOCO_VERSION_FILTER=\"Id%20eq%20'{choco_id}'%20and%20Version%20eq%20'${{VERSION}}'\"").expect("write");
 +    w.push_str("          if curl -fsSL \"https://community.chocolatey.org/api/v2/Packages()?%24filter=${CHOCO_VERSION_FILTER}\" | grep -q \"<entry>\"; then echo \"Chocolatey ${VERSION} already published; skipping.\"; exit 0; fi\n");
 +    w.push_str("          choco_log=\"$(mktemp)\"; trap 'rm -f \"$choco_log\"' EXIT\n");
-     writeln!(
-         w,
--        "          nix shell {} -c simit dist chocolatey bump \\",
++    writeln!(
++        w,
 +        "          if ! nix develop -c nix shell {} -c simit dist chocolatey bump \\",
          chocolatey.nix_tool
      )
      .expect("write");
-@@ -2199,7 +2164,11 @@ fn push_publish_chocolatey(
+@@ -2342,7 +2307,11 @@
      }
      push_choco_flag(w, "--choco-download-repo", &chocolatey.download_repo);
      push_choco_flag(w, "--choco-archive-pattern", &chocolatey.archive_pattern);
@@ -198,7 +199,7 @@ index 64f008d..333f689 100644
  }
  
  fn push_choco_flag(w: &mut String, flag: &str, value: &str) {
-@@ -2608,7 +2577,7 @@ mod tests {
+@@ -2794,7 +2763,7 @@
          assert!(workflow.contains("cargo vendor vendor > ../cargo-vendor-config.toml"));
          assert!(
              workflow.contains(
@@ -206,8 +207,8 @@ index 64f008d..333f689 100644
 +                "nix run .#copr-cli -- build --nowait \"${COPR_PROJECT}\" target/modde-release/root-artifacts/srpms/*.src.rpm"
              )
          );
-         assert!(workflow.contains("COPR_PROJECT=\"caniko/modde-rs\""));
-@@ -2661,7 +2630,14 @@ mod tests {
+         assert!(workflow.contains("COPR_PROJECT=\"caniko/rs-modde\""));
+@@ -2847,7 +2816,14 @@
          assert!(workflow.contains(
              "require_credential 'global/user secret' 'AUR_SSH_KEY' \"${AUR_SSH_KEY:-}\""
          ));
@@ -223,7 +224,7 @@ index 64f008d..333f689 100644
          assert!(
              workflow
                  .contains("for pkg in modde modde-bin modde-git; do publish_pkg \"$pkg\"; done")
-@@ -2710,7 +2686,9 @@ mod tests {
+@@ -2896,7 +2872,9 @@
          assert!(!workflow.contains("Matrix secrets unset; skipping."));
          // Stage B channels
          assert!(workflow.contains("cargo sbom > release/sbom.json"));
@@ -234,20 +235,19 @@ index 64f008d..333f689 100644
          assert!(workflow.contains("zip_out=\"$PWD/release/modde-${VERSION}-x86_64-windows.zip\""));
          assert!(!workflow.contains("OLDPWD"));
          assert!(workflow.contains("require_credential 'global/user secret'"));
-@@ -2719,7 +2697,7 @@ mod tests {
+@@ -2905,7 +2883,7 @@
          assert!(workflow.contains("wine \"$tmpdir/wingetcreate.exe\" update Caniko.Modde"));
          assert!(workflow.contains("/api/v1/statuses"));
          assert!(workflow.contains(
--            "nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit -c simit dist chocolatey bump"
-+            "nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit -c simit dist chocolatey bump"
+-            "nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit.git -c simit dist chocolatey bump"
++            "nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit.git -c simit dist chocolatey bump"
          ));
          // Checksum step uses runner-compatible Bash glob enumeration, not find/xargs.
          assert!(workflow.contains("add_matches '*.tar.gz'"));
 diff --git a/tests/init_copr.rs b/tests/init_copr.rs
-index 3c3a584..18b2648 100644
 --- a/tests/init_copr.rs
 +++ b/tests/init_copr.rs
-@@ -69,13 +69,13 @@ fn bootstraps_fresh_copr_files() {
+@@ -69,13 +69,13 @@
      assert!(spec.contains("Version:        0.1.0\n"));
      assert!(spec.contains("BuildRequires:  rust >= 1.85\n"));
      assert!(spec.contains("install -Dm755 target/release/demo %{buildroot}%{_bindir}/demo\n"));
@@ -263,7 +263,7 @@ index 3c3a584..18b2648 100644
      assert!(stdout.contains("copr-cli build <owner>/<project> <srpm>"));
  }
  
-@@ -118,7 +118,7 @@ fn print_matches_checked_files_without_writing_files() {
+@@ -118,7 +118,7 @@
      let stdout = String::from_utf8(output.stdout).unwrap();
      assert!(stdout.contains("==> demo.spec"));
      assert!(stdout.contains("%global crate demo\n"));
