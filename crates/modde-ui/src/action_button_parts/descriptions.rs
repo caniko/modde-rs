@@ -214,6 +214,34 @@ impl ButtonActionDescription for ButtonAction {
             ButtonAction::BrowseExecutableWorkingDir => {
                 "Choose the working directory for this executable."
             }
+            ButtonAction::RefreshLibrary => {
+                "Reload detected games and manager instances for the library."
+            }
+            ButtonAction::FavoriteLibraryEntry(_) => "Save or remove this game as a favorite.",
+            ButtonAction::InstallLibraryEntry(_) => "Open this game's installation action in its store.",
+            ButtonAction::SaveLibraryLaunch => "Save the selected installation's launch configuration.",
+            ButtonAction::EditLibraryLaunch => "Show or hide settings for this installation.",
+            ButtonAction::BrowseLibraryLaunch(_) => "Choose a file or folder for this launch setting.",
+            ButtonAction::ImportLibraryLaunch => "Load a launch settings JSON file into this draft for review.",
+            ButtonAction::ExportLibraryLaunch => "Export the current launch settings draft as JSON.",
+            ButtonAction::InstallLibraryHook => "Generate the command wrapper used by Steam or Heroic to launch this installation.",
+            ButtonAction::AdoptLibrarySaves => "Adopt existing saves into the saved profile without changing live files.",
+            ButtonAction::FinishLibrarySession => "Confirm the game has exited and capture this session's saves.",
+            ButtonAction::SkipLibraryAnalysis => "Keep captured saves and leave performance/bisect results for manual handling.",
+            ButtonAction::SyncLibrarySteam => "Refresh owned Steam games using MODDE_STEAM_API_KEY.",
+            ButtonAction::SelectLibraryEntry(_) => {
+                "Select this library entry and show its launch details."
+            }
+            ButtonAction::PlayLibraryEntry { hd, .. } => {
+                if *hd {
+                    "Launch this manager instance in HD mode."
+                } else {
+                    "Launch this game through its configured launcher."
+                }
+            }
+            ButtonAction::ManageLibraryGame(_) => {
+                "Select this game and open its mod list for management."
+            }
             ButtonAction::WindowMinimize => "Minimize the modde window.",
             ButtonAction::WindowToggleMaximize => {
                 "Toggle the modde window between maximized and restored size."

@@ -7,6 +7,7 @@ pub mod downloads;
 pub mod executables;
 pub mod fomod_wizard;
 pub mod game_picker;
+pub mod library;
 pub mod mod_details;
 pub mod mod_list;
 pub mod overwrite;

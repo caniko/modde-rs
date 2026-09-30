@@ -3,21 +3,15 @@
 
 use super::*;
 
-/// Compute the save fingerprint for a profile (lifted verbatim from the old
-/// `reload_profile`). `None` when the game doesn't support save profiles.
+/// Compute the shared CLI/GUI fingerprint from per-mod source contents.
+/// `None` when the game doesn't support save profiles.
 pub(super) fn compute_save_fingerprint(
     profile: &modde_core::Profile,
 ) -> Option<modde_core::save::SaveFingerprint> {
     let game_id = profile.game_id.as_str();
-    let staging_dir = ProfileManager::staging_dir(&profile.name);
     modde_games::resolve_game_plugin(game_id)
         .filter(|plugin| plugin.supports_save_profiles())
-        .map(|plugin| {
-            modde_core::save::SaveFingerprint::compute(&profile.mods, |mod_id| {
-                let mod_path = staging_dir.join(mod_id);
-                plugin.classify_mod(&mod_path).affects_saves()
-            })
-        })
+        .map(|_| modde_games::save_fingerprint(profile))
 }
 
 /// Compute data-tab conflict rows + missing-store count for a profile. Shared

@@ -308,6 +308,7 @@ fn base_demo_app(opts: &ShotOptions) -> Modde {
         data_tab_conflicts: Vec::new(),
         diagnostics_state: Default::default(),
         crash_log_path_draft: String::new(),
+        library: Default::default(),
         tool_state: Default::default(),
         browse_nexus: Default::default(),
         filter_mode: FilterMode::default(),

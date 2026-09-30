@@ -13,7 +13,7 @@ impl Modde {
             Message::ExternalRefresh => {
                 let task = self.reload_profile();
                 self.status_message = "Refreshed from external change".to_string();
-                return task;
+                return Task::batch([task, self.start_library_load()]);
             }
             Message::ProfileContextLoaded { generation, result } => {
                 // Drop stale loads: a newer kickoff bumped the generation, so

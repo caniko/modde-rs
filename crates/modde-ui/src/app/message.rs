@@ -69,6 +69,53 @@ pub enum Message {
     CloseManageCustomGames,
     RemoveCustomGame(String),
 
+    // Library catalogue
+    LibraryFilterChanged(String),
+    LibraryCategoryChanged(crate::views::library::LibraryFilter),
+    LibraryFavorite(String),
+    LibraryInstall(String),
+    LibraryLaunchFieldChanged(crate::views::library::LaunchField, String),
+    LibrarySandboxChanged(bool),
+    LibraryNetworkChanged(bool),
+    LibraryActiveProfileChanged(bool),
+    LibrarySaveLaunch,
+    LibraryEditLaunch,
+    LibraryBrowseLaunch(crate::views::library::LaunchField),
+    LibraryPathPicked { id: String, revision: u64, field: crate::views::library::LaunchField, path: Option<PathBuf> },
+    LibraryImportLaunch,
+    LibraryExportLaunch,
+    LibraryLaunchImported { id: String, revision: u64, result: Result<Option<modde_core::library::LaunchSettings>, String> },
+    LibraryInstallHook,
+    LibraryHookInstalled { id: String, revision: u64, result: Result<String, String> },
+    LibrarySessionTick,
+    LibrarySessionLoaded { revision: u64, result: Result<Option<modde_core::library::PendingSession>, String> },
+    LibraryHookChanged(bool),
+    LibraryProfilesLoaded { id: String, result: Result<Vec<String>, String> },
+    LibraryAdoptSaves,
+    LibraryPreferenceSaved(Result<(), String>),
+    LibraryFinishSession,
+    LibrarySkipAnalysis,
+    LibrarySteamIdChanged(String),
+    LibrarySyncSteam,
+    LibrarySteamSynced(Result<usize, String>),
+    LibrarySelectEntry(String),
+    LibraryRefresh,
+    LibraryLoaded {
+        generation: u64,
+        session_revision: u64,
+        result: Result<LibraryLoadResult, String>,
+    },
+    LibraryPlay {
+        id: String,
+        hd: bool,
+    },
+    LibraryPlayComplete {
+        id: String,
+        hd: bool,
+        result: Result<String, String>,
+    },
+    LibraryManageGame(String),
+
     // Window controls (custom title bar)
     GotWindowId(Option<window::Id>),
     TitleBarDrag,
@@ -432,4 +479,27 @@ pub enum Message {
     UpdateCheckLoaded(Result<Option<modde_core::update_check::UpdateInfo>, String>),
     OpenUpdateReleasePage,
     DismissUpdateBanner,
+}
+
+impl Message {
+    /// Requests that can change a live deployment, profile, runner or save set.
+    /// Async completion messages remain deliverable while a session is open.
+    pub(super) fn mutates_game(&self) -> bool {
+        matches!(self,
+            Self::CreateProfile { .. } | Self::DeleteProfile(_) | Self::ForkProfile { .. }
+            | Self::SubmitNewProfileDialog | Self::AddCustomGameSubmit | Self::RemoveCustomGame(_)
+            | Self::ToggleMod { .. } | Self::AddModFromPath(_) | Self::RemoveMod(_) | Self::Deploy
+            | Self::ReorderMod { .. } | Self::LockMod { .. } | Self::UnlockMod { .. }
+            | Self::InstallCollection { .. } | Self::BrowseInstallMod { .. }
+            | Self::WabbajackStartInstall | Self::StartFOMOD { .. } | Self::FOMODNext | Self::FOMODUndo
+            | Self::SetGamePath { .. } | Self::LibraryManageGame(_) | Self::CreateStockSnapshot | Self::TryProfile
+            | Self::RollbackExperiment | Self::CommitExperiment | Self::RestoreSaveSnapshot(_)
+            | Self::UpdateToolSetting { .. } | Self::ToggleTool { .. } | Self::ApplyTool(_)
+            | Self::RevertTool(_) | Self::ActivateOptiScaler | Self::DeactivateOptiScaler
+            | Self::AdoptOptiScaler | Self::RestoreOptiScalerBackup | Self::ResetOptiScalerConfig
+            | Self::RestoreToolSettings { .. } | Self::InstallOptiScalerRelease | Self::InstallProtonVersion
+            | Self::SaveExecutable | Self::RemoveExecutable(_) | Self::RunExecutable(_)
+            | Self::ClearOverwrite | Self::MoveOverwriteToMod(_)
+        )
+    }
 }

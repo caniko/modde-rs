@@ -9,6 +9,19 @@ impl Modde {
         match message {
             // ── Navigation ───────────────────────────────────────
             Message::SwitchView(view) => match view {
+                View::Library => {
+                    self.active_view = View::Library;
+                    match modde_core::library::PendingSession::load_blocking() {
+                        Ok(pending) => {
+                            self.library.session_revision = self.library.session_revision.wrapping_add(1);
+                            self.library.pending = pending;
+                        }
+                        Err(error) => self.status_message = format!("Could not load recovery state: {error}"),
+                    }
+                    if self.library.entries.is_empty() && !self.library.loading {
+                        return self.update(Message::LibraryRefresh);
+                    }
+                }
                 View::Saves => {
                     self.active_view = View::Saves;
                     if !self.current_game_supports_save_profiles() {
@@ -120,7 +133,7 @@ impl Modde {
                     let generation = self.context_generation;
                     self.status_message = format!("Forking profile as '{new_name}'...");
                     return Task::perform(
-                        fork_profile(self.db.clone(), source, new_name.clone(), game_id),
+                        fork_profile(self.db.clone(), source, new_name.clone(), game_id, self.settings.clone()),
                         move |result| Message::ProfileWriteDone {
                             generation,
                             kind: ProfileWriteKind::Fork {

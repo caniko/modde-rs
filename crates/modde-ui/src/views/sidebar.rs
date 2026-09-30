@@ -21,6 +21,7 @@ struct NavGroup {
 
 #[derive(Clone, Copy)]
 enum NavTarget {
+    Library,
     ModList,
     Saves,
     DataTab,
@@ -37,6 +38,7 @@ enum NavTarget {
 impl NavTarget {
     fn view(self) -> View {
         match self {
+            NavTarget::Library => View::Library,
             NavTarget::ModList => View::ModList,
             NavTarget::Saves => View::Saves,
             NavTarget::DataTab => View::DataTab,
@@ -53,6 +55,10 @@ impl NavTarget {
 }
 
 const GAME_ITEMS: &[NavItem] = &[
+    NavItem {
+        label: "Library",
+        target: NavTarget::Library,
+    },
     NavItem {
         label: "Mod List",
         target: NavTarget::ModList,

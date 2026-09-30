@@ -50,6 +50,7 @@ pub(crate) fn isolated_data_dir() {
     ISOLATED_DATA_DIR.get_or_init(|| {
         let dir = tempfile::tempdir().expect("create isolated modde data dir");
         modde_core::paths::set_data_dir(dir.path().to_path_buf());
+        modde_core::paths::set_config_dir(dir.path().join("config"));
         dir
     });
 }

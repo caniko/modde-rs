@@ -131,7 +131,7 @@ impl Modde {
 
         let mut app = Self {
             db,
-            active_view: View::ModList,
+            active_view: View::Library,
             active_profile: None,
             profiles: Vec::new(),
             status_message: "Ready".to_string(),
@@ -188,6 +188,7 @@ impl Modde {
             diagnostics_state: Default::default(),
             crash_log_path_draft: String::new(),
             tool_state: Default::default(),
+            library: Default::default(),
             browse_nexus: Default::default(),
             filter_mode: FilterMode::default(),
             filter_criteria: vec![
@@ -224,6 +225,7 @@ impl Modde {
             Task::none()
         };
 
+        let initial_library_task = app.update(Message::LibraryRefresh);
         (
             app,
             Task::batch([
@@ -237,6 +239,7 @@ impl Modde {
                     Message::UpdateCheckLoaded,
                 ),
                 initial_context_task,
+                initial_library_task,
             ]),
         )
     }
@@ -258,6 +261,8 @@ mod experiments;
 mod fomod;
 #[path = "update_parts/game_selection.rs"]
 mod game_selection;
+#[path = "update_parts/library.rs"]
+mod library;
 #[path = "update_parts/load_order.rs"]
 mod load_order;
 #[path = "update_parts/mod_list.rs"]
@@ -281,6 +286,31 @@ mod window_controls;
 
 impl Modde {
     pub(super) fn update(&mut self, message: Message) -> Task<Message> {
+        if !message.mutates_game() || self.library.mutation_dispatch {
+            return self.update_inner(message);
+        }
+        if !self.library.launching.is_empty() {
+            self.status_message = "Finish the game session before changing profiles, mods, runners or saves".into();
+            return Task::none();
+        }
+        let guard = match modde_core::library::mutation_lock() {
+            Ok(guard) => guard,
+            Err(error) => { self.status_message = error.to_string(); return Task::none(); }
+        };
+        match modde_core::library::PendingSession::load_blocking() {
+            Ok(None) => {}
+            Ok(Some(_)) => { self.status_message = "Finish or recover the Library session before changing game state".into(); return Task::none(); }
+            Err(error) => { self.status_message = error.to_string(); return Task::none(); }
+        }
+        self.library.mutation_dispatch = true;
+        let task = self.update_inner(message);
+        self.library.mutation_dispatch = false;
+        // Keep the lease through all work emitted by this request. This also
+        // prevents a CLI launch racing an already-running GUI deployment.
+        task.chain(Task::perform(async move { drop(guard); }, |()| Message::Noop))
+    }
+
+    fn update_inner(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ExternalRefresh
             | Message::ProfileContextLoaded { .. }
@@ -345,6 +375,41 @@ impl Modde {
             | Message::ModTrackedSetLoaded { .. }
             | Message::Deploy
             | Message::DeployComplete(_) => self.handle_mod_list_update(message),
+
+            Message::LibraryFilterChanged(_)
+            | Message::LibraryCategoryChanged(_)
+            | Message::LibraryFavorite(_)
+            | Message::LibraryInstall(_)
+            | Message::LibraryLaunchFieldChanged(..)
+            | Message::LibrarySandboxChanged(_)
+            | Message::LibraryNetworkChanged(_)
+            | Message::LibraryActiveProfileChanged(_)
+            | Message::LibrarySaveLaunch
+            | Message::LibraryEditLaunch
+            | Message::LibraryBrowseLaunch(_)
+            | Message::LibraryPathPicked { .. }
+            | Message::LibraryImportLaunch
+            | Message::LibraryExportLaunch
+            | Message::LibraryLaunchImported { .. }
+            | Message::LibraryInstallHook
+            | Message::LibraryHookInstalled { .. }
+            | Message::LibraryHookChanged(_)
+            | Message::LibraryProfilesLoaded { .. }
+            | Message::LibrarySessionTick
+            | Message::LibrarySessionLoaded { .. }
+            | Message::LibraryAdoptSaves
+            | Message::LibraryPreferenceSaved(_)
+            | Message::LibraryFinishSession
+            | Message::LibrarySkipAnalysis
+            | Message::LibrarySteamIdChanged(_)
+            | Message::LibrarySyncSteam
+            | Message::LibrarySteamSynced(_)
+            | Message::LibrarySelectEntry(_)
+            | Message::LibraryRefresh
+            | Message::LibraryLoaded { .. }
+            | Message::LibraryPlay { .. }
+            | Message::LibraryPlayComplete { .. }
+            | Message::LibraryManageGame(_) => self.handle_library_update(message),
 
             Message::ReorderMod { .. } | Message::LockMod { .. } | Message::UnlockMod { .. } => {
                 self.handle_load_order_update(message)
@@ -446,15 +511,15 @@ fn deploy_profile_blocking(
     let resolved = modde_core::resolver::resolve(&profile).map_err(|e| e.to_string())?;
     let game_plugin = modde_games::resolve_game_plugin(game_id.as_str())
         .ok_or_else(|| format!("unsupported game: {game_id}"))?;
-    let install_path = game_plugin
-        .detect_install()
-        .ok_or_else(|| format!("could not detect install for {game_id}"))?;
+    let context = crate::app::block_on(modde_games::library::context::for_game(&AppSettings::load(), game_id.as_str(), pm.db()))
+        .map_err(|error| error.to_string())?;
+    let install_path = context.game.install_path.ok_or_else(|| "installation missing".to_string())?;
     let staging_dir = ProfileManager::staging_dir(&profile.name);
     game_plugin
-        .deploy_to_install(&staging_dir, &install_path)
+        .deploy_to_install_at(&staging_dir, &install_path, context.prefix.as_deref())
         .map_err(|e| e.to_string())?;
     game_plugin
-        .post_deploy(&install_path)
+        .post_deploy_at(&install_path, context.prefix.as_deref())
         .map_err(|e| e.to_string())?;
     Ok(format!(
         "Deployed {} mod(s) for {}",

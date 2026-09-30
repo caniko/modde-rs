@@ -36,6 +36,7 @@ pub(crate) fn format_lock_reason(reason: &modde_core::LockReason) -> String {
 #[derive(Debug, Clone)]
 pub enum View {
     ModList,
+    Library,
     Collections,
     /// Unified Nexus browse surface — Top / Month / Collections / Search.
     BrowseNexus,
@@ -487,6 +488,7 @@ pub enum ProfileLoadOutcome {
 /// Inputs for [`super::model::load_profile_context`], built on the iced thread
 /// from `&Modde` and moved into the blocking loader.
 pub(super) struct ProfileContextRequest {
+    pub(super) settings: modde_core::settings::AppSettings,
     pub(super) selected_game: Option<String>,
     pub(super) active_profile: Option<String>,
     /// `true` for game switches: recompute the active profile from the DB

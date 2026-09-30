@@ -14,7 +14,6 @@ impl Modde {
                 {
                     let game_id = profile.game_id.clone();
                     let name = profile_name.clone();
-                    let save_dir = Self::resolve_save_dir(game_id.as_str());
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
                     let current_depth = self.experiment_depth;
@@ -25,7 +24,7 @@ impl Modde {
                             ExperimentWriteKind::Try,
                             Some(name),
                             game_id,
-                            save_dir,
+                            self.settings.clone(),
                             current_depth,
                         ),
                         move |result| Message::ExperimentWriteDone {
@@ -39,7 +38,6 @@ impl Modde {
             Message::RollbackExperiment => {
                 if let Some(ref profile) = self.loaded_profile {
                     let game_id = profile.game_id.clone();
-                    let save_dir = Self::resolve_save_dir(game_id.as_str());
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
                     let current_depth = self.experiment_depth;
@@ -50,7 +48,7 @@ impl Modde {
                             ExperimentWriteKind::Rollback,
                             None,
                             game_id,
-                            save_dir,
+                            self.settings.clone(),
                             current_depth,
                         ),
                         move |result| Message::ExperimentWriteDone {
@@ -74,7 +72,7 @@ impl Modde {
                             ExperimentWriteKind::Commit,
                             None,
                             game_id,
-                            None,
+                            self.settings.clone(),
                             current_depth,
                         ),
                         move |result| Message::ExperimentWriteDone {

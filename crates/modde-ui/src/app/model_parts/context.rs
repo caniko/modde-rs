@@ -13,6 +13,10 @@ pub(crate) async fn load_profile_context(
 ) -> Result<ProfileContextSnapshot, String> {
     let pm = ProfileManager::with_db(db.clone());
     let selected_game_id = request.selected_game.as_deref().map(GameId::from);
+    let installation = match selected_game_id.as_ref() {
+        Some(game_id) => modde_games::library::context::for_game(&request.settings, game_id.as_str(), pm.db()).await.ok(),
+        None => None,
+    };
 
     // Profile list (scoped to the game when one is selected, else all).
     let profiles = match selected_game_id.as_ref() {
@@ -23,9 +27,9 @@ pub(crate) async fn load_profile_context(
     // Active profile: recompute from the DB for game switches; otherwise trust
     // the caller-provided name.
     let active_profile = if request.recompute_active {
-        match selected_game_id.as_ref() {
-            Some(game_id) => pm
-                .active(game_id)
+        match installation.as_ref() {
+            Some(context) => pm
+                .active(&context.saves.scope)
                 .await
                 .ok()
                 .flatten()
@@ -41,12 +45,10 @@ pub(crate) async fn load_profile_context(
     let profile_outcome = match active_profile.as_deref() {
         Some(name) => match pm.load(name, selected_game_id.as_ref()).await {
             Ok(profile) => {
-                let experiment_depth = pm
-                    .active(&profile.game_id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map_or(0, |info| info.experiment_depth);
+                let experiment_depth = match installation.as_ref() {
+                    Some(context) => pm.active(&context.saves.scope).await.ok().flatten().map_or(0, |info| info.experiment_depth),
+                    None => 0,
+                };
                 let current_fingerprint = compute_save_fingerprint(&profile);
                 let mod_id_filter_keys = modde_core::filter::mod_id_filter_keys(&profile.mods);
                 ProfileLoadOutcome::Loaded {
