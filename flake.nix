@@ -1756,7 +1756,7 @@
                 fi
 
                 simit init release --check
-                simit init ci --ci-provider crow --platform forgejo --runtime nix --runner codefloe-global --workspace --check
+                simit init ci --ci-provider actions --platform github --runtime nix --runner ubuntu-24.04 --workspace --check
                 nix flake check --keep-going
                 cargo test --workspace --all-features
                 cargo clippy --workspace --all-targets --all-features -- --deny warnings
@@ -2026,7 +2026,14 @@
         inherit mkOutputs;
       };
       simitConfig = {
-        ci.check_command = "cargo run -p modde-xtask -- check";
+        ci = {
+          platform = "github";
+          provider = "actions";
+          runner = "ubuntu-24.04";
+          runtime = "nix";
+          workspace = true;
+          required_gates = [{ id = "modde-check"; run = "nix develop -c cargo run -p modde-xtask -- check"; }];
+        };
         release.publish.enforcement = "activated-remote";
         release.publish.channels = {
           apt = "required";
