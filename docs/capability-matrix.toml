@@ -4,8 +4,7 @@
 # It is consumed by:
 #   - crates/modde-core/tests/repo_truth_tests.rs (guardrail: README, the docs
 #     site, the website comparison, and the parity reference must agree with it)
-#   - website/data/capability-matrix.toml (mirror; rendered by the `games`
-#     shortcode on the landing site — keep the two files identical)
+#   - website/plinth-project.toml (capability_matrix section reads this file)
 #   - docs/src/games/supported-games.md (human-readable table)
 #   - docs/src/reference/parity.md (MO2 parity audit)
 #
@@ -146,3 +145,16 @@ status = "Partial"
 [features.starfield_save_tracking]
 label = "Starfield save tracking"
 status = "Done"
+
+[features.owned_game_library]
+label = "Owned game library"
+# Source includes exact-install lifecycle, cloud-sync gates and completion
+# receipts. Compilation, regressions and live provider/save qualification are
+# pending; the playing guide records the supported boundaries and recovery flow.
+status = "Partial"
+
+[features.sandboxed_launch]
+label = "Sandboxed launch"
+# Source includes bubblewrap preflight and paired capture tooling. Containment,
+# nested-runtime compatibility and performance overhead have not been measured.
+status = "Partial"
