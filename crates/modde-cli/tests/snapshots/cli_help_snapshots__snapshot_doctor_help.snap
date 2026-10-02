@@ -14,5 +14,6 @@ Commands:
 
 Options:
       --data-dir <DATA_DIR>          Override data directory (default: ~/.local/share/modde or $`MODDE_DATA_DIR`) [env: MODDE_DATA_DIR=]
+      --config-dir <CONFIG_DIR>      Override the base configuration directory used by modde and its session journal
       --heap-profile <HEAP_PROFILE>  Write a DHAT heap profile. Requires the `heap-profile` cargo feature [env: MODDE_HEAP_PROFILE=]
   -h, --help                         Print help

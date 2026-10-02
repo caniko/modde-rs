@@ -9,7 +9,7 @@ pub(crate) enum LibraryAction {
         #[arg(long)]
         json: bool,
     },
-    /// Refresh Steam ownership (credential read from MODDE_STEAM_API_KEY)
+    /// Refresh Steam ownership (credential read from `MODDE_STEAM_API_KEY`)
     SyncSteam { steam_id: String },
     /// Launch an exact installation using saved settings
     Play { id: String },
@@ -35,6 +35,12 @@ pub(crate) enum LibraryAction {
     /// Isolated process supervisor (invoked by modde)
     #[command(hide = true)]
     Supervise { request: PathBuf },
+    /// In-sandbox descendant observer (invoked by modde)
+    #[command(hide = true)]
+    Reap {
+        #[arg(last = true, required = true)]
+        command: Vec<std::ffi::OsString>,
+    },
     /// Complete one observed session if its original CLI was interrupted
     #[command(hide = true)]
     CompleteObserved { observation: PathBuf },

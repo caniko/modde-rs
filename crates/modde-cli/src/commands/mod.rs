@@ -48,8 +48,16 @@ use modde_core::profile::{Profile, ProfileManager};
 use modde_core::resolver::GameId;
 use modde_core::save::SaveFingerprint;
 
-pub(super) async fn installation_context(game_id: &str, pm: &ProfileManager) -> Result<modde_games::library::context::InstallationContext> {
-    modde_games::library::context::for_game(&modde_core::settings::AppSettings::load(), game_id, pm.db()).await
+pub(super) async fn installation_context(
+    game_id: &str,
+    pm: &ProfileManager,
+) -> Result<modde_games::library::context::InstallationContext> {
+    modde_games::library::context::for_game(
+        &modde_core::settings::AppSettings::load(),
+        game_id,
+        pm.db(),
+    )
+    .await
 }
 
 /// Resolve the game's save directory via the `GamePlugin` trait.
@@ -76,6 +84,7 @@ pub fn supports_save_profiles(game_id: &str) -> Result<bool> {
 }
 
 /// Resolve the game's save directory, returning an error if not found.
+#[cfg(test)]
 pub fn require_save_dir(game_id: &str) -> Result<PathBuf> {
     // First check the game ID is valid at all
     if modde_games::resolve_game_plugin(game_id).is_none() {
@@ -232,7 +241,10 @@ fn validate_native_record_references(profile: &Profile, plugins: &[PluginEntry])
 #[cfg(not(feature = "bethesda"))]
 fn validate_native_record_references(profile: &Profile, _plugins: &[PluginEntry]) -> Result<()> {
     anyhow::ensure!(
-        !matches!(profile.game_id.as_str(), "skyrim-se" | "skyrim-ae" | "fallout4" | "fallout76" | "starfield"),
+        !matches!(
+            profile.game_id.as_str(),
+            "skyrim-se" | "skyrim-ae" | "fallout4" | "fallout76" | "starfield"
+        ),
         "native record validation requires the bethesda feature"
     );
     Ok(())

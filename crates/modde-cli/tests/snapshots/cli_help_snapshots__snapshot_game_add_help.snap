@@ -1,6 +1,5 @@
 ---
 source: crates/modde-cli/tests/cli_help_snapshots.rs
-assertion_line: 60
 expression: "stdout(&[\"game\", \"add\", \"--help\"])"
 ---
 Add or overwrite a user-defined game registration
@@ -15,6 +14,8 @@ Options:
           Override data directory (default: ~/.local/share/modde or $`MODDE_DATA_DIR`) [env: MODDE_DATA_DIR=]
       --display-name <DISPLAY_NAME>
           
+      --config-dir <CONFIG_DIR>
+          Override the base configuration directory used by modde and its session journal
       --executable-dir <EXECUTABLE_DIR>
           
       --heap-profile <HEAP_PROFILE>
