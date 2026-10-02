@@ -167,3 +167,46 @@ Performance configuration and durable process evidence now retain GPU routing,
 PCI IDs, kernel driver, kernel version and immutable Nix graphics-driver roots.
 Baselines without this provenance require recapture. Paired measurements reject
 changed provenance and remain report-only.
+
+## Publication follow-up, 2026-10-02
+
+Publication of the implementation was authorized on 2026-10-02. The changes are
+grouped into host-independent OptiScaler qualification, Rust quality cleanup,
+dependency requirements, launch/save/supervision/GPU evidence, Library UI, and
+Nix/Home Manager qualification commits. Implementation revision `f09ce08`
+contains the GPU-capable runtime module.
+
+The OptiScaler failure inside Nix came from a test assuming the developer's
+RDNA3 GPU. Configuration now accepts an injected architecture internally, and
+the integration test checks RDNA3, RDNA4, and unknown hardware deterministically.
+The production entry point still detects live hardware. All-feature workspace
+tests, strict all-target/all-feature Clippy, and real containment qualification
+passed again. Documentation validation and pinned Simit badge generation pass;
+the unsupported `ci.check_command` was replaced by a required qualification gate.
+
+The committed-source Nix `library-regressions` gate passed:
+
+- Derivation: `/nix/store/dl9js1argqxia67khy23jj84yb0ysgr5-modde-test-0.7.0.drv`.
+- Output: `/nix/store/gk69xzklyhrl03j1zvkn5r3yxqmx2qxc-modde-test-0.7.0`.
+- Command: `canix cache binary build .#checks.x86_64-linux.library-regressions --include-tests --no-push --max-jobs 1 --cores 2`.
+
+Rechecked upstream heads are still open PRs:
+
+- Fleetix `4465108ce8160bdb7b9510211669099ee3a83ac4`: PR CI
+  [36934171743](https://github.com/caniko/fleetix/actions/runs/36934171743) passed.
+- Toolbelt `9caf679440076addbde1ba9bb0786a29d59cd5f6`: PR CI
+  [36935397429](https://github.com/caniko/canix-toolbelt/actions/runs/36935397429)
+  and browser qualification
+  [36935397380](https://github.com/caniko/canix-toolbelt/actions/runs/36935397380)
+  passed, including the real Floorp smoke and exact tab preservation.
+
+Canix commit `56954009d` consumes these revisions and producer-regenerated
+cloud/publication schema and topology. Topology is current and all 50 Pkl files
+validate. The Toolbelt/local-modde module evaluation resolves Atlas's host
+default to `/dev/dri/by-path/pci-0000:03:00.0-render`, permits an explicit
+application override, and retains independent media policy.
+
+These gates qualify implementation contracts. Live games, store/manager
+integration, real Proton/UMU, GUI-to-game save continuity, packaged paired
+measurements, and actual game-renderer evidence remain outstanding. Measurements
+remain report-only.
