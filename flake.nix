@@ -1350,7 +1350,7 @@
           "default devShell must not include website tooling (dioxus/plinth); use `nix develop .#docs`";
           assert lib.assertMsg (builtins.elem plinthProject docsPackages)
           "docs shell must include plinthProject; website tooling belongs there, not in default";
-            pkgs.runCommand "modde-devshell-no-dioxus" {} ''touch "$out"' '';
+            pkgs.runCommand "modde-devshell-no-dioxus" {} ''touch "$out"'';
           hm-module = pkgs.runCommand "modde-hm-module-check" {} ''
             cat > ready <<'EOF'
             ${activationReady}
