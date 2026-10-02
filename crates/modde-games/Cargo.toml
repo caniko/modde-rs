@@ -18,6 +18,7 @@ include = [
   "Cargo.toml",
   "src/**",
   "tests/**",
+  "examples/**",
 ]
 
 [package.metadata.docs.rs]
@@ -53,7 +54,7 @@ serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true, optional = true }
 toml = { workspace = true }
 tokio = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["query"] }
 zip = { workspace = true }
 futures = { workspace = true }
 flate2 = { workspace = true }
@@ -64,6 +65,9 @@ dashmap = { workspace = true }
 which = { workspace = true, optional = true }
 open = { workspace = true }
 xxhash-rust = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
