@@ -100,15 +100,15 @@ canix cache binary build .#checks.x86_64-linux.library-regressions --include-tes
 
 | Gate | Required evidence or prerequisite |
 | --- | --- |
-| Nix regression gate | The first run exposed omitted `installation.md`/`CONTRIBUTING.md` source inputs. The source filter is repaired; its rerun is blocked by another Canix evaluation lease. Native Cargo regressions pass. |
+| Nix regression gate | The source-filter issue is resolved; committed implementation `f09ce08` passed the exact gate recorded below. Diagnostic follow-ups require a new exact-source/package receipt. |
 | GUI-to-Play | Atlas hardware-rendering diagnostics pass outside/inside bubblewrap. Live GUI-to-game rendering, saved configuration and completion evidence remain required. |
 | Steam and Heroic | Real exact-install hooks, launcher/cloud-sync setup, native and Wine/Proton/UMU commands, first-run prefix behavior and save continuity. |
 | Manager | Live manager forwarding, root lease/marker lifetime and recovery after interruption. |
 | Native nested runtimes | Verify supervision, mounts and failure without an unsandboxed fallback for actual Proton/UMU commands. |
 | Performance | Release/package runs and retained CSV/configuration/process evidence. Results are report-only. No real-game overhead has been measured. |
 | Dependency health | Current `cryoglyph`/Iced dependency on `lru 0.16.4` still carries RUSTSEC-2026-0253. Other unmaintained/yanked warnings also remain. |
-| Whole-repository documentation | mdBook builds, but `docs-validate` reports pre-existing generated README badge links to absent release/apt/COPR targets. Badge regeneration is blocked by the installed Simit's unsupported `ci.check_command` schema. |
-| Canix integration rollout | Fleetix/Toolbelt GPU pins and schema/topology are updated. Full Atlas evaluation is blocked by the current `harbor-db` input lacking `postgres-lifecycle`; Toolbelt full CI has the independently reproduced DNS/Fleetix mismatch and the unchanged browser smoke failure. The consumed modde module still needs a GPU-capable revision before activation. |
+| Whole-repository documentation | Badge destinations and Simit policy are repaired; pinned generation and `docs-validate` passed for `416b6dd`. Follow-up generated CI and operational docs need current drift validation. |
+| Canix integration rollout | The earlier database-input, DNS, browser and old-Modde-module blockers are resolved. `9d0f1ce46` consumes the published GPU implementation, and Atlas evaluation/package lifecycle passed below. Follow-up logging/database/manager wiring needs matching pins and evaluation receipts before rebuild. |
 
 `event-listener 5.4.2` and `lru 0.18.2` replace the affected versions on the
 dependency edges that accept those patches. Audit warnings are not a clean
@@ -228,3 +228,43 @@ Both launches cleared their completion journals. Receipt:
 `/data/scratch/tmp/opencode/modde-package-gpu-0dvy2lsx/receipt.json`.
 This is packaged lifecycle evidence, not an actual game-renderer or performance
 measurement.
+
+## Diagnostics readiness follow-up
+
+The follow-up implementation adds pre-preflight correlated launch records,
+private supervisor-owned output, GUI tracing, recent-run/log inspection, redacted
+export, protected retention and separate boundary/inner startup evidence. It
+restricts automatic raw input-device grants to controllers and requires initialized
+physical prefixes and a saved Steam Cloud-disabled assertion for managed saves.
+
+The new exact-package fixture can be run against a built native CLI:
+
+```sh
+cargo xtask library-package-qualify --binary /absolute/package/bin/modde --output /absolute/new-receipt-directory
+```
+
+It uses isolated configuration, SQLite, HOME and data directories and real
+bubblewrap. It checks successful and detached-failure completion, raw signal
+status, the private inner-observer channel, retained regular-file game output,
+secret exclusion from exports, request consumption and cleared journals. It
+does not establish actual game rendering, store-provider behavior or performance.
+
+Local follow-up checks on 2026-10-02 passed the all-feature workspace suite,
+strict all-target/all-feature Clippy, Rust 1.93.0 all-target/all-feature compilation,
+minimal and nine-feature builds, containment, diagnostic retention/export and
+supervision recovery. The real CLI fixture retained successful status `0`,
+detached-failure status `1792`, signal status `15` and recoverable inner-exec
+failure in `/data/scratch/tmp/opencode/modde-diagnostics-dev-fixture-20261002-v3/receipt.json`.
+This is a development-binary fixture, not a qualified Nix package receipt.
+
+Disposable PostgreSQL migration evidence at
+`/data/scratch/tmp/opencode/modde-postgres-readiness-wdrlNk/receipt.txt` reports
+`modde_fixture|f|t|25`: a non-superuser with schema creation rights created all
+25 tables. Live Atlas inspection was read-only and reports `can|f|t|t|25` for
+role, superuser, schema usage/create and table count. No activation occurred.
+
+The newly generated GitHub checks cover workspace tests/Clippy, exact native
+package and Nix regressions, Home Manager runtime wrappers, and real packaged
+lifecycle. The existing Pages workflow retains its project-specific environment
+override; the pinned generator still reports Pages drift. A green build job does
+not make that unrelated generated-file difference resolved.

@@ -150,6 +150,12 @@ This adoption flow is also what protects you during a normal profile switch. If 
 
 ## Steam Cloud handling
 
+Profile-managed launches require Steam Cloud disabled for the entitlement and a
+saved per-installation `steam_cloud_disabled: true` assertion. Restart Steam after
+changing its cloud setting. Preserving cloud metadata below does not coordinate
+Steam's external writes with profile switching. Heroic likewise needs explicit
+`autoSyncSaves: false` and a restart; see the [playing guide](playing.md).
+
 modde does **not** treat the live save directory as disposable. Many games sync their save folder through Steam Cloud, which drops a `steam_autocloud.vdf` marker file there. Blowing that directory away on every profile switch would fight Steam Cloud and risk re-downloading stale saves.
 
 Instead, during a profile switch modde:

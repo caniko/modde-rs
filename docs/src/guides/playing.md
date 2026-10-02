@@ -299,6 +299,36 @@ game exit, and sandboxing such a handoff is rejected.
 
 ## Session status and recovery
 
+Every accepted Play/store-hook/manager attempt allocates a private launch bundle
+before resolving or preflighting the command. `library status` lists the ten most
+recent attempts, including completed and rejected launches, with IDs and paths:
+
+```sh
+modde library status
+modde library logs --run RUN_ID
+modde library logs --run RUN_ID --kind completion
+modde library logs --run RUN_ID --kind events
+modde library diagnostics --run RUN_ID > modde-launch-diagnostics.json
+```
+
+Omit `--run` to inspect the latest attempt. Logs show a bounded 8 KiB tail.
+Bundles live under `<modde-data-dir>/logs/launches/`; directories are owner-only
+and output files are mode 0600. `game.log` captures combined stdout/stderr in the
+supervisor, even after the GUI or launching CLI exits. `completion.log` records
+the detached completion worker, and `events.jsonl` records lifecycle phases.
+The GUI's persistent tracing file is `<modde-data-dir>/logs/gui.log`, rotated at
+startup after 5 MiB with three backups. Library exposes **Open logs** and
+**Export latest diagnostics**.
+
+Exports contain structured settings, mount and process evidence, completion
+results and phase timestamps. Argument values, environment values, error text,
+raw output and private launch requests are excluded. Filesystem paths, profile
+names and hardware identifiers remain for diagnosis; an export is not anonymous.
+Raw local logs may contain whatever the game prints. Completed ordinary bundles
+retain the latest 50 by default (`MODDE_LOG_KEEP_LAUNCHES` changes this); pending
+sessions, pending completion receipts, unfinished attempts and performance/bisect
+bundles are protected. Runtime caches, save vaults and journals are not pruned.
+
 An unfinished session survives GUI restarts and blocks profile, deployment and
 save mutations. Inspect the journal and process evidence with:
 
@@ -323,6 +353,13 @@ Sandboxed launches also run an observer inside the PID namespace. It keeps
 bubblewrap's game command alive until detached descendants exit and returns a
 failure if any observed descendant fails. Observing bubblewrap only from the
 host would allow an early launcher exit to kill the game and report success.
+The inner observer acknowledges command execution through a private inherited
+pipe, closed on game exec. `boundary_started` means the outer process spawned;
+`started` means the native command or in-namespace command spawned. Neither proves
+which renderer a game used. Failure before inner startup retains preparation for
+`library recover`; missing inner completion evidence requires explicit exit
+confirmation. Inner signal statuses and detached failures survive bubblewrap's
+outer exit-code normalization.
 If a save directory has disappeared, restore it before retrying capture; modde
 does not treat a missing directory as a new empty save set.
 
@@ -407,8 +444,10 @@ silently retries without isolation.
 
 The sandbox mounts the game, prefix and save directories writable, mod-store and
 staging targets read-only, plus explicit user-granted paths. It supplies system
-libraries, Nix store paths, GPU/driver resources, display/audio sockets and input
-devices. Resolved command and wrapper executables are granted individually;
+libraries, Nix store paths, GPU/driver resources, display/audio sockets and
+classified controller nodes. Raw keyboard/mouse event devices and unclassified
+events are not automatically exposed; devices such as hidraw or uinput need
+explicit grants. Resolved command and wrapper executables are granted individually;
 dedicated Wine/Proton/UMU runtime trees and store-declared runtime mounts are also
 included. An arbitrary wrapper's parent directory is not granted automatically.
 The complete discovered mount set is probed before deployment or save switching.
@@ -440,6 +479,56 @@ qualification needs process-tree/mount checks and repeated sandbox-on/off
 measurements with the same runner, prefix, settings, warmed caches and scene.
 Record startup time, frame-time distributions and run-to-run variation; do not
 infer parity from a successful launch alone.
+
+### First-run prefixes and cloud saves
+
+Initialize Wine/Proton/UMU in the store before selecting a managed profile.
+Confirm the physical Wine root has `drive_c`, resolve UMU's `pfx` alias, and save
+that root in the prefix field. The runner-facing `WINEPREFIX` and compat root
+must resolve to that same installation; an uninitialized or mismatching prefix
+fails before live saves or profiles change. The sandbox binds that exact compat
+root rather than a writable parent shared by other installations. Missing
+sandbox prefix/save directories must be initialized before launch.
+
+For profile-managed Steam saves, disable Steam Cloud for the game in Steam
+Properties and restart Steam, then check **Steam Cloud is disabled** in the
+installation's settings (JSON: `steam_cloud_disabled: true`). This is your saved
+assertion, not automatic verification of Steam's server-side state. Heroic needs
+its matching configuration to explicitly contain `autoSyncSaves: false`, followed
+by a restart. Cloud clients write outside the profile save boundary; preserving
+their metadata does not make simultaneous synchronization safe.
+
+### Atlas production iteration
+
+Atlas's Home Manager runtime wraps desktop and companion CLI entry points with
+database, GPU, logging and manager defaults. Generated store hooks pin this same
+wrapper and explicit configuration/data roots. Regenerate hooks after package
+relocation or an upgrade that removes their pinned store path. The declarative
+OctoWoW configuration is supplied to the GUI using the unwrapped manager binary
+and the exact generated config file, avoiding duplicate `--config` arguments.
+The peer-authenticated `can` role owns the `modde` database/schema and migrations;
+no PostgreSQL superuser role is needed. MangoHud and Vulkan diagnostics are present.
+
+After Atlas activation, test one entry at a time and retain its launch ID:
+
+1. Native direct launch with sandbox off, then on. Verify display, audio,
+   controllers, successful completion and save continuity.
+2. Native Steam and Heroic hooks. Confirm each hook targets the selected install,
+   uses saved settings and reports inner startup rather than just store handoff.
+3. Initialized Proton/UMU installs, including a physical-prefix alias. Inspect
+   cache/update permissions and external Wine services; qualify the actual
+   renderer separately from the requested GPU route.
+4. OctoWoW from the Library. Check its manager root marker/lease through launch
+   and exit, then exercise interruption and the journal's recovery command.
+5. Close the GUI or interrupt the launching CLI while a game is running. Confirm
+   logs continue, mutation guards remain held, descendants exit before capture,
+   and a restarted GUI displays the correct session phase.
+
+For a failure, retain/export diagnostics before changing settings. Use
+`library recover` only for preparation, `library finish` for observed exit, or
+explicit exit confirmation after checking all Wine/game processes have stopped.
+Exercise save restoration with disposable profiles before testing valuable saves.
+Then use the report-only eight-pair protocol in the qualification reference.
 
 ## Performance capture and paired sandbox runs
 
