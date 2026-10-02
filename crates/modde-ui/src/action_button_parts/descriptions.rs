@@ -217,6 +217,10 @@ impl ButtonActionDescription for ButtonAction {
             ButtonAction::RefreshLibrary => {
                 "Reload detected games and manager instances for the library."
             }
+            ButtonAction::OpenLibraryLogs => "Open the private GUI and launch logs folder.",
+            ButtonAction::ExportLibraryDiagnostics => {
+                "Export the latest launch's redacted evidence; raw game output is excluded."
+            }
             ButtonAction::FavoriteLibraryEntry(_) => "Save or remove this game as a favorite.",
             ButtonAction::InstallLibraryEntry(_) => {
                 "Open this game's installation action in its store."

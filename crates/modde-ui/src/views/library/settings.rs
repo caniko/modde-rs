@@ -43,6 +43,7 @@ pub struct LaunchDraft {
     pub sandbox: modde_core::library::SandboxSettings,
     pub use_active_profile: bool,
     pub store_hook: bool,
+    pub steam_cloud_disabled: bool,
     pub profiles: Vec<String>,
 }
 
@@ -71,6 +72,7 @@ impl LaunchDraft {
             sandbox: settings.sandbox.clone(),
             use_active_profile: settings.use_active_profile,
             store_hook: settings.store_hook,
+            steam_cloud_disabled: settings.steam_cloud_disabled,
             profiles: Vec::new(),
             base: settings,
         }
@@ -106,6 +108,7 @@ impl LaunchDraft {
             (!self.profile.trim().is_empty()).then(|| self.profile.trim().to_string());
         settings.use_active_profile = self.use_active_profile;
         settings.store_hook = self.store_hook;
+        settings.steam_cloud_disabled = self.steam_cloud_disabled;
         settings.wrappers = serde_json::from_str(&self.wrappers)
             .map_err(|error| format!("Wrappers must be an array of argument arrays: {error}"))?;
         settings.arguments = serde_json::from_str(&self.arguments)
@@ -282,6 +285,12 @@ pub(super) fn view<'a>(
         );
         fields = fields.push(text("Blank profile + unchecked: leave deployed mods and live saves as they are; skip profile management.").size(11));
         if store {
+            if matches!(&entry.kind, super::LibraryEntryKind::Game { game } if game.store == modde_games::library::Store::Steam)
+            {
+                fields = fields.push(checkbox(draft.steam_cloud_disabled)
+                    .label("Steam Cloud is disabled for this game (restart Steam after changing it)")
+                    .on_toggle_maybe((!busy).then_some(Message::LibrarySteamCloudChanged)));
+            }
             fields = fields.push(
                 checkbox(draft.store_hook)
                     .label("Use the installed Steam / Heroic command wrapper")

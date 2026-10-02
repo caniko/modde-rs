@@ -429,6 +429,14 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
     let mut content = column![title_bar].spacing(10);
     content = content.push(
         row![
+            button(text("Open logs").size(12)).on_action(ButtonAction::OpenLibraryLogs),
+            button(text("Export latest diagnostics").size(12))
+                .on_action(ButtonAction::ExportLibraryDiagnostics),
+        ]
+        .spacing(8),
+    );
+    content = content.push(
+        row![
             text("Steam account").size(12),
             text_input("SteamID64", &state.steam.account)
                 .on_input(Message::LibrarySteamIdChanged)
@@ -454,6 +462,10 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
         content = content.push(text(notice).size(11));
     }
     if let Some(session) = &state.pending {
+        if let Some(directory) = &session.diagnostics {
+            content =
+                content.push(text(format!("Launch record: {}", directory.display())).size(11));
+        }
         let preparing = session.phase.is_preparation();
         let awaiting = session.phase == modde_core::library::SessionPhase::AwaitingStore;
         let captured = session.phase == modde_core::library::SessionPhase::Captured;

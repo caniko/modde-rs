@@ -410,6 +410,7 @@ impl Modde {
             | Message::LibraryInstallHook
             | Message::LibraryHookInstalled { .. }
             | Message::LibraryHookChanged(_)
+            | Message::LibrarySteamCloudChanged(_)
             | Message::LibraryProfilesLoaded { .. }
             | Message::LibrarySessionTick
             | Message::LibrarySessionLoaded { .. }
@@ -422,6 +423,9 @@ impl Modde {
             | Message::LibrarySteamSynced(_)
             | Message::LibrarySelectEntry(_)
             | Message::LibraryRefresh
+            | Message::LibraryOpenLogs
+            | Message::LibraryExportDiagnostics
+            | Message::LibraryDiagnosticsDone(_)
             | Message::LibraryLoaded { .. }
             | Message::LibraryPlay { .. }
             | Message::LibraryPlayComplete { .. }

@@ -106,6 +106,7 @@ pub enum Message {
         result: Result<Option<modde_core::library::PendingSession>, String>,
     },
     LibraryHookChanged(bool),
+    LibrarySteamCloudChanged(bool),
     LibraryProfilesLoaded {
         id: String,
         result: Result<Vec<String>, String>,
@@ -119,6 +120,9 @@ pub enum Message {
     LibrarySteamSynced(Result<usize, String>),
     LibrarySelectEntry(String),
     LibraryRefresh,
+    LibraryOpenLogs,
+    LibraryExportDiagnostics,
+    LibraryDiagnosticsDone(Result<String, String>),
     LibraryLoaded {
         generation: u64,
         session_revision: u64,

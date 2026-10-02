@@ -14,6 +14,57 @@ use modde_core::library::{LibraryPreferences, PendingSession};
 impl Modde {
     pub(super) fn handle_library_update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::LibraryDiagnosticsDone(result) => {
+                self.status_message =
+                    result.unwrap_or_else(|error| format!("Diagnostics: {error}"));
+            }
+            Message::LibraryOpenLogs => {
+                let directory = modde_core::paths::modde_data_dir().join("logs");
+                return Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            modde_core::library::diagnostics::private_directory(&directory)
+                                .map_err(|e| e.to_string())?;
+                            open::that(&directory).map_err(|e| e.to_string())?;
+                            Ok(format!("Logs: {}", directory.display()))
+                        })
+                        .await
+                        .map_err(|e| e.to_string())?
+                    },
+                    Message::LibraryDiagnosticsDone,
+                );
+            }
+            Message::LibraryExportDiagnostics => {
+                return Task::perform(
+                    async {
+                        let value = tokio::task::spawn_blocking(|| {
+                            let directory = modde_core::library::diagnostics::resolve(None)
+                                .map_err(|e| e.to_string())?;
+                            modde_core::library::diagnostics::export(&directory)
+                                .map_err(|e| e.to_string())
+                        })
+                        .await
+                        .map_err(|e| e.to_string())??;
+                        let Some(file) = rfd::AsyncFileDialog::new()
+                            .set_title("Export redacted launch diagnostics")
+                            .set_file_name("modde-launch-diagnostics.json")
+                            .save_file()
+                            .await
+                        else {
+                            return Ok("Export cancelled".into());
+                        };
+                        let path = file.path().to_owned();
+                        tokio::task::spawn_blocking(move || {
+                            modde_core::library::atomic_json(&path, &value)
+                                .map_err(|e| e.to_string())?;
+                            Ok(format!("Diagnostics exported: {}", path.display()))
+                        })
+                        .await
+                        .map_err(|e| e.to_string())?
+                    },
+                    Message::LibraryDiagnosticsDone,
+                );
+            }
             Message::LibrarySessionTick => {
                 self.library.refresh_ticks = self.library.refresh_ticks.wrapping_add(1);
                 if self.library.refresh_ticks >= 30 {
@@ -58,6 +109,10 @@ impl Modde {
             }
             Message::LibraryHookChanged(enabled) => {
                 self.library.edit_draft(|draft| draft.store_hook = enabled);
+            }
+            Message::LibrarySteamCloudChanged(disabled) => {
+                self.library
+                    .edit_draft(|draft| draft.steam_cloud_disabled = disabled);
             }
             Message::LibraryBrowseLaunch(field) => {
                 let Some(draft) = &self.library.draft else {
@@ -838,13 +893,15 @@ fn run_library_command(args: &[&str]) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
     let binary = library_cli_binary()?;
     let logs = modde_core::paths::modde_data_dir().join("logs");
-    std::fs::create_dir_all(&logs).map_err(|error| error.to_string())?;
+    modde_core::library::diagnostics::private_directory(&logs)
+        .map_err(|error| error.to_string())?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_nanos();
     let path = logs.join(format!("library-{}-{stamp}.log", std::process::id()));
-    let log = std::fs::File::create(&path).map_err(|error| error.to_string())?;
+    let log =
+        modde_core::library::diagnostics::log_file(&path).map_err(|error| error.to_string())?;
     let status = std::process::Command::new(binary)
         .arg("--config-dir")
         .arg(modde_core::paths::config_dir())
@@ -866,11 +923,13 @@ fn run_library_command(args: &[&str]) -> Result<String, String> {
         .map_err(|error| error.to_string())?;
     let note = String::from_utf8_lossy(&tail).trim().to_string();
     if status.success() {
-        Ok(note
-            .lines()
-            .last()
-            .unwrap_or("Session complete")
-            .to_string())
+        let message = note.lines().last().unwrap_or("Session complete");
+        // Steam's generated launch option is copied verbatim to the clipboard.
+        Ok(if args.first() == Some(&"hook") {
+            message.into()
+        } else {
+            format!("{message} (log: {})", path.display())
+        })
     } else {
         Err(format!("{status}: {note} (log: {})", path.display()))
     }
@@ -915,13 +974,15 @@ fn launch_manager_blocking(
     }
     let mode = if hd { "hd" } else { "vanilla" };
     let logs = modde_core::paths::modde_data_dir().join("logs");
-    std::fs::create_dir_all(&logs).map_err(|error| error.to_string())?;
+    modde_core::library::diagnostics::private_directory(&logs)
+        .map_err(|error| error.to_string())?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_nanos();
     let path = logs.join(format!("manager-{}-{stamp}.log", std::process::id()));
-    let log = std::fs::File::create(&path).map_err(|error| error.to_string())?;
+    let log =
+        modde_core::library::diagnostics::log_file(&path).map_err(|error| error.to_string())?;
     let status = std::process::Command::new(manager_bin)
         .env(
             "MODDE_LIBRARY_LAUNCH_ID",
