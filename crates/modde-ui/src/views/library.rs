@@ -77,14 +77,24 @@ pub struct LibraryState {
     pub draft: Option<LaunchDraft>,
     pub saving: bool,
     pub pending: Option<PendingSession>,
-    pub steam_id: String,
-    pub syncing: bool,
+    pub steam: SteamSyncState,
     pub editing: bool,
-    pub(crate) mutation_dispatch: bool,
+    pub(crate) coordination: SessionCoordination,
     pub(crate) refresh_ticks: u8,
-    pub(crate) session_polling: bool,
-    pub(crate) session_revision: u64,
     pub(crate) draft_revision: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SteamSyncState {
+    pub account: String,
+    pub running: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SessionCoordination {
+    pub mutation_dispatch: bool,
+    pub polling: bool,
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -100,8 +110,11 @@ pub enum LibraryFilter {
 impl std::fmt::Display for LibraryFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::All => "All games", Self::Installed => "Installed", Self::Uninstalled => "Uninstalled",
-            Self::Favorites => "Favorites", Self::Managed => "Modde-managed",
+            Self::All => "All games",
+            Self::Installed => "Installed",
+            Self::Uninstalled => "Uninstalled",
+            Self::Favorites => "Favorites",
+            Self::Managed => "Modde-managed",
         })
     }
 }
@@ -109,8 +122,10 @@ impl std::fmt::Display for LibraryFilter {
 impl LibraryFilter {
     fn includes(self, entry: &LibraryEntry) -> bool {
         match self {
-            Self::All => true, Self::Installed => entry.install_path.is_some(),
-            Self::Uninstalled => entry.install_path.is_none(), Self::Favorites => entry.favorite,
+            Self::All => true,
+            Self::Installed => entry.install_path.is_some(),
+            Self::Uninstalled => entry.install_path.is_none(),
+            Self::Favorites => entry.favorite,
             Self::Managed => entry.managed,
         }
     }
@@ -123,7 +138,9 @@ impl LibraryState {
     }
 
     pub(crate) fn edit_draft(&mut self, edit: impl FnOnce(&mut LaunchDraft)) {
-        if self.saving || !self.launching.is_empty() || self.pending.is_some() { return; }
+        if self.saving || !self.launching.is_empty() || self.pending.is_some() {
+            return;
+        }
         if let Some(draft) = &mut self.draft {
             edit(draft);
             self.draft_revision = self.draft_revision.wrapping_add(1);
@@ -131,14 +148,18 @@ impl LibraryState {
     }
 
     pub(crate) fn draft_matches(&self, id: &str, revision: u64) -> bool {
-        revision == self.draft_revision && self.selected_id.as_deref() == Some(id)
+        revision == self.draft_revision
+            && self.selected_id.as_deref() == Some(id)
             && self.draft.as_ref().is_some_and(|draft| draft.id == id)
     }
 
     pub fn launch_settings_dirty(&self, id: &str) -> bool {
-        self.draft.as_ref().filter(|draft| draft.id == id).is_some_and(|draft| {
-            draft.settings().ok().as_ref() != Some(&self.preferences.launch_for(id))
-        })
+        self.draft
+            .as_ref()
+            .filter(|draft| draft.id == id)
+            .is_some_and(|draft| {
+                draft.settings().ok().as_ref() != Some(&self.preferences.launch_for(id))
+            })
     }
 
     #[must_use]
@@ -236,7 +257,12 @@ pub fn build_game_entries(games: Vec<LibraryGameInstall>) -> Vec<LibraryEntry> {
     games
         .into_iter()
         .map(|game| {
-            let mut model = LibraryGame::new(modde_games::library::Store::Local, game.game_id.clone(), game.display_name.clone(), Some(game.install_path.clone()));
+            let mut model = LibraryGame::new(
+                modde_games::library::Store::Local,
+                game.game_id.clone(),
+                game.display_name.clone(),
+                Some(game.install_path.clone()),
+            );
             model.game_id = Some(game.game_id.clone());
             let id = model.id.clone();
             LibraryEntry {
@@ -262,17 +288,29 @@ pub fn build_catalogue_entries(
     preferences: &LibraryPreferences,
     managed_games: &HashSet<String>,
 ) -> Vec<LibraryEntry> {
-    games.iter().map(|game| {
-        let settings = preferences.launch_for(&game.id);
-        let readiness = modde_games::library::launch::validate(game, &settings, games);
-        LibraryEntry {
-            id: game.id.clone(), display_name: game.name.clone(), install_path: game.install_path.clone(),
-            source_label: game.store.label().to_string(), kind: LibraryEntryKind::Game { game: game.clone() },
-            launchable: readiness.is_ok(), unavailability_reason: readiness.err().map(|error| error.to_string()),
-            entitlement: game.entitlement.clone(), favorite: preferences.favorites.contains(&game.entitlement),
-            managed: settings.profile.is_some() || game.game_id.as_ref().is_some_and(|id| managed_games.contains(id)),
-        }
-    }).collect()
+    games
+        .iter()
+        .map(|game| {
+            let settings = preferences.launch_for(&game.id);
+            let readiness = modde_games::library::launch::validate(game, &settings, games);
+            LibraryEntry {
+                id: game.id.clone(),
+                display_name: game.name.clone(),
+                install_path: game.install_path.clone(),
+                source_label: game.store.label().to_string(),
+                kind: LibraryEntryKind::Game { game: game.clone() },
+                launchable: readiness.is_ok(),
+                unavailability_reason: readiness.err().map(|error| error.to_string()),
+                entitlement: game.entitlement.clone(),
+                favorite: preferences.favorites.contains(&game.entitlement),
+                managed: settings.profile.is_some()
+                    || game
+                        .game_id
+                        .as_ref()
+                        .is_some_and(|id| managed_games.contains(id)),
+            }
+        })
+        .collect()
 }
 
 /// Build one entry per manager instance, launched via `onboard launch`.
@@ -313,9 +351,14 @@ pub fn merge_library_entries(
 ) -> Vec<LibraryEntry> {
     games.append(&mut managers);
     games.sort_by(|a, b| {
-        (!a.favorite).cmp(&!b.favorite)
+        (!a.favorite)
+            .cmp(&!b.favorite)
             .then_with(|| (!a.managed).cmp(&!b.managed))
-            .then_with(|| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()))
+            .then_with(|| {
+                a.display_name
+                    .to_lowercase()
+                    .cmp(&b.display_name.to_lowercase())
+            })
             .then_with(|| a.id.cmp(&b.id))
     });
     games
@@ -355,7 +398,17 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
         text("Library").size(20),
         text(count_label).size(11).color(color!(0x888888)),
         iced::widget::space::horizontal(),
-        pick_list([LibraryFilter::All, LibraryFilter::Installed, LibraryFilter::Uninstalled, LibraryFilter::Favorites, LibraryFilter::Managed], Some(state.category), Message::LibraryCategoryChanged),
+        pick_list(
+            [
+                LibraryFilter::All,
+                LibraryFilter::Installed,
+                LibraryFilter::Uninstalled,
+                LibraryFilter::Favorites,
+                LibraryFilter::Managed
+            ],
+            Some(state.category),
+            Message::LibraryCategoryChanged
+        ),
         text_input("Filter games...", &state.filter)
             .on_input(Message::LibraryFilterChanged)
             .width(Length::Fixed(220.0)),
@@ -374,14 +427,32 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
     .spacing(8);
 
     let mut content = column![title_bar].spacing(10);
-    content = content.push(row![
-        text("Steam account").size(12),
-        text_input("SteamID64", &state.steam_id).on_input(Message::LibrarySteamIdChanged).width(Length::Fixed(190.0)),
-        button(text(if state.syncing { "Syncing..." } else { "Sync owned games" }).size(12))
-            .on_action_maybe((!state.syncing).then_some(ButtonAction::SyncLibrarySteam), "Steam sync is in progress."),
-        text("API key: MODDE_STEAM_API_KEY").size(11),
-    ].spacing(8).align_y(Alignment::Center));
-    for notice in &state.notices { content = content.push(text(notice).size(11)); }
+    content = content.push(
+        row![
+            text("Steam account").size(12),
+            text_input("SteamID64", &state.steam.account)
+                .on_input(Message::LibrarySteamIdChanged)
+                .width(Length::Fixed(190.0)),
+            button(
+                text(if state.steam.running {
+                    "Syncing..."
+                } else {
+                    "Sync owned games"
+                })
+                .size(12)
+            )
+            .on_action_maybe(
+                (!state.steam.running).then_some(ButtonAction::SyncLibrarySteam),
+                "Steam sync is in progress."
+            ),
+            text("API key: MODDE_STEAM_API_KEY").size(11),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+    );
+    for notice in &state.notices {
+        content = content.push(text(notice).size(11));
+    }
     if let Some(session) = &state.pending {
         let preparing = session.phase.is_preparation();
         let awaiting = session.phase == modde_core::library::SessionPhase::AwaitingStore;
@@ -397,22 +468,26 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
                 state.launching.is_empty().then_some(ButtonAction::FinishLibrarySession), "Wait for the current launch task."),
         ].spacing(8));
         if captured {
-            content = content.push(button(text("Skip automatic analysis").size(12)).on_action_maybe(
-                state.launching.is_empty().then_some(ButtonAction::SkipLibraryAnalysis), "Wait for the current completion task."));
+            content = content.push(
+                button(text("Skip automatic analysis").size(12)).on_action_maybe(
+                    state
+                        .launching
+                        .is_empty()
+                        .then_some(ButtonAction::SkipLibraryAnalysis),
+                    "Wait for the current completion task.",
+                ),
+            );
         }
     }
     if state.loading {
-        content = content.push(
-            text("Loading library...")
-                .size(12)
-                .color(color!(0xAAAAAA)),
-        );
+        content = content.push(text("Loading library...").size(12).color(color!(0xAAAAAA)));
     }
     if let Some(error) = &state.load_error {
-        content =
-            content.push(text(format!("Failed to load library: {error}")).size(12).color(
-                color!(0xFF8888),
-            ));
+        content = content.push(
+            text(format!("Failed to load library: {error}"))
+                .size(12)
+                .color(color!(0xFF8888)),
+        );
     }
     if let Some(error) = &state.manager_error {
         content = content.push(
@@ -422,8 +497,10 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
         );
     }
 
-    let visible: Vec<_> = filter_library_entries(&state.entries, &state.filter).into_iter()
-        .filter(|entry| state.category.includes(entry)).collect();
+    let visible: Vec<_> = filter_library_entries(&state.entries, &state.filter)
+        .into_iter()
+        .filter(|entry| state.category.includes(entry))
+        .collect();
     let selected = state.selected_entry();
     if visible.is_empty() {
         content = content.push(
@@ -439,8 +516,18 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
         let mut list = column![].spacing(4);
         for entry in visible {
             let is_selected = state.selected_id.as_deref() == Some(entry.id.as_str());
-            let label = format!("{}{} — {} · {}{}", if entry.favorite { "★ " } else { "" }, entry.display_name, entry.source_label,
-                if entry.install_path.is_some() { "Installed" } else { "Uninstalled" }, if entry.managed { " · Modde" } else { "" });
+            let label = format!(
+                "{}{} — {} · {}{}",
+                if entry.favorite { "★ " } else { "" },
+                entry.display_name,
+                entry.source_label,
+                if entry.install_path.is_some() {
+                    "Installed"
+                } else {
+                    "Uninstalled"
+                },
+                if entry.managed { " · Modde" } else { "" }
+            );
             let row_button = if is_selected {
                 button(text(label).size(13))
                     .style(button::primary)
@@ -473,8 +560,7 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
         content = content.push(
             row![
                 scrollable(list).width(Length::FillPortion(3)),
-                scrollable(details)
-                    .width(Length::FillPortion(2))
+                scrollable(details).width(Length::FillPortion(2))
             ]
             .spacing(12)
             .height(Length::Fill),
@@ -492,8 +578,20 @@ fn entry_details<'a>(entry: &'a LibraryEntry, state: &'a LibraryState) -> Elemen
     let launching = !state.launching.is_empty() || state.pending.is_some();
     let dirty = state.launch_settings_dirty(&entry.id);
     let mut panel = column![text(entry.display_name.as_str()).size(16)].spacing(6);
-    panel = panel.push(button(text(if entry.favorite { "Remove favorite" } else { "Add favorite" }).size(12))
-        .on_action_maybe((!state.saving).then_some(ButtonAction::FavoriteLibraryEntry(entry.id.clone())), "Saving preferences."));
+    panel = panel.push(
+        button(
+            text(if entry.favorite {
+                "Remove favorite"
+            } else {
+                "Add favorite"
+            })
+            .size(12),
+        )
+        .on_action_maybe(
+            (!state.saving).then_some(ButtonAction::FavoriteLibraryEntry(entry.id.clone())),
+            "Saving preferences.",
+        ),
+    );
     panel = panel.push(
         text(format!("Source: {}", entry.source_label))
             .size(12)
@@ -507,17 +605,34 @@ fn entry_details<'a>(entry: &'a LibraryEntry, state: &'a LibraryState) -> Elemen
         );
     }
     if entry.install_path.is_none() {
-        panel = panel.push(button(text(format!("Install via {}", entry.source_label)).size(12))
-            .on_action_maybe((!launching).then_some(ButtonAction::InstallLibraryEntry(entry.id.clone())), "Finish the current session first."));
+        panel = panel.push(
+            button(text(format!("Install via {}", entry.source_label)).size(12)).on_action_maybe(
+                (!launching).then_some(ButtonAction::InstallLibraryEntry(entry.id.clone())),
+                "Finish the current session first.",
+            ),
+        );
         return panel.padding(12).width(Length::Fill).into();
     }
     {
-        panel = panel.push(button(text(if state.editing { "Hide launch settings" } else { "Launch settings" }).size(12))
-            .on_action(ButtonAction::EditLibraryLaunch));
-        if state.editing && let Some(draft) = &state.draft {
+        panel = panel.push(
+            button(
+                text(if state.editing {
+                    "Hide launch settings"
+                } else {
+                    "Launch settings"
+                })
+                .size(12),
+            )
+            .on_action(ButtonAction::EditLibraryLaunch),
+        );
+        if state.editing
+            && let Some(draft) = &state.draft
+        {
             panel = panel.push(settings::view(draft, state.saving || launching, entry));
         }
-        if dirty { panel = panel.push(text("Unsaved launch settings — save before Play.").size(12)); }
+        if dirty {
+            panel = panel.push(text("Unsaved launch settings — save before Play.").size(12));
+        }
     }
     if !entry.launchable {
         panel = panel.push(
@@ -531,8 +646,10 @@ fn entry_details<'a>(entry: &'a LibraryEntry, state: &'a LibraryState) -> Elemen
             .color(color!(0xFF8888)),
         );
         if let Some(game_id) = entry.game_id() {
-            panel = panel.push(button(text("Manage Mods").size(12))
-                .on_action_maybe((!launching).then_some(ButtonAction::ManageLibraryGame(game_id.to_string())), "Finish the current session first."));
+            panel = panel.push(button(text("Manage Mods").size(12)).on_action_maybe(
+                (!launching).then_some(ButtonAction::ManageLibraryGame(game_id.to_string())),
+                "Finish the current session first.",
+            ));
         }
         return panel.padding(12).width(Length::Fill).into();
     }
@@ -540,32 +657,34 @@ fn entry_details<'a>(entry: &'a LibraryEntry, state: &'a LibraryState) -> Elemen
     let busy_help = "This game is already launching.";
     match &entry.kind {
         LibraryEntryKind::Game { .. } => {
-            let mut actions = row![
-                crate::semantics::test_id(
-                    "library.play",
-                    button(text(play_label).size(12))
-                        .style(button::success)
-                        .padding([5, 14])
-                        .on_action_maybe(
-                            (!launching && !state.saving && !dirty).then_some(ButtonAction::PlayLibraryEntry {
+            let mut actions = row![crate::semantics::test_id(
+                "library.play",
+                button(text(play_label).size(12))
+                    .style(button::success)
+                    .padding([5, 14])
+                    .on_action_maybe(
+                        (!launching && !state.saving && !dirty).then_some(
+                            ButtonAction::PlayLibraryEntry {
                                 id: entry.id.clone(),
                                 hd: false,
-                            }),
-                            busy_help,
+                            }
                         ),
-                ),
-            ]
+                        busy_help,
+                    ),
+            ),]
             .spacing(8);
             if let Some(game_id) = entry.game_id() {
-                actions = actions.push(
-                    crate::semantics::test_id(
-                        "library.manage",
-                        button(text("Manage Mods").size(12))
-                            .style(button::secondary)
-                            .padding([5, 12])
-                            .on_action_maybe((!launching).then_some(ButtonAction::ManageLibraryGame(game_id.to_string())), "Finish the current session first."),
-                    ),
-                );
+                actions = actions.push(crate::semantics::test_id(
+                    "library.manage",
+                    button(text("Manage Mods").size(12))
+                        .style(button::secondary)
+                        .padding([5, 12])
+                        .on_action_maybe(
+                            (!launching)
+                                .then_some(ButtonAction::ManageLibraryGame(game_id.to_string())),
+                            "Finish the current session first.",
+                        ),
+                ));
             }
             panel.push(actions)
         }
@@ -577,10 +696,12 @@ fn entry_details<'a>(entry: &'a LibraryEntry, state: &'a LibraryState) -> Elemen
                         .style(button::success)
                         .padding([5, 14])
                         .on_action_maybe(
-                            (!launching && !state.saving && !dirty).then_some(ButtonAction::PlayLibraryEntry {
-                                id: entry.id.clone(),
-                                hd: false,
-                            }),
+                            (!launching && !state.saving && !dirty).then_some(
+                                ButtonAction::PlayLibraryEntry {
+                                    id: entry.id.clone(),
+                                    hd: false,
+                                }
+                            ),
                             busy_help,
                         ),
                 ),
@@ -588,10 +709,12 @@ fn entry_details<'a>(entry: &'a LibraryEntry, state: &'a LibraryState) -> Elemen
                     .style(button::secondary)
                     .padding([5, 12])
                     .on_action_maybe(
-                        (!launching && !state.saving && !dirty).then_some(ButtonAction::PlayLibraryEntry {
-                            id: entry.id.clone(),
-                            hd: true,
-                        }),
+                        (!launching && !state.saving && !dirty).then_some(
+                            ButtonAction::PlayLibraryEntry {
+                                id: entry.id.clone(),
+                                hd: true,
+                            }
+                        ),
                         busy_help,
                     ),
             ]
@@ -692,8 +815,13 @@ mod tests {
         games[1].favorite = true;
         games[2].managed = true;
         let entries = merge_library_entries(games, Vec::new());
-        assert_eq!(entries.iter().map(|entry| entry.display_name.as_str()).collect::<Vec<_>>(),
-            ["Z favorite", "B managed", "A other"]);
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.display_name.as_str())
+                .collect::<Vec<_>>(),
+            ["Z favorite", "B managed", "A other"]
+        );
         assert!(LibraryFilter::Favorites.includes(&entries[0]));
         assert!(!LibraryFilter::Managed.includes(&entries[0]));
         assert!(LibraryFilter::Managed.includes(&entries[1]));
@@ -701,8 +829,14 @@ mod tests {
 
     #[test]
     fn owned_uninstalled_game_is_filterable_but_not_playable() {
-        let game = LibraryGame::new(modde_games::library::Store::Steam, "987654321".into(), "Owned title".into(), None);
-        let entries = build_catalogue_entries(&[game], &LibraryPreferences::default(), &HashSet::new());
+        let game = LibraryGame::new(
+            modde_games::library::Store::Steam,
+            "987654321".into(),
+            "Owned title".into(),
+            None,
+        );
+        let entries =
+            build_catalogue_entries(&[game], &LibraryPreferences::default(), &HashSet::new());
         assert_eq!(filter_library_entries(&entries, "owned").len(), 1);
         assert!(!entries[0].launchable);
         assert!(LibraryFilter::Uninstalled.includes(&entries[0]));

@@ -286,28 +286,44 @@ mod window_controls;
 
 impl Modde {
     pub(super) fn update(&mut self, message: Message) -> Task<Message> {
-        if !message.mutates_game() || self.library.mutation_dispatch {
+        if !message.mutates_game() || self.library.coordination.mutation_dispatch {
             return self.update_inner(message);
         }
         if !self.library.launching.is_empty() {
-            self.status_message = "Finish the game session before changing profiles, mods, runners or saves".into();
+            self.status_message =
+                "Finish the game session before changing profiles, mods, runners or saves".into();
             return Task::none();
         }
         let guard = match modde_core::library::mutation_lock() {
             Ok(guard) => guard,
-            Err(error) => { self.status_message = error.to_string(); return Task::none(); }
+            Err(error) => {
+                self.status_message = error.to_string();
+                return Task::none();
+            }
         };
         match modde_core::library::PendingSession::load_blocking() {
             Ok(None) => {}
-            Ok(Some(_)) => { self.status_message = "Finish or recover the Library session before changing game state".into(); return Task::none(); }
-            Err(error) => { self.status_message = error.to_string(); return Task::none(); }
+            Ok(Some(_)) => {
+                self.status_message =
+                    "Finish or recover the Library session before changing game state".into();
+                return Task::none();
+            }
+            Err(error) => {
+                self.status_message = error.to_string();
+                return Task::none();
+            }
         }
-        self.library.mutation_dispatch = true;
+        self.library.coordination.mutation_dispatch = true;
         let task = self.update_inner(message);
-        self.library.mutation_dispatch = false;
+        self.library.coordination.mutation_dispatch = false;
         // Keep the lease through all work emitted by this request. This also
         // prevents a CLI launch racing an already-running GUI deployment.
-        task.chain(Task::perform(async move { drop(guard); }, |()| Message::Noop))
+        task.chain(Task::perform(
+            async move {
+                drop(guard);
+            },
+            |()| Message::Noop,
+        ))
     }
 
     fn update_inner(&mut self, message: Message) -> Task<Message> {
@@ -511,9 +527,16 @@ fn deploy_profile_blocking(
     let resolved = modde_core::resolver::resolve(&profile).map_err(|e| e.to_string())?;
     let game_plugin = modde_games::resolve_game_plugin(game_id.as_str())
         .ok_or_else(|| format!("unsupported game: {game_id}"))?;
-    let context = crate::app::block_on(modde_games::library::context::for_game(&AppSettings::load(), game_id.as_str(), pm.db()))
-        .map_err(|error| error.to_string())?;
-    let install_path = context.game.install_path.ok_or_else(|| "installation missing".to_string())?;
+    let context = crate::app::block_on(modde_games::library::context::for_game(
+        &AppSettings::load(),
+        game_id.as_str(),
+        pm.db(),
+    ))
+    .map_err(|error| error.to_string())?;
+    let install_path = context
+        .game
+        .install_path
+        .ok_or_else(|| "installation missing".to_string())?;
     let staging_dir = ProfileManager::staging_dir(&profile.name);
     game_plugin
         .deploy_to_install_at(&staging_dir, &install_path, context.prefix.as_deref())
