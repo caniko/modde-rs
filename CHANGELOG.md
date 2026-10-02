@@ -203,6 +203,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Wabbajack**: Report impossible apply-memory reservations and bound admission
+  waits instead of hanging indefinitely in small or busy memory scopes. Preserve
+  the safety reserve, diagnostics aborts and resumable staging; isolate tiny
+  installer fixtures from the CI runner's live memory pressure.
 - **OptiScaler**: Scanner no longer classifies backup files
   (`amd_fidelityfx_vk.dll.b`) as unmanaged companions — requires `.dll`
   extension for the `amd_fidelityfx` and `libxess` prefix checks.
