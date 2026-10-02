@@ -210,3 +210,21 @@ These gates qualify implementation contracts. Live games, store/manager
 integration, real Proton/UMU, GUI-to-game save continuity, packaged paired
 measurements, and actual game-renderer evidence remain outstanding. Measurements
 remain report-only.
+
+Published implementation `416b6dd1cd2f93349e0af7c32e12c93c7d2e32f6`
+is available in [Modde PR #3](https://github.com/caniko/modde-rs/pull/3), with
+NAR hash `sha256-vIn8VOVaaU5uwAElL+8gNPL5XB5uINiUI/p/WVofzbU=`.
+Canix commit `9d0f1ce46` consumes this revision and its transitive Simit pin.
+Full Atlas toplevel evaluation succeeds:
+`/nix/store/yzsxwr6gpmhlyzmd1hjbmn9cpq05vchf-nixos-system-atlas-26.11.20260823.56c02bc.drv`.
+The older-module GPU compatibility blocker is resolved; no activation occurred.
+
+The updated native package also builds:
+`/nix/store/lxb2y07qq4j4b1ykjba696msd4q6lg49-modde-0.7.0`.
+Synthetic packaged sandbox launches retained detached descendant completion,
+aggregate raw exit statuses `0` and `1792` (exit code 7), requested AMD render-node
+routing and driver/inventory provenance after private launch-request removal.
+Both launches cleared their completion journals. Receipt:
+`/data/scratch/tmp/opencode/modde-package-gpu-0dvy2lsx/receipt.json`.
+This is packaged lifecycle evidence, not an actual game-renderer or performance
+measurement.
