@@ -67,7 +67,7 @@ fn legacy_enabled_mod_metadata_deserializes_to_typed_fields() {
     let missing_status: EnabledMod =
         toml::from_str("mod_id = \"legacy-missing\"\nenabled = true\n").unwrap();
     assert_eq!(missing_status.install_status, None);
-    assert!(missing_status.tags.is_empty());
+    assert_eq!(missing_status.tags, [] as [std::string::String; 0]);
 }
 
 // ===========================================================================
@@ -317,7 +317,7 @@ async fn test_pm_list_empty_db() {
     let pm = ProfileManager::with_db(ModdeDb::open_memory().await.unwrap());
 
     let profiles = pm.list().await.unwrap();
-    assert!(profiles.is_empty());
+    assert_eq!(profiles, [] as [modde_core::ProfileSummary; 0]);
 }
 
 #[tokio::test]
@@ -369,7 +369,10 @@ async fn test_pm_delete_existing() {
     pm.delete("to-delete", None).await.unwrap();
 
     // Confirm it is gone
-    assert!(pm.list().await.unwrap().is_empty());
+    assert_eq!(
+        pm.list().await.unwrap(),
+        [] as [modde_core::ProfileSummary; 0]
+    );
 
     let err = pm.load("to-delete", None).await.unwrap_err();
     assert!(

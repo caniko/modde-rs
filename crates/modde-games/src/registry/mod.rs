@@ -79,9 +79,21 @@ pub use games::{GAME_REGISTRY, SUPPORTED_GAME_IDS};
 
 // Persisted game IDs must not acquire generic semantics when a feature is disabled.
 pub(crate) const RESERVED_GAME_IDS: &[&str] = &[
-    "skyrim-se", "skyrim-ae", "fallout4", "fallout76", "starfield", "cyberpunk2077",
-    "stellar-blade", "baldurs-gate3", "stardew-valley", "fallout-new-vegas", "oblivion",
-    "oblivion-remastered", "bannerlord", "witcher3", "subnautica2",
+    "skyrim-se",
+    "skyrim-ae",
+    "fallout4",
+    "fallout76",
+    "starfield",
+    "cyberpunk2077",
+    "stellar-blade",
+    "baldurs-gate3",
+    "stardew-valley",
+    "fallout-new-vegas",
+    "oblivion",
+    "oblivion-remastered",
+    "bannerlord",
+    "witcher3",
+    "subnautica2",
 ];
 
 static REGISTRY: OnceLock<RwLock<&'static [GameRegistration]>> = OnceLock::new();

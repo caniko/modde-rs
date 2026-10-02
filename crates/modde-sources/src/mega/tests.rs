@@ -90,7 +90,7 @@ fn parse_url_no_key_after_hash() {
     let result = parse_mega_url("https://mega.nz/file/HANDLE#");
     // Regardless of success/failure, document behaviour
     if let Ok((_handle, key)) = &result {
-        assert!(key.is_empty());
+        assert_eq!(key, "");
     }
 }
 

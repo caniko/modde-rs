@@ -91,7 +91,10 @@ async fn query_suppresses_small_cohorts() {
     let response = assert_ok(response).await;
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let parsed: CompatQueryResponse = serde_json::from_slice(&body).unwrap();
-    assert!(parsed.stats.is_empty());
+    assert_eq!(
+        parsed.stats,
+        [] as [modde_oracle_api::CompatAggregateStat; 0]
+    );
 }
 
 #[tokio::test]

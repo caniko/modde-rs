@@ -6,7 +6,11 @@ impl WabbajackInstaller {
     pub async fn install(&self, progress_tx: mpsc::UnboundedSender<InstallProgress>) -> Result<()> {
         #[cfg(not(feature = "bethesda-archives"))]
         anyhow::ensure!(
-            !self.manifest.install_directives().iter().any(|directive| matches!(directive, InstallDirective::CreateBSA { .. })),
+            !self
+                .manifest
+                .install_directives()
+                .iter()
+                .any(|directive| matches!(directive, InstallDirective::CreateBSA { .. })),
             "CreateBSA requires the bethesda-archives feature"
         );
         let staging_store = StagingStore::new(&self.staging_dir);

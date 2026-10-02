@@ -304,7 +304,7 @@ fn trim_doctor_context_drops_tool_files_first() {
     assert!(limit < context_bytes(&ctx), "limit must force trimming");
 
     let trimmed = trim_doctor_context(ctx.clone(), limit).unwrap();
-    assert!(trimmed.tool_files.is_empty());
+    assert_eq!(trimmed.tool_files, [] as [std::string::String; 0]);
     assert_eq!(trimmed.installed_files.len(), ctx.installed_files.len());
     assert_eq!(trimmed.collisions.len(), ctx.collisions.len());
     assert!(trimmed.crash.is_some());
@@ -320,7 +320,7 @@ fn trim_doctor_context_shrinks_installed_files_after_tool_files() {
     let limit = context_bytes(&target);
 
     let trimmed = trim_doctor_context(ctx.clone(), limit).unwrap();
-    assert!(trimmed.tool_files.is_empty());
+    assert_eq!(trimmed.tool_files, [] as [std::string::String; 0]);
     // The loop halves 8 -> 4 -> 2 and stops once the context fits.
     assert_eq!(trimmed.installed_files.len(), 2);
     assert_eq!(trimmed.collisions.len(), ctx.collisions.len());
@@ -338,11 +338,11 @@ fn trim_doctor_context_drops_collisions_but_keeps_crash_diffs_diagnostics() {
     let limit = context_bytes(&target);
 
     let trimmed = trim_doctor_context(ctx, limit).unwrap();
-    assert!(trimmed.tool_files.is_empty());
+    assert_eq!(trimmed.tool_files, [] as [std::string::String; 0]);
     assert!(trimmed.installed_files.is_empty());
     assert!(trimmed.collisions.is_empty());
     assert!(trimmed.crash.is_some());
-    assert!(!trimmed.recent_profile_diffs.is_empty());
+    assert_ne!(trimmed.recent_profile_diffs.len(), 0);
     assert!(!trimmed.diagnostics.is_empty());
     assert!(
         trimmed.evidence.iter().any(|e| e.kind == "crash-suspect"),

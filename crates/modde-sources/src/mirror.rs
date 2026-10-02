@@ -224,6 +224,6 @@ mod tests {
             "downloadon",
         )
         .unwrap();
-        assert!(links.is_empty());
+        assert_eq!(links, [] as [std::string::String; 0]);
     }
 }

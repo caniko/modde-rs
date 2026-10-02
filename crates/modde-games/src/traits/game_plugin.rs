@@ -55,7 +55,12 @@ pub trait GamePlugin: Send + Sync {
 
     /// Preserve multi-root deployment strategies while allowing prefix-scoped
     /// games to override their user-data target.
-    fn deploy_to_install_at(&self, staging: &Path, install: &Path, _prefix: Option<&Path>) -> Result<()> {
+    fn deploy_to_install_at(
+        &self,
+        staging: &Path,
+        install: &Path,
+        _prefix: Option<&Path>,
+    ) -> Result<()> {
         self.deploy_to_install(staging, install)
     }
 
@@ -117,8 +122,15 @@ pub trait GamePlugin: Send + Sync {
     }
 
     /// Prefix-aware counterpart used by installation-scoped deployment.
-    fn resolve_deploy_target_at(&self, id: &str, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
-        if prefix.is_some() { return None; }
+    fn resolve_deploy_target_at(
+        &self,
+        id: &str,
+        install: &Path,
+        prefix: Option<&Path>,
+    ) -> Option<PathBuf> {
+        if prefix.is_some() {
+            return None;
+        }
         self.resolve_deploy_target(id, install)
     }
 

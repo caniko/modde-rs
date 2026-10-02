@@ -390,7 +390,7 @@ mod tests {
         let paths =
             parse_library_folders_vdf(std::path::Path::new("/nonexistent/libraryfolders.vdf"));
         // Should return empty vec, not panic
-        assert!(paths.is_empty());
+        assert_eq!(paths, [] as [std::path::PathBuf; 0]);
     }
 
     #[test]

@@ -68,7 +68,7 @@ fn missing_archive_scanner_skips_existing_store_file() {
     std::fs::create_dir_all(&store).unwrap();
     std::fs::write(archive_path(&store, &manifest.archives[0].hash), bytes).unwrap();
 
-    assert!(missing_archives(&manifest, &store, false).is_empty());
+    assert_eq!(missing_archives(&manifest, &store, false).len(), 0);
 }
 
 #[test]

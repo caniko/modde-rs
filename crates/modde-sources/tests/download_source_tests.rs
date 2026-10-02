@@ -22,7 +22,7 @@ fn test_download_handle_default_fields() {
     };
 
     assert_eq!(handle.url, "https://example.com/file.zip");
-    assert!(handle.candidate_urls.is_empty());
+    assert_eq!(handle.candidate_urls, [] as [std::string::String; 0]);
     assert!(handle.headers.is_empty());
     assert_eq!(handle.expected_hash, 12345);
     assert!(handle.size_hint.is_none());
@@ -153,7 +153,7 @@ async fn test_direct_source_resolve() {
     assert_eq!(handle.url, "https://cdn.example.com/mod.zip");
     assert_eq!(handle.expected_hash, 12345);
     assert_eq!(handle.headers.get("X-Custom").unwrap(), "value");
-    assert!(handle.candidate_urls.is_empty());
+    assert_eq!(handle.candidate_urls, [] as [std::string::String; 0]);
     assert!(handle.size_hint.is_none());
 }
 

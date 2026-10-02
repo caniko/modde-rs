@@ -126,7 +126,7 @@ async fn test_validate_mixed_from_archive_and_patched() {
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.total_files, 2);
     assert_eq!(report.verified, 2);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }
 
@@ -311,6 +311,6 @@ async fn test_validate_many_files() {
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.total_files, 50);
     assert_eq!(report.verified, 50);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }

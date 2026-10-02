@@ -1,5 +1,5 @@
 //! Linux descriptor-anchored, no-follow filesystem operations.
-use super::*;
+use super::{BTreeMap, Context, Path, PathBuf, Result, Serialize, bail, fs};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;

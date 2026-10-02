@@ -19,7 +19,13 @@ pub(crate) async fn validate_for_deploy(
     plugin: &dyn modde_games::GamePlugin,
 ) -> anyhow::Result<()> {
     if let Some(id) = profile.id {
-        for stage in pm.db().list_patcher_stages(id).await?.iter().filter(|stage| stage.enabled) {
+        for stage in pm
+            .db()
+            .list_patcher_stages(id)
+            .await?
+            .iter()
+            .filter(|stage| stage.enabled)
+        {
             pipeline::validate_stage_definition(stage)?;
             pipeline::validate_stage_runtime(stage, profile, plugin)?;
         }
