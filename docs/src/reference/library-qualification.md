@@ -268,3 +268,11 @@ package and Nix regressions, Home Manager runtime wrappers, and real packaged
 lifecycle. The existing Pages workflow retains its project-specific environment
 override; the pinned generator still reports Pages drift. A green build job does
 not make that unrelated generated-file difference resolved.
+
+Hosted containment jobs configure Ubuntu's unprofiled user-namespace policy
+on their disposable runner before testing bubblewrap's PID/network isolation.
+The launch path retains its sandbox preflight and never retries unsandboxed.
+Default public flake outputs do not consume private Apple SDK metadata. Authorized
+macOS cross-build callers use `lib.mkOutputs` with explicit `macosSdkStorePath`,
+`macosSdkOutputHash` and `osxSdkVersion`; without an SDK, the cross-build package
+reports an unavailable prerequisite. Native Linux outputs require no SDK credentials.

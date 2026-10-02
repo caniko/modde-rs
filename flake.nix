@@ -4,8 +4,6 @@
   inputs = {
     harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=7a3328e186258dca31f9801227bc4e6fd8db4f36";
 
-    harbor-macos-sdk-pin.url = "git+https://github.com/caniko/harbor-macos-sdk-pin.git";
-
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
     crane.follows = "harbor-rs/crane";
@@ -51,7 +49,6 @@
     self,
     nixpkgs,
     harbor-rs,
-    harbor-macos-sdk-pin,
     simit,
     plinth,
     visual-rubric,
@@ -62,9 +59,11 @@
     ...
   }: let
     mkOutputs = {
-      macosSdkStorePath ? harbor-macos-sdk-pin.storePath,
-      macosSdkOutputHash ? harbor-macos-sdk-pin.outputHash,
-      osxSdkVersion ? harbor-macos-sdk-pin.sdkVersion,
+      # Public native outputs must not require a private Apple SDK pin. An
+      # authorized cross-build caller supplies its SDK through lib.mkOutputs.
+      macosSdkStorePath ? null,
+      macosSdkOutputHash ? null,
+      osxSdkVersion ? "26.1",
     }:
       flake-utils.lib.eachDefaultSystem (system: let
         pkgs = import nixpkgs {
@@ -2104,12 +2103,12 @@
         ci.required_gates = [
           {
             id = "library-qualification";
-            run = "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c cargo xtask library-qualify --containment --jobs 4";
+            run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c cargo xtask library-qualify --containment --jobs 4";
             timeout_minutes = 60;
           }
           {
             id = "library-package-lifecycle";
-            run = "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix build .#modde --out-link result-qualified-package && nix develop -c cargo xtask library-package-qualify --binary \"$(readlink -f result-qualified-package)/bin/modde\" --output \"$RUNNER_TEMP/modde-package-receipt\"";
+            run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix build .#modde --out-link result-qualified-package && nix develop -c cargo xtask library-package-qualify --binary \"$(readlink -f result-qualified-package)/bin/modde\" --output \"$RUNNER_TEMP/modde-package-receipt\"";
             timeout_minutes = 90;
           }
         ];

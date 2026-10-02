@@ -1475,21 +1475,6 @@
         "type": "github"
       }
     },
-    "harbor-macos-sdk-pin": {
-      "locked": {
-        "lastModified": 1787618908,
-        "narHash": "sha256-z1tAA9/mesa1/mcMcPQXOBwkZH2JEELfpfcaiz+o9Gc=",
-        "ref": "refs/heads/trunk",
-        "rev": "7d78e7f87ce5f800ea3e329af1138cd3ee54e12f",
-        "revCount": 8,
-        "type": "git",
-        "url": "https://github.com/caniko/harbor-macos-sdk-pin.git"
-      },
-      "original": {
-        "type": "git",
-        "url": "https://github.com/caniko/harbor-macos-sdk-pin.git"
-      }
-    },
     "harbor-meta": {
       "inputs": {
         "flake-parts": "flake-parts_3",
@@ -2905,7 +2890,6 @@
           "crane"
         ],
         "flake-utils": "flake-utils",
-        "harbor-macos-sdk-pin": "harbor-macos-sdk-pin",
         "harbor-rs": "harbor-rs",
         "home-manager": "home-manager",
         "nix-appimage": "nix-appimage",
