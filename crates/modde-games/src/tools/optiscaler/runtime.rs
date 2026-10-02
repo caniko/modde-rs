@@ -98,9 +98,16 @@ pub(super) fn default_config() -> ToolConfig {
 }
 
 pub(super) fn default_config_for(context: Option<&ToolGameContext>) -> ToolConfig {
+    default_config_for_arch(context, crate::gpu::detect_gpu_arch())
+}
+
+pub(super) fn default_config_for_arch(
+    context: Option<&ToolGameContext>,
+    arch: crate::gpu::GpuArch,
+) -> ToolConfig {
     let mut config = default_config();
     apply_game_defaults(&mut config, context);
-    apply_hardware_defaults(&mut config);
+    super::hardware::apply_hardware_defaults_for_arch(&mut config, arch);
     config
 }
 
