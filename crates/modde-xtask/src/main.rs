@@ -12,6 +12,8 @@ use harbor_xtask::{
 };
 use semver::Version;
 
+mod library_qualification;
+
 #[derive(Parser)]
 #[command(name = "modde-xtask", version, about = "modde-rs tooling CLI")]
 struct Cli {
@@ -67,6 +69,15 @@ enum Cmd {
     /// Validate docs build, local links, and known command examples.
     #[command(name = "docs-validate")]
     DocsValidate,
+    /// Verify isolated feature builds, lifecycle regressions and optional real containment.
+    LibraryQualify {
+        /// Run real bubblewrap probes; requires Linux user namespaces on the host.
+        #[arg(long)]
+        containment: bool,
+        /// Maximum concurrent Cargo build jobs.
+        #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u16).range(1..))]
+        jobs: u16,
+    },
 }
 
 #[derive(clap::Args)]
@@ -182,7 +193,13 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg = project();
     match cli.cmd {
-        Cmd::Check => run_check(&cfg),
+        Cmd::Check => {
+            run_check(&cfg)?;
+            library_qualification::run(&cfg.workspace_root, cfg!(target_os = "linux"), 4)
+        }
+        Cmd::LibraryQualify { containment, jobs } => {
+            library_qualification::run(&cfg.workspace_root, containment, jobs)
+        }
         Cmd::Test { args } => run_test(&cfg, &args),
         Cmd::Lint => run_lint(&cfg),
         Cmd::Fmt => run_fmt(&cfg, FormatMode::Write),

@@ -319,6 +319,10 @@ Confirmation cannot override a live observer lease or an active session cgroup.
 `UMU_CONTAINER_NSENTER=1` is rejected because reconnecting to an existing UMU
 service can run the game outside this session's descendant tree. Direct launches
 clear an inherited value unless it is explicitly supplied in launch settings.
+Sandboxed launches also run an observer inside the PID namespace. It keeps
+bubblewrap's game command alive until detached descendants exit and returns a
+failure if any observed descendant fails. Observing bubblewrap only from the
+host would allow an early launcher exit to kill the game and report success.
 If a save directory has disappeared, restore it before retrying capture; modde
 does not treat a missing directory as a new empty save set.
 
@@ -439,6 +443,9 @@ infer parity from a successful launch alone.
 
 ## Performance capture and paired sandbox runs
 
+See the [qualification record](../reference/library-qualification.md) for the
+checks that have run and the live-game evidence still required.
+
 `modde perf run` and bisect candidates use the same installation-scoped
 preparation, supervision and save capture as Play. Configure MangoHud for the
 renderer/runner first. Vulkan injection uses `MANGOHUD=1`; an OpenGL workload may
@@ -506,6 +513,8 @@ failed exit or an unknown status.
 
 No overhead measurements have been collected for this implementation. The
 commands and reports provide the measurement workflow, not a performance result.
+Real-game measurements will be report-only: retain paired deltas and evidence
+without assigning a negligible-overhead pass/fail verdict.
 
 ## Provider references
 
@@ -519,3 +528,28 @@ commands and reports provide the measurement workflow, not a performance result.
 
 See also [Save Management](saves.md), [Deployment](deployment.md),
 [Executables](executables.md), [Tools](tools.md) and [Profiles](profiles.md).
+## GPU selection
+
+Library → Launch Settings includes an optional **GPU render node**. Use a stable
+PCI alias such as `/dev/dri/by-path/pci-0000:03:00.0-render`; probe-order names
+such as `renderD128` are rejected. The corresponding JSON field is
+`"gpu_render_node": "/dev/dri/by-path/pci-0000:03:00.0-render"`.
+
+Saved installation choices take precedence over `MODDE_GPU_RENDER_NODE`, the
+optional host default supplied by `programs.modde.gpu.renderNode` in Home Manager.
+An explicit GPU-selection variable in the saved launch environment also overrides
+the host default when no render node is saved; `DRI_PRIME=0` can request Mesa's
+desktop default for an individual installation.
+Leaving both unset preserves desktop/launcher GPU routing. The host default
+applies at direct game, exact-install store-hook and manager boundaries; ordinary
+store URI dispatch cannot apply a saved GPU override. This setting selects the
+game process, not the modde GUI renderer.
+
+Explicit node selection validates the live character device, PCI identity,
+read/write access and AMD/Intel Mesa driver before save/profile changes. It uses
+Mesa's documented `DRI_PRIME=pci-...` preference for OpenGL and Vulkan. Conflicting
+manual GPU-selection variables are rejected; incompatible inherited selection
+variables are removed for a typed selection. Proprietary NVIDIA routing remains
+available through explicit launch environment settings. Requested routing and
+host/driver inventory are retained as evidence, not treated as proof of the
+renderer a game actually used.
