@@ -75,6 +75,9 @@ pub struct LaunchSettings {
     pub sandbox: SandboxSettings,
     /// A generated wrapper is installed at the store's actual command boundary.
     pub store_hook: bool,
+    /// Operator assertion: Steam Cloud is disabled for this entitlement. Steam
+    /// does not expose an authoritative offline per-game cloud policy API.
+    pub steam_cloud_disabled: bool,
 }
 
 impl Default for LaunchSettings {
@@ -93,6 +96,7 @@ impl Default for LaunchSettings {
             save_directory: None,
             sandbox: SandboxSettings::default(),
             store_hook: false,
+            steam_cloud_disabled: false,
         }
     }
 }
@@ -146,6 +150,9 @@ pub struct PendingSession {
     pub save_transition: Option<SaveTransition>,
     #[serde(default)]
     pub observation: Option<SessionObservation>,
+    /// Private correlated diagnostics, allocated before preparation.
+    #[serde(default)]
+    pub diagnostics: Option<PathBuf>,
     /// Store handoff and one-run options, retained for interrupted completion.
     #[serde(default)]
     pub launch_request: Option<serde_json::Value>,
@@ -158,6 +165,7 @@ pub struct SessionObservation {
     pub unit: Option<String>,
 }
 
+pub mod diagnostics;
 mod session;
 pub use session::SessionPhase;
 mod save_transition;

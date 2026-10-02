@@ -142,6 +142,7 @@ async fn interrupted_switch_recovers_without_capturing_partial_saves_and_is_retr
         prefix: None,
         save_transition: None,
         observation: None,
+        diagnostics: None,
         launch_request: None,
     };
     session.restore_preparation(&pm).await.unwrap();

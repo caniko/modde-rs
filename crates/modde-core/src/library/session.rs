@@ -157,7 +157,9 @@ impl PendingSession {
         self.require_owner()?;
         let mut session = self.clone();
         session.data_directory = Some(normalized_path(&crate::paths::modde_data_dir()));
-        atomic_json(&Self::path(), &session)
+        atomic_json(&Self::path(), &session)?;
+        super::diagnostics::note(&session, session.phase.label(), &serde_json::json!({}));
+        Ok(())
     }
 
     pub fn advance(&mut self, phase: SessionPhase) -> Result<()> {

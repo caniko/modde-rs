@@ -45,6 +45,7 @@ impl PendingSession {
             prefix: None,
             save_transition: None,
             observation: None,
+            diagnostics: None,
             launch_request: None,
         })
     }
