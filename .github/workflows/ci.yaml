@@ -50,6 +50,26 @@ jobs:
         run: nix develop -c cargo clippy --workspace --all-targets --all-features -- --deny warnings
 
 
+  gate-generated-workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            substituters = https://attic.candee.baby/canix https://cache.nixos.org
+            trusted-public-keys = canix:lPzPzKrmYqW5Rxa5r0uQWvCqD3S5nx0h2eCy7XD5JM8= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+
+      - name: Required gate generated-workflows
+        run: sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c simit init ci --platform github --ci-provider actions --runtime nix --workspace --workspace-strategy aggregate --runner ubuntu-latest --publish-crates=false --with-artifacts=false --check --diff
+
   gate-library-qualification:
     runs-on: ubuntu-latest
     timeout-minutes: 60

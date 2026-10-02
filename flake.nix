@@ -88,7 +88,7 @@
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
         simitPackage = simit.packages.${system}.default.overrideAttrs (old: {
-          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch ./nix/patches/simit-github-concurrency.patch];
+          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch ./nix/patches/simit-github-concurrency.patch ./nix/patches/simit-pages-project-setup.patch];
         });
         plinthProject = plinth.packages.${system}.plinth-project;
         visualRubric = visual-rubric.packages.${system}.default;
@@ -2095,12 +2095,22 @@
         ci.workspace = true;
         ci.workspace_strategy = "aggregate";
         ci.all_features = true;
+        ci.pages = {
+          repo = "caniko/modde-rs";
+          canonical_domain = "modde.tartanoglu.com";
+          source_branch = "trunk";
+        };
         ci.nix_builds = [".#modde" ".#checks.x86_64-linux.library-regressions" ".#checks.x86_64-linux.hm-runtime"];
         ci.extra_setup = [
           "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache"
           "printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf"
         ];
         ci.required_gates = [
+          {
+            id = "generated-workflows";
+            run = "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c simit init ci --platform github --ci-provider actions --runtime nix --workspace --workspace-strategy aggregate --runner ubuntu-latest --publish-crates=false --with-artifacts=false --check --diff";
+            timeout_minutes = 30;
+          }
           {
             id = "library-qualification";
             run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c cargo xtask library-qualify --containment --jobs 4";

@@ -265,9 +265,11 @@ role, superuser, schema usage/create and table count. No activation occurred.
 
 The newly generated GitHub checks cover workspace tests/Clippy, exact native
 package and Nix regressions, Home Manager runtime wrappers, and real packaged
-lifecycle. The existing Pages workflow retains its project-specific environment
-override; the pinned generator still reports Pages drift. A green build job does
-not make that unrelated generated-file difference resolved.
+lifecycle. Pages now derives its environment and cache setup from the generator
+and shared CI configuration. Simit PR #27 fixes the missing setup propagation;
+Modde backports that fix and the upstream Pages environment/result-link fixes
+to its pinned generator. The all-workflow `simit init ci --check --diff` gate
+passes with no generated-file drift.
 
 Hosted containment jobs configure Ubuntu's unprofiled user-namespace policy
 on their disposable runner before testing bubblewrap's PID/network isolation.
