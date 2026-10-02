@@ -324,8 +324,8 @@ mod tests {
             .expect("preview");
 
         assert_eq!(preview.changed_files, vec![PathBuf::from("dxgi.dll")]);
-        assert!(preview.unchanged_files.is_empty());
-        assert!(preview.missing_inputs.is_empty());
+        assert_eq!(preview.unchanged_files, [] as [std::path::PathBuf; 0]);
+        assert_eq!(preview.missing_inputs, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -344,8 +344,8 @@ mod tests {
             .preview_apply_for(game.path(), None, &config)
             .expect("preview");
 
-        assert!(preview.changed_files.is_empty());
+        assert_eq!(preview.changed_files, [] as [std::path::PathBuf; 0]);
         assert_eq!(preview.unchanged_files, vec![PathBuf::from("dxgi.dll")]);
-        assert!(preview.missing_inputs.is_empty());
+        assert_eq!(preview.missing_inputs, [] as [std::string::String; 0]);
     }
 }

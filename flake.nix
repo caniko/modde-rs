@@ -4,9 +4,6 @@
   inputs = {
     harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=7a3328e186258dca31f9801227bc4e6fd8db4f36";
 
-    harbor-macos-sdk-pin.url = "git+https://github.com/caniko/harbor-macos-sdk-pin.git";
-
-
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
     crane.follows = "harbor-rs/crane";
@@ -52,7 +49,6 @@
     self,
     nixpkgs,
     harbor-rs,
-    harbor-macos-sdk-pin,
     simit,
     plinth,
     visual-rubric,
@@ -63,9 +59,11 @@
     ...
   }: let
     mkOutputs = {
-      macosSdkStorePath ? harbor-macos-sdk-pin.storePath,
-      macosSdkOutputHash ? harbor-macos-sdk-pin.outputHash,
-      osxSdkVersion ? harbor-macos-sdk-pin.sdkVersion,
+      # Public native outputs must not require a private Apple SDK pin. An
+      # authorized cross-build caller supplies its SDK through lib.mkOutputs.
+      macosSdkStorePath ? null,
+      macosSdkOutputHash ? null,
+      osxSdkVersion ? "26.1",
     }:
       flake-utils.lib.eachDefaultSystem (system: let
         pkgs = import nixpkgs {
@@ -76,14 +74,21 @@
               "unrar"
             ];
         };
-        lib = nixpkgs.lib;
+        inherit (nixpkgs) lib;
 
-        toolchain = harbor-rs.lib.mkToolchain {inherit pkgs; toolchainProfile = "nightly";};
+        toolchain = harbor-rs.lib.mkToolchain {
+          inherit pkgs;
+          toolchainProfile = "nightly";
+        };
         inherit (toolchain) craneLib;
+        opencodeLspShell = harbor-rs.inputs.nix-opencode-lsp.lib.mkShell {
+          inherit pkgs;
+          rustAnalyzer = toolchain.rustToolchain;
+        };
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
         simitPackage = simit.packages.${system}.default.overrideAttrs (old: {
-          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch];
+          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch ./nix/patches/simit-github-concurrency.patch ./nix/patches/simit-pages-project-setup.patch];
         });
         plinthProject = plinth.packages.${system}.plinth-project;
         visualRubric = visual-rubric.packages.${system}.default;
@@ -259,6 +264,7 @@
             just
             openssh
             pre-commit
+            sqlite
             rust-analyzer
             stdenv.cc
             toolchain.rustToolchain
@@ -274,7 +280,8 @@
             zip
           ]
           ++ nativeBuildInputs
-          ++ buildInputs;
+          ++ buildInputs
+          ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [pkgs.bubblewrap pkgs.procps];
 
         # Release-only tooling: packaging, signing, image/VM/container
         # workflows (see scripts/release-local-check.sh). Explicitly
@@ -329,11 +336,13 @@
             ./Cargo.lock
             ./Cargo.toml
             ./README.md
+            ./CONTRIBUTING.md
             ./crates
             ./crates/modde-manager
             ./docs/capability-matrix.toml
             ./docs/src/reference/parity.md
             ./docs/src/games/supported-games.md
+            ./docs/src/getting-started/installation.md
             ./dist/com.tartanoglu.modde.metainfo.xml
             ./dist/com.tartanoglu.modde.png
             ./dist/modde-ui.desktop
@@ -362,6 +371,8 @@
           version = moddeVersion;
           inherit src nativeBuildInputs buildInputs cargoVendorDir;
           strictDeps = true;
+          MODDE_BUILD_REVISION = self.rev or self.dirtyRev or "unknown";
+          MODDE_GIT_SHA = self.rev or self.dirtyRev or "unknown";
           SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
           NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
         };
@@ -401,7 +412,8 @@
                   ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix LD_LIBRARY_PATH : ${linuxLdPath} \\"}
                   ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix PATH : ${lib.makeBinPath [pkgs.bubblewrap pkgs.coreutils pkgs.systemd]} \\"}
                   --set-default SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
-                  --set-default NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                  --set-default NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
+                  --set-default MODDE_BIN "$out/bin/modde"
               done
               install -Dm0644 ${./dist/modde-ui.desktop} "$out/share/applications/com.tartanoglu.modde.desktop"
               install -Dm0644 ${./dist/com.tartanoglu.modde.png} "$out/share/icons/hicolor/512x512/apps/com.tartanoglu.modde.png"
@@ -445,7 +457,10 @@
         aarch64LinuxTargetSuffix =
           lib.strings.replaceStrings ["-"] ["_"] aarch64LinuxTarget;
         pkgsAarch64Linux = pkgs.pkgsCross.aarch64-multiplatform;
-        toolchainAarch64 = harbor-rs.lib.mkToolchain {pkgs = pkgsAarch64Linux; toolchainProfile = "nightly";};
+        toolchainAarch64 = harbor-rs.lib.mkToolchain {
+          pkgs = pkgsAarch64Linux;
+          toolchainProfile = "nightly";
+        };
         craneLibAarch64 = toolchainAarch64.craneLib;
         darwinSigtool = pkgs.darwin.sigtool;
         # Ad-hoc sign the cross-built Mach-O binaries. sigtool's `codesign`
@@ -1164,50 +1179,50 @@
             else "true";
           optiscalerBadProfileEval = builtins.tryEval (
             builtins.deepSeq
-            ((evalHm {
-                invalid = {
-                  game = "stellar-blade";
-                  tools.optiscaler = {
-                    enable = true;
-                    profile = "nonexistent";
-                  };
+            (evalHm {
+              invalid = {
+                game = "stellar-blade";
+                tools.optiscaler = {
+                  enable = true;
+                  profile = "nonexistent";
                 };
-              })
+              };
+            })
                 .home
                 .activation
-                .modde-deploy)
+                .modde-deploy
             true
           );
           typedUnknownKeyEval = builtins.tryEval (
             builtins.deepSeq
-            ((evalHm {
-                invalid = {
-                  game = "test game";
-                  tools.vkbasalt = {
-                    enable = true;
-                    settings.cas_sharpness = 0.4;
-                  };
+            (evalHm {
+              invalid = {
+                game = "test game";
+                tools.vkbasalt = {
+                  enable = true;
+                  settings.cas_sharpness = 0.4;
                 };
-              })
+              };
+            })
                 .home
                 .activation
-                .modde-deploy)
+                .modde-deploy
             true
           );
           typedWrongTypeEval = builtins.tryEval (
             builtins.deepSeq
-            ((evalHm {
-                invalid = {
-                  game = "test game";
-                  tools.vkbasalt = {
-                    enable = true;
-                    settings.casSharpness = "fast";
-                  };
+            (evalHm {
+              invalid = {
+                game = "test game";
+                tools.vkbasalt = {
+                  enable = true;
+                  settings.casSharpness = "fast";
                 };
-              })
+              };
+            })
                 .home
                 .activation
-                .modde-deploy)
+                .modde-deploy
             true
           );
           badAssertions =
@@ -1231,15 +1246,15 @@
             else "false";
           unknownToolEval = builtins.tryEval (
             builtins.deepSeq
-            ((evalHm {
-                invalid = {
-                  game = "skyrim-se";
-                  tools.notatool.enable = true;
-                };
-              })
+            (evalHm {
+              invalid = {
+                game = "skyrim-se";
+                tools.notatool.enable = true;
+              };
+            })
                 .home
                 .activation
-                .modde-deploy)
+                .modde-deploy
             true
           );
           readableManualWithoutHashAssertions =
@@ -1331,12 +1346,11 @@
           # Shell boundary: default stays iced-only, website tooling stays in
           # docs. Name-based so this half never evaluates plinth itself; the
           # docs-membership assert below is what keeps plinth pinned working.
-          devshell-no-dioxus =
-            assert lib.assertMsg (lib.all (p: !lib.elem (lib.getName p) ["dioxus-cli" "plinth-project" "visual-rubric"]) nativeDevPackages)
-              "default devShell must not include website tooling (dioxus/plinth); use `nix develop .#docs`";
-            assert lib.assertMsg (builtins.elem plinthProject docsPackages)
-              "docs shell must include plinthProject; website tooling belongs there, not in default";
-            pkgs.runCommand "modde-devshell-no-dioxus" {} ''touch "$out"' '';
+          devshell-no-dioxus = assert lib.assertMsg (lib.all (p: !lib.elem (lib.getName p) ["dioxus-cli" "plinth-project" "visual-rubric"]) nativeDevPackages)
+          "default devShell must not include website tooling (dioxus/plinth); use `nix develop .#docs`";
+          assert lib.assertMsg (builtins.elem plinthProject docsPackages)
+          "docs shell must include plinthProject; website tooling belongs there, not in default";
+            pkgs.runCommand "modde-devshell-no-dioxus" {} ''touch "$out"'';
           hm-module = pkgs.runCommand "modde-hm-module-check" {} ''
             cat > ready <<'EOF'
             ${activationReady}
@@ -1463,6 +1477,10 @@
             }" = "false"
             touch "$out"
           '';
+          hm-runtime = import ./nix/hm-runtime-check.nix {
+            inherit pkgs;
+            flake = self;
+          };
           hm-module-database = pkgs.runCommand "modde-hm-module-database-check" {} ''
             cat > url-session.json <<'EOF'
             ${builtins.toJSON databaseUrlOnly.home.sessionVariables}
@@ -1653,6 +1671,15 @@
             grep -q "does not support release pinning" assertions.json
             touch "$out"
           '';
+          # Namespace creation is tested on the host by `xtask library-qualify
+          # --containment`; Nix sandboxes run the deterministic recovery gates.
+          library-regressions = craneLib.cargoTest (commonArgs
+            // {
+              inherit cargoArtifacts;
+              doCheck = true;
+              cargoExtraArgs = "--locked --package modde --package modde-core --package modde-games --package modde-ui --all-features --lib --bins --test installation_state_tests --test save_transition_tests --test repo_truth_tests --test diagnostic_retention_tests --test installation_context_tests --test installation_prefix_tests --test store_context_tests --test library_sandbox_commands --test cli_library_preparation --test cli_library_supervision";
+              nativeBuildInputs = nativeBuildInputs ++ [pkgs.sqlite];
+            });
           manager = craneLib.cargoTest (managerPackageArgs
             // {
               cargoArtifacts = managerCargoArtifacts;
@@ -1681,7 +1708,8 @@
             inherit (toolchain) craneLib;
             pkgConfigDeps = buildInputs;
 
-            packages = nativeDevPackages;
+            packages = nativeDevPackages ++ opencodeLspShell.nativeBuildInputs;
+            extraShellHook = opencodeLspShell.shellHook;
 
             extraEnv = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
               LD_LIBRARY_PATH = linuxLdPath;
@@ -1974,12 +2002,21 @@
         package,
         config,
       }:
-        nix-manager-core.lib.mkDeclarativeManager {
+        (nix-manager-core.lib.mkDeclarativeManager {
           inherit pkgs config package;
           managerPackage = package;
           managerBinary = "modde-manager";
           extraRuntimePackages = [pkgs.git pkgs.procps pkgs.sqlite];
-        };
+        }).overrideAttrs (old: {
+          passthru =
+            (old.passthru or {})
+            // {
+              # Expose the same producer configuration to the GUI's raw command
+              # boundary. Its --config must not be doubled by a manager wrapper.
+              configFile = pkgs.writeText "declarative-manager-config.json" (builtins.toJSON config);
+              unwrappedPackage = package;
+            };
+        });
 
       linuxDistributionSupport = {
         policy = "major-distro-families";
@@ -2051,7 +2088,40 @@
         inherit mkOutputs;
       };
       simitConfig = {
-        ci.check_command = "cargo run -p modde-xtask -- check";
+        ci.provider = "actions";
+        ci.platform = "github";
+        ci.runtime = "nix";
+        ci.runner = "ubuntu-latest";
+        ci.workspace = true;
+        ci.workspace_strategy = "aggregate";
+        ci.all_features = true;
+        ci.pages = {
+          repo = "caniko/modde-rs";
+          canonical_domain = "modde.tartanoglu.com";
+          source_branch = "trunk";
+        };
+        ci.nix_builds = [".#modde" ".#checks.x86_64-linux.library-regressions" ".#checks.x86_64-linux.hm-runtime"];
+        ci.extra_setup = [
+          "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache"
+          "printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf"
+        ];
+        ci.required_gates = [
+          {
+            id = "generated-workflows";
+            run = "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c simit init ci --platform github --ci-provider actions --runtime nix --workspace --workspace-strategy aggregate --runner ubuntu-latest --publish-crates=false --with-artifacts=false --check --diff";
+            timeout_minutes = 30;
+          }
+          {
+            id = "library-qualification";
+            run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c cargo xtask library-qualify --containment --jobs 4";
+            timeout_minutes = 60;
+          }
+          {
+            id = "library-package-lifecycle";
+            run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix build .#modde --out-link result-qualified-package && nix develop -c cargo xtask library-package-qualify --binary \"$(readlink -f result-qualified-package)/bin/modde\" --output \"$RUNNER_TEMP/modde-package-receipt\"";
+            timeout_minutes = 90;
+          }
+        ];
         release.publish.enforcement = "activated-remote";
         release.publish.channels = {
           apt = "required";

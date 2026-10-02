@@ -167,7 +167,7 @@ mod tests {
         assert_eq!(tracked_inis("skyrim-se").len(), 3);
         assert_eq!(tracked_inis("skyrim-ae").len(), 3);
         assert_eq!(tracked_inis("fallout4").len(), 3);
-        assert!(tracked_inis("cyberpunk2077").is_empty());
+        assert_eq!(tracked_inis("cyberpunk2077").len(), 0);
     }
 
     #[test]

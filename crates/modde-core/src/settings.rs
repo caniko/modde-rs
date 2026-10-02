@@ -259,10 +259,10 @@ mod tests {
     #[test]
     fn default_settings_are_empty() {
         let s = AppSettings::default();
-        assert!(s.nexus_api_key.is_empty());
+        assert_eq!(s.nexus_api_key, "");
         assert!(s.game_paths.is_empty());
         assert!(s.download_dir.is_none());
-        assert!(s.theme.is_empty());
+        assert_eq!(s.theme, "");
         assert!(s.selected_game.is_none());
     }
 
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn load_missing_file_returns_default() {
         let s = AppSettings::load_from(Path::new("/nonexistent/settings.toml"));
-        assert!(s.nexus_api_key.is_empty());
+        assert_eq!(s.nexus_api_key, "");
         assert!(s.game_paths.is_empty());
     }
 

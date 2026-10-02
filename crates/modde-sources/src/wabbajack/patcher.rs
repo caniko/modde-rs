@@ -293,7 +293,7 @@ mod tests {
         let mut streamed = Vec::new();
         let result = apply_patch_to_writer_limited(b"", &patch, &mut streamed, Some(3));
         assert!(result.is_err());
-        assert!(streamed.is_empty());
+        assert_eq!(streamed, [] as [u8; 0]);
     }
 
     #[test]
@@ -328,6 +328,6 @@ mod tests {
     fn test_empty_patch() {
         let patch = build_octodiff_patch(&[]);
         let result = apply_patch(b"some source", &patch).unwrap();
-        assert!(result.is_empty());
+        assert_eq!(result, [] as [u8; 0]);
     }
 }

@@ -318,7 +318,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(plan.disabled_mod_ids.is_empty());
+        assert_eq!(plan.disabled_mod_ids, [] as [std::string::String; 0]);
         assert_eq!(
             plan.enabled_mod_ids,
             ["master", "framework", "patch", "cosmetic"]

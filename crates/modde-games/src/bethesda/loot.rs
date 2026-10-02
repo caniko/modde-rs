@@ -240,7 +240,7 @@ plugins:
         let ussep = &ml.plugins["unofficial skyrim special edition patch.esp"];
         assert_eq!(ussep.after.len(), 3);
         assert_eq!(ussep.requires.len(), 1);
-        assert!(ussep.incompatible.is_empty());
+        assert_eq!(ussep.incompatible, [] as [std::string::String; 0]);
 
         let skyui = &ml.plugins["skyui_se.esp"];
         assert_eq!(skyui.after.len(), 1);

@@ -270,7 +270,7 @@ fn select_game_with_no_profiles_clears_profile_context() {
     let _ = app.update(Message::SelectGame("cyberpunk2077".to_string()));
     app.finish_pending_switch_blocking();
 
-    assert!(app.profiles.is_empty());
+    assert_eq!(app.profiles, [] as [modde_core::ProfileSummary; 0]);
     assert!(app.active_profile.is_none());
     assert!(app.loaded_profile.is_none());
 }

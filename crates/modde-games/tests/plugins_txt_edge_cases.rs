@@ -16,7 +16,10 @@ fn test_read_only_comments() {
     std::fs::write(&path, "# comment 1\n# comment 2\n# comment 3\n").unwrap();
 
     let entries = read_plugins_txt_from(&path).unwrap();
-    assert!(entries.is_empty());
+    assert_eq!(
+        entries,
+        [] as [modde_games::bethesda::plugins_txt::PluginEntry; 0]
+    );
 }
 
 #[test]
@@ -26,7 +29,10 @@ fn test_read_only_empty_lines() {
     std::fs::write(&path, "\n\n\n\n").unwrap();
 
     let entries = read_plugins_txt_from(&path).unwrap();
-    assert!(entries.is_empty());
+    assert_eq!(
+        entries,
+        [] as [modde_games::bethesda::plugins_txt::PluginEntry; 0]
+    );
 }
 
 #[test]

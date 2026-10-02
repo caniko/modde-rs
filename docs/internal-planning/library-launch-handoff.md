@@ -1,5 +1,29 @@
 # Library launch and sandbox handoff
 
+Qualification update (2026-10-01): execution is authorized. The automated
+feature/recovery/UI gates and real bubblewrap containment now pass, including
+detached lifetime and failure via an in-namespace observer. Rust 1.93.0 checking
+passes. The current qualification/lint/format/dependency edits are uncommitted
+on top of `9649bef`; nothing has been pushed. See
+`docs/src/reference/library-qualification.md` for evidence and remaining live
+provider/GPU/performance gates. The user selected native Linux as the required
+target and report-only performance measurements; Flatpak is follow-up work.
+The production native Nix package and its synthetic sandbox lifecycle pilot
+pass. The older snapshot below records the
+pre-qualification handoff and its historical edits-only constraint.
+
+Latest automated evidence: all-feature tests 2,068 passed; default-feature tests
+2,064 passed; strict workspace/all-target/all-feature Clippy and Rust 1.93 checks
+passed; treefmt and whitespace checks passed. The Nix regression gate revealed
+missing repository-truth documentation inputs; those are now included, but its
+rerun is blocked by another evaluation lease. Whole-repository `docs-validate`
+builds mdBook and then fails on pre-existing generated README badge links;
+installed Simit rejects the configured `ci.check_command` during regeneration.
+Audit has zero vulnerability errors and seven warnings, including the remaining
+`cryoglyph`/Iced `lru 0.16.4` unsoundness warning. Packaged fixture evidence is at
+`/data/scratch/tmp/opencode/modde-package-lifecycle-sa0lctho`; no real game or
+game-overhead measurement was run.
+
 Commit-pass update (2026-09-30): the implementation below is now committed
 locally in `f3ae6aa`, `7bdaf80`, `9b78a06`, `33f17fc` and `4c35e97`.
 Nothing has been pushed. The checkout/patch-transfer instructions below describe
@@ -16,8 +40,8 @@ it with saved settings, plus optional Linux sandboxing and measured overhead.
 - Base HEAD: `a18a74b3921c5746695c2b673949d716966f6473`
   (`test(manager): exact pre-registration preservation comparison`).
 - Original checkout: `/data/nvme0/can/canix/projects/repos/owned/modde-rs`.
-- **All implementation is uncommitted and unpushed.** Transfer tracked changes
-  **and untracked files**; a fresh clone or tracked-only diff loses the feature.
+- Transfer the local implementation commits plus current tracked changes
+  **and untracked files**; a fresh clone or tracked-only diff loses work.
   The working tree also contains pre-existing user feature-gating changes and
   Library UI files. Preserve them; do not treat the whole diff as agent-owned.
 - Origin is GitHub; `legacy-codeberg` points to `caniko/rs-modde` with push disabled.

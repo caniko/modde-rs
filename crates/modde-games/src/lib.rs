@@ -40,7 +40,6 @@ pub mod ue4;
 pub mod witcher3;
 
 pub use detection::{DetectedGame, LauncherSource, find_detected_game, scan_installed_games};
-pub use save_fingerprint::save_fingerprint;
 pub use generic::loader::{load_user_games, reload_user_games};
 pub use generic::manage::{
     AddUserGameResult, DetectCandidateDir, add_user_game, detect_candidates, read_user_game_spec,
@@ -53,6 +52,7 @@ pub use optiscaler::{
 pub use registry::{
     EngineFamily, GameRegistration, LauncherIds, all_games, resolve_game, supported_game_ids,
 };
+pub use save_fingerprint::save_fingerprint;
 pub use traits::{
     DeployTarget, DeployTargetKind, DiscoveredFile, DiscoveredMod, GamePlugin, HotDeployCapability,
     HotDeploySupport, ModClassifyConfig, ModSafety, ModScanner, ModSource, SaveDependencyAnalyzer,
@@ -229,6 +229,9 @@ pub fn read_native_plugin_order(game_id: &str) -> Result<Vec<modde_core::PluginE
 
 /// Native `plugins.txt` support requires the `bethesda` feature.
 #[cfg(not(feature = "bethesda"))]
-pub fn write_native_plugin_order(game_id: &str, _plugins: &[modde_core::PluginEntry]) -> Result<()> {
+pub fn write_native_plugin_order(
+    game_id: &str,
+    _plugins: &[modde_core::PluginEntry],
+) -> Result<()> {
     anyhow::bail!("native plugin order for '{game_id}' requires the bethesda feature")
 }

@@ -178,7 +178,7 @@ mod tests {
     fn walk_files_relative_empty() {
         let tmp = TempDir::new().unwrap();
         let files = walk_files_relative(tmp.path()).unwrap();
-        assert!(files.is_empty());
+        assert_eq!(files, [] as [(std::string::String, std::path::PathBuf); 0]);
     }
 
     #[test]
@@ -210,7 +210,7 @@ mod tests {
     fn walk_files_relative_nonexistent() {
         let tmp = TempDir::new().unwrap();
         let files = walk_files_relative(&tmp.path().join("nope")).unwrap();
-        assert!(files.is_empty());
+        assert_eq!(files, [] as [(std::string::String, std::path::PathBuf); 0]);
     }
 
     #[test]

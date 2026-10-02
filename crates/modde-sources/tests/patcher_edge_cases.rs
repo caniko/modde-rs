@@ -53,7 +53,7 @@ fn test_patch_zero_length_copy_at_various_offsets() {
     let zero_copy = copy_op(3, 0);
     let patch = build_patch(&[(OP_COPY, &zero_copy)]);
     let result = apply_patch(source, &patch).unwrap();
-    assert!(result.is_empty());
+    assert_eq!(result, [] as [u8; 0]);
 }
 
 // ── Zero-length INSERT operation ────────────────────────────────────
@@ -75,7 +75,7 @@ fn test_patch_zero_length_insert_between_copies() {
 fn test_patch_output_size_zero_no_ops() {
     let patch = build_patch(&[]);
     let result = apply_patch(b"some source data", &patch).unwrap();
-    assert!(result.is_empty());
+    assert_eq!(result, [] as [u8; 0]);
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn test_patch_output_size_zero_with_zero_length_ops() {
     let ins = data_op(b"");
     let patch = build_patch(&[(OP_COPY, &zero_copy), (OP_DATA, &ins)]);
     let result = apply_patch(b"source", &patch).unwrap();
-    assert!(result.is_empty());
+    assert_eq!(result, [] as [u8; 0]);
 }
 
 // ── Multiple consecutive COPY operations ────────────────────────────

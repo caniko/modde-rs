@@ -118,7 +118,7 @@ async fn smoke_profile_nexus_collection_source_roundtrip() {
 async fn smoke_profile_manager_list_empty() {
     let mgr = ProfileManager::with_db(ModdeDb::open_memory().await.unwrap());
     let list = mgr.list().await.unwrap();
-    assert!(list.is_empty());
+    assert_eq!(list, [] as [modde_core::ProfileSummary; 0]);
 }
 
 #[tokio::test]
@@ -160,7 +160,7 @@ async fn smoke_hash_file_and_verify_sha256() {
     f.write_all(b"smoke test sha256").unwrap();
 
     let hash = hash_file_sha256(f.path()).await.unwrap();
-    assert!(!hash.is_empty());
+    assert_ne!(hash, "");
     verify_sha256(f.path(), &hash).await.unwrap();
 }
 
@@ -172,7 +172,10 @@ fn smoke_conflict_map_register_and_query() {
 
     // Single provider: no conflict
     cm.register("file_a.esp".to_string(), ModId::from("mod_1"));
-    assert!(cm.conflicts().is_empty());
+    assert_eq!(
+        cm.conflicts(),
+        [] as [(&str, &std::collections::HashSet<modde_core::ModId>); 0]
+    );
 
     // Two providers for same file: conflict
     cm.register("file_a.esp".to_string(), ModId::from("mod_2"));
@@ -189,7 +192,10 @@ fn smoke_conflict_map_register_and_query() {
 #[test]
 fn smoke_conflict_map_empty() {
     let cm = ConflictMap::default();
-    assert!(cm.conflicts().is_empty());
+    assert_eq!(
+        cm.conflicts(),
+        [] as [(&str, &std::collections::HashSet<modde_core::ModId>); 0]
+    );
     assert!(cm.files.is_empty());
 }
 

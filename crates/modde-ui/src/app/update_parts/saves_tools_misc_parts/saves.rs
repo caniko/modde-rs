@@ -5,9 +5,17 @@
 use super::*;
 
 impl Modde {
-    fn installation_saves(&self, game_id: &GameId) -> Result<modde_core::library::SaveContext, String> {
-        crate::app::block_on(modde_games::library::context::for_game(&self.settings, game_id.as_str(), &self.db))
-            .map(|context| context.saves).map_err(|error| error.to_string())
+    fn installation_saves(
+        &self,
+        game_id: &GameId,
+    ) -> Result<modde_core::library::SaveContext, String> {
+        crate::app::block_on(modde_games::library::context::for_game(
+            &self.settings,
+            game_id.as_str(),
+            &self.db,
+        ))
+        .map(|context| context.saves)
+        .map_err(|error| error.to_string())
     }
 
     pub(super) fn handle_saves_update(&mut self, message: Message) -> Task<Message> {
@@ -27,9 +35,14 @@ impl Modde {
                     let profile_name = profile.name.clone();
                     let context = match self.installation_saves(&game_id) {
                         Ok(context) => context,
-                        Err(error) => { self.save_snapshots.clear(); self.status_message = error; return Task::none(); }
+                        Err(error) => {
+                            self.save_snapshots.clear();
+                            self.status_message = error;
+                            return Task::none();
+                        }
                     };
-                    match modde_core::save::SaveManager::history(&context.scope, &profile_name, 20) {
+                    match modde_core::save::SaveManager::history(&context.scope, &profile_name, 20)
+                    {
                         Ok(history) => self.save_snapshots = history,
                         Err(e) => {
                             self.save_snapshots = Vec::new();
@@ -53,7 +66,10 @@ impl Modde {
                     if let Some(ref profile) = self.loaded_profile {
                         let context = match self.installation_saves(&profile.game_id) {
                             Ok(context) => context,
-                            Err(error) => { self.status_message = error; return Task::none(); }
+                            Err(error) => {
+                                self.status_message = error;
+                                return Task::none();
+                            }
                         };
                         match modde_core::save::SaveManager::snapshot_file_list(
                             &context.scope,
@@ -71,18 +87,38 @@ impl Modde {
                 if let Some(ref profile) = self.loaded_profile {
                     let game_id = profile.game_id.clone();
                     let profile_name = profile.name.clone();
-                    let context = match crate::app::block_on(modde_games::library::context::for_game(&self.settings, game_id.as_str(), &self.db)) {
-                        Ok(context) => context,
-                        Err(error) => { self.status_message = error.to_string(); return Task::none(); }
-                    };
+                    let context =
+                        match crate::app::block_on(modde_games::library::context::for_game(
+                            &self.settings,
+                            game_id.as_str(),
+                            &self.db,
+                        )) {
+                            Ok(context) => context,
+                            Err(error) => {
+                                self.status_message = error.to_string();
+                                return Task::none();
+                            }
+                        };
                     if context.saves.directory.is_some() {
-                        match crate::app::block_on(self.db.get_active_profile(&context.saves.scope)) {
+                        match crate::app::block_on(self.db.get_active_profile(&context.saves.scope))
+                        {
                             Ok(Some((_, active))) if active == profile_name => {}
-                            Ok(_) => { self.status_message = "Activate this profile for the selected installation before restoring its saves".into(); return Task::none(); }
-                            Err(error) => { self.status_message = error.to_string(); return Task::none(); }
+                            Ok(_) => {
+                                self.status_message = "Activate this profile for the selected installation before restoring its saves".into();
+                                return Task::none();
+                            }
+                            Err(error) => {
+                                self.status_message = error.to_string();
+                                return Task::none();
+                            }
                         }
                         let pm = ProfileManager::with_db(self.db.clone());
-                        match crate::app::block_on(context.restore_saves(&pm, &profile_name, &commit_id, self.current_fingerprint.as_ref())) {
+                        match crate::app::block_on(context.restore_saves(
+                            &pm,
+                            &profile_name,
+                            &commit_id,
+                            self.current_fingerprint.as_ref(),
+                        )) {
                             Ok(count) => {
                                 self.status_message = format!("Restored {count} save file(s)");
                             }

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -18,10 +18,10 @@ permissions:
 
 jobs:
   publish:
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
     env:
       NIX_CONFIG: "experimental-features = nix-command flakes"
     steps:
@@ -30,18 +30,12 @@ jobs:
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
-        with:
-          # Bind-mount a host sccache dir into sandboxed builders. The
-          # harbor-rs wrapper requires an admissible shared cache root
-          # (/var/cache/sccache, mode 1777) and otherwise refuses public
-          # builds; with the bind-mount it falls back to a local
-          # uncached build. Converge into simit config once the pages
-          # renderer supports this shape.
-          extra_nix_config: |
-            extra-sandbox-paths = /var/cache/sccache
 
-      - name: Prepare sccache cache root
+      - name: Project setup 1
         run: sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache
+
+      - name: Project setup 2
+        run: printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6

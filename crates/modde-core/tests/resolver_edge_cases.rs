@@ -31,7 +31,7 @@ fn make_profile(mods: Vec<(&str, bool)>, rules: smallvec::SmallVec<[LoadOrderRul
 fn test_resolve_empty_profile() {
     let profile = make_profile(vec![], smallvec![]);
     let result = resolve(&profile).unwrap();
-    assert!(result.order.is_empty());
+    assert_eq!(result.order, [] as [modde_core::ModId; 0]);
 }
 
 #[test]
@@ -207,7 +207,10 @@ fn test_conflict_map_no_conflicts() {
     let mut cm = ConflictMap::default();
     cm.register("textures/sky.dds".to_string(), ModId::from("mod_a"));
     cm.register("meshes/tree.nif".to_string(), ModId::from("mod_b"));
-    assert!(cm.conflicts().is_empty());
+    assert_eq!(
+        cm.conflicts(),
+        [] as [(&str, &std::collections::HashSet<modde_core::ModId>); 0]
+    );
 }
 
 #[test]
@@ -227,5 +230,8 @@ fn test_conflict_map_many_providers() {
 #[test]
 fn test_conflict_map_empty() {
     let cm = ConflictMap::default();
-    assert!(cm.conflicts().is_empty());
+    assert_eq!(
+        cm.conflicts(),
+        [] as [(&str, &std::collections::HashSet<modde_core::ModId>); 0]
+    );
 }

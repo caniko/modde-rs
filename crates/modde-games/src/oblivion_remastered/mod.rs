@@ -89,8 +89,12 @@ impl GamePlugin for OblivionRemasteredGame {
     }
 
     fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
-        crate::library::context::steam_user_path(install, prefix, STEAM_APP_ID,
-            Path::new("Documents/My Games/Oblivion Remastered/Saves"))
+        crate::library::context::steam_user_path(
+            install,
+            prefix,
+            STEAM_APP_ID,
+            Path::new("Documents/My Games/Oblivion Remastered/Saves"),
+        )
     }
 
     fn classify_mod(&self, mod_dir: &Path) -> ModSafety {

@@ -259,6 +259,7 @@ async fn synthetic_wabbajack_pipeline_reaches_late_directives() {
         dir.path().join("store"),
         dir.path().join("staging"),
     );
+    inst.apply_memory_provider = Some(admission::fixture_provider());
     let client = reqwest::Client::new();
     inst.add_source(crate::AnySource::WabbajackCdn(
         crate::wabbajack::cdn::WabbajackCdnSource::new(client.clone()),

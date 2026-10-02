@@ -273,7 +273,8 @@ fn wabbajack_start_install_requires_readiness_report() {
     let View::WabbajackInstaller(state) = &app.active_view else {
         panic!("expected Wabbajack installer view");
     };
-    assert_eq!(task.units(), 0);
+    // No installer is emitted; the only task releases the mutation lease.
+    assert_eq!(task.units(), 1);
     assert!(!state.installing);
     assert_eq!(state.status, "Run a readiness check before installing.");
 }
@@ -295,7 +296,8 @@ fn wabbajack_start_install_uses_panel_target_when_ready() {
     let View::WabbajackInstaller(state) = &app.active_view else {
         panic!("expected Wabbajack installer view");
     };
-    assert_eq!(task.units(), 1);
+    // Installer work plus deferred mutation-lease release.
+    assert_eq!(task.units(), 2);
     assert!(state.installing);
     assert_eq!(state.install_phase, "Starting");
     assert_eq!(state.hm_profile, "panel-profile");

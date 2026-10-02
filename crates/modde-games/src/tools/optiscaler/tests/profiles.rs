@@ -11,7 +11,8 @@ fn stellar_blade_default_config_adds_default_profile_and_hardware_tuning() {
         Some(PathBuf::from("/fake/StellarBlade")),
         None,
     );
-    let config = OptiScaler.default_config_for(Some(&context));
+    let config =
+        super::super::runtime::default_config_for_arch(Some(&context), crate::gpu::GpuArch::RDNA3);
 
     assert_eq!(config.get_str("optiscaler_profile"), Some("community-dxgi"));
 
@@ -29,11 +30,22 @@ fn stellar_blade_default_config_adds_default_profile_and_hardware_tuning() {
     assert!(config.get_bool("enable_optipatcher"));
     assert!(!config.get_bool("spoof_dlss"));
 
-    // Hardware tuning is applied after profile defaults; on this RDNA3 machine
-    // the effective default is the INT8 FSR4 payload with FP8 emulation disabled.
+    // Hardware tuning is applied after profile defaults. Inject the architecture
+    // so the test also runs on headless builders and inside Nix sandboxes.
     assert_eq!(config.get_str("hardware_tuning"), Some("auto"));
     assert_eq!(config.get_str("fsr4_variant"), Some(FSR4_VARIANT_INT8_402));
     assert!(!config.get_bool("emulate_fp8"));
+
+    for arch in [crate::gpu::GpuArch::RDNA4, crate::gpu::GpuArch::Unknown] {
+        let config = super::super::runtime::default_config_for_arch(Some(&context), arch);
+        assert_eq!(config.get_str("optiscaler_profile"), Some("community-dxgi"));
+        assert_eq!(config.get_str("hardware_tuning"), Some("auto"));
+        assert_eq!(
+            config.get_str("fsr4_variant"),
+            Some(FSR4_VARIANT_LATEST_FP8)
+        );
+        assert!(!config.get_bool("emulate_fp8"));
+    }
 
     // Release tag and ini overrides
     assert_eq!(config.get_str("release_tag"), Some("official:v0.9.1"));

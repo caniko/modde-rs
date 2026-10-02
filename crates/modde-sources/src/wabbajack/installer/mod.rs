@@ -193,6 +193,8 @@ pub struct WabbajackInstaller {
     archive_retention: ArchiveRetentionPolicy,
     missing_archive_policy: MissingArchivePolicy,
     archive_memory_max_bytes: u64,
+    #[cfg(test)]
+    apply_memory_provider: Option<memory_admission::provider::SharedMemoryProvider>,
 }
 
 impl WabbajackInstaller {
@@ -228,6 +230,8 @@ impl WabbajackInstaller {
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(DEFAULT_ARCHIVE_MEMORY_MAX_BYTES),
+            #[cfg(test)]
+            apply_memory_provider: None,
         }
     }
 
@@ -269,6 +273,7 @@ impl WabbajackInstaller {
     }
 }
 
+mod admission;
 mod archive_batch;
 mod archive_batch_nested;
 mod archive_io;

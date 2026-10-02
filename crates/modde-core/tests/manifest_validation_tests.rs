@@ -250,7 +250,7 @@ fn test_install_directives_patched() {
             assert_eq!(from, "original.esp");
             assert!(inner_path.is_none());
             assert_eq!(to, "patched.esp");
-            assert!(patch_id.is_empty());
+            assert_eq!(patch_id, "");
             assert_eq!(*size, 12345);
         }
         _ => panic!("expected PatchedFromArchive"),

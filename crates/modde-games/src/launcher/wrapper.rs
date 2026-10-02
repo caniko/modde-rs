@@ -118,18 +118,12 @@ pub fn generate_launch_wrapper(
     std::fs::create_dir_all(&wrapper_dir).context("failed to create modde bin directory")?;
 
     #[cfg(unix)]
-    let (wrapper_path, script) = generate_wrapper_unix(
-        &wrapper_dir,
-        &restore_commands,
-        tool_env_vars,
-    );
+    let (wrapper_path, script) =
+        generate_wrapper_unix(&wrapper_dir, &restore_commands, tool_env_vars);
 
     #[cfg(windows)]
-    let (wrapper_path, script) = generate_wrapper_windows(
-        &wrapper_dir,
-        &restore_commands,
-        tool_env_vars,
-    );
+    let (wrapper_path, script) =
+        generate_wrapper_windows(&wrapper_dir, &restore_commands, tool_env_vars);
 
     std::fs::write(&wrapper_path, &script)
         .with_context(|| format!("failed to write launch wrapper: {}", wrapper_path.display()))?;
@@ -198,8 +192,11 @@ pub fn register_heroic_wrapper(
     // Installing/deploying through a legacy entry point must not reinsert the
     // old wrapper around an exact-install Library boundary.
     let library_hooks = modde_core::paths::modde_data_dir().join("launch-hooks");
-    if wrappers.iter().filter_map(|entry| entry.get("exe").and_then(Value::as_str))
-        .any(|exe| Path::new(exe).starts_with(&library_hooks)) {
+    if wrappers
+        .iter()
+        .filter_map(|entry| entry.get("exe").and_then(Value::as_str))
+        .any(|exe| Path::new(exe).starts_with(&library_hooks))
+    {
         return Ok(None);
     }
 
