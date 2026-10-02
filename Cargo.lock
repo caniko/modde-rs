@@ -4055,6 +4055,7 @@ dependencies = [
  "clap",
  "harbor-xtask",
  "semver",
+ "serde_json",
  "tracing-subscriber",
 ]
 

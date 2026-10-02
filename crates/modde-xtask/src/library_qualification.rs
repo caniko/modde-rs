@@ -81,6 +81,8 @@ pub(super) fn run(root: &Path, containment: bool, jobs: u16) -> Result<()> {
             "save_transition_tests",
             "--test",
             "repo_truth_tests",
+            "--test",
+            "diagnostic_retention_tests",
         ],
     )?;
     cargo(

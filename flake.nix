@@ -89,7 +89,7 @@
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
         simitPackage = simit.packages.${system}.default.overrideAttrs (old: {
-          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch];
+          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch ./nix/patches/simit-github-concurrency.patch];
         });
         plinthProject = plinth.packages.${system}.plinth-project;
         visualRubric = visual-rubric.packages.${system}.default;
@@ -372,6 +372,8 @@
           version = moddeVersion;
           inherit src nativeBuildInputs buildInputs cargoVendorDir;
           strictDeps = true;
+          MODDE_BUILD_REVISION = self.rev or self.dirtyRev or "unknown";
+          MODDE_GIT_SHA = self.rev or self.dirtyRev or "unknown";
           SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
           NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
         };
@@ -411,7 +413,8 @@
                   ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix LD_LIBRARY_PATH : ${linuxLdPath} \\"}
                   ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--prefix PATH : ${lib.makeBinPath [pkgs.bubblewrap pkgs.coreutils pkgs.systemd]} \\"}
                   --set-default SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
-                  --set-default NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                  --set-default NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
+                  --set-default MODDE_BIN "$out/bin/modde"
               done
               install -Dm0644 ${./dist/modde-ui.desktop} "$out/share/applications/com.tartanoglu.modde.desktop"
               install -Dm0644 ${./dist/com.tartanoglu.modde.png} "$out/share/icons/hicolor/512x512/apps/com.tartanoglu.modde.png"
@@ -1475,6 +1478,10 @@
             }" = "false"
             touch "$out"
           '';
+          hm-runtime = import ./nix/hm-runtime-check.nix {
+            inherit pkgs;
+            flake = self;
+          };
           hm-module-database = pkgs.runCommand "modde-hm-module-database-check" {} ''
             cat > url-session.json <<'EOF'
             ${builtins.toJSON databaseUrlOnly.home.sessionVariables}
@@ -1671,7 +1678,7 @@
             // {
               inherit cargoArtifacts;
               doCheck = true;
-              cargoExtraArgs = "--locked --package modde --package modde-core --package modde-games --package modde-ui --all-features --lib --bins --test installation_state_tests --test save_transition_tests --test repo_truth_tests --test installation_context_tests --test installation_prefix_tests --test store_context_tests --test library_sandbox_commands --test cli_library_preparation --test cli_library_supervision";
+              cargoExtraArgs = "--locked --package modde --package modde-core --package modde-games --package modde-ui --all-features --lib --bins --test installation_state_tests --test save_transition_tests --test repo_truth_tests --test diagnostic_retention_tests --test installation_context_tests --test installation_prefix_tests --test store_context_tests --test library_sandbox_commands --test cli_library_preparation --test cli_library_supervision";
               nativeBuildInputs = nativeBuildInputs ++ [pkgs.sqlite];
             });
           manager = craneLib.cargoTest (managerPackageArgs
@@ -1996,12 +2003,21 @@
         package,
         config,
       }:
-        nix-manager-core.lib.mkDeclarativeManager {
+        (nix-manager-core.lib.mkDeclarativeManager {
           inherit pkgs config package;
           managerPackage = package;
           managerBinary = "modde-manager";
           extraRuntimePackages = [pkgs.git pkgs.procps pkgs.sqlite];
-        };
+        }).overrideAttrs (old: {
+          passthru =
+            (old.passthru or {})
+            // {
+              # Expose the same producer configuration to the GUI's raw command
+              # boundary. Its --config must not be doubled by a manager wrapper.
+              configFile = pkgs.writeText "declarative-manager-config.json" (builtins.toJSON config);
+              unwrappedPackage = package;
+            };
+        });
 
       linuxDistributionSupport = {
         policy = "major-distro-families";
@@ -2073,11 +2089,28 @@
         inherit mkOutputs;
       };
       simitConfig = {
+        ci.provider = "actions";
+        ci.platform = "github";
+        ci.runtime = "nix";
+        ci.runner = "ubuntu-latest";
+        ci.workspace = true;
+        ci.workspace_strategy = "aggregate";
+        ci.all_features = true;
+        ci.nix_builds = [".#modde" ".#checks.x86_64-linux.library-regressions" ".#checks.x86_64-linux.hm-runtime"];
+        ci.extra_setup = [
+          "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache"
+          "printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf"
+        ];
         ci.required_gates = [
           {
             id = "library-qualification";
-            run = "nix develop -c cargo xtask library-qualify --containment --jobs 4";
+            run = "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c cargo xtask library-qualify --containment --jobs 4";
             timeout_minutes = 60;
+          }
+          {
+            id = "library-package-lifecycle";
+            run = "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix build .#modde --out-link result-qualified-package && nix develop -c cargo xtask library-package-qualify --binary \"$(readlink -f result-qualified-package)/bin/modde\" --output \"$RUNNER_TEMP/modde-package-receipt\"";
+            timeout_minutes = 90;
           }
         ];
         release.publish.enforcement = "activated-remote";
