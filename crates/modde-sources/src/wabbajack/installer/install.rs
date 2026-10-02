@@ -1,4 +1,5 @@
 #![allow(clippy::wildcard_imports)]
+use super::admission::{APPLY_ADMISSION_TIMEOUT, acquire_apply_memory};
 use super::*;
 
 impl WabbajackInstaller {
@@ -131,8 +132,12 @@ impl WabbajackInstaller {
                 memory_admission::providers::ProcMeminfoProvider::shared()
             }
         };
-        let gate =
-            memory_admission::weighted::AsyncWeightedAdmissionGate::new(weighted_config, provider);
+        #[cfg(test)]
+        let provider = self.apply_memory_provider.clone().unwrap_or(provider);
+        let gate = memory_admission::weighted::AsyncWeightedAdmissionGate::new(
+            weighted_config.clone(),
+            Arc::clone(&provider),
+        );
 
         // Build a hash → size table from the manifest so per-directive weight
         // estimation is a constant-time lookup.
@@ -244,9 +249,23 @@ impl WabbajackInstaller {
                 let gate = gate.clone();
                 let sizes = Arc::clone(&archive_size_by_hash);
                 let inline_source = inline_source.clone();
+                let provider = Arc::clone(&provider);
+                let weighted_config = &weighted_config;
                 async move {
                     let weight = estimate_directive_weight(directive, &sizes, &directive_weights);
-                    let _permit = gate.acquire(weight).await;
+                    let _permit = match acquire_apply_memory(
+                        &gate,
+                        &provider,
+                        weighted_config,
+                        weight,
+                        APPLY_ADMISSION_TIMEOUT,
+                        || self.check_diagnostics_abort(),
+                    )
+                    .await
+                    {
+                        Ok(permit) => permit,
+                        Err(error) => return (i, Err(error)),
+                    };
                     if let Err(e) = self.check_diagnostics_abort() {
                         return (i, Err(e));
                     }
@@ -288,6 +307,8 @@ impl WabbajackInstaller {
                 let gate = gate.clone();
                 let inline_source = inline_source.clone();
                 let patch_batch_gate = Arc::clone(&patch_batch_gate);
+                let provider = Arc::clone(&provider);
+                let weighted_config = &weighted_config;
                 async move {
                     let _patch_permit = if archive_batch_has_patch(&batch) {
                         Some(
@@ -304,7 +325,27 @@ impl WabbajackInstaller {
                     // half), regardless of how many directives it serves.
                     let archive_weight =
                         estimate_archive_batch_weight(&batch, &archive_batch_weights);
-                    let _permit = gate.acquire(archive_weight).await;
+                    let _permit = match acquire_apply_memory(
+                        &gate,
+                        &provider,
+                        weighted_config,
+                        archive_weight,
+                        APPLY_ADMISSION_TIMEOUT,
+                        || self.check_diagnostics_abort(),
+                    )
+                    .await
+                    {
+                        Ok(permit) => permit,
+                        Err(error) => {
+                            return batch
+                                .directives
+                                .into_iter()
+                                .map(|directive| {
+                                    (directive.directive_index, Err(anyhow::anyhow!("{error:#}")))
+                                })
+                                .collect();
+                        }
+                    };
                     if let Err(e) = self.check_diagnostics_abort() {
                         return batch
                             .directives
