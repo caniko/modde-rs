@@ -16,8 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sandbox (Partial)**: Add disabled-by-default per-installation bubblewrap
   settings and alternating paired MangoHud captures. Require measured frame
   times and usable post-warmup samples, convert MangoHud elapsed nanoseconds,
-  and preserve observed exit status during re-ingestion. Compilation, regression
-  execution, containment qualification and overhead measurements remain pending.
+  and preserve observed exit status during re-ingestion. Feature builds, lifecycle
+  regressions and real containment qualification pass; live-game qualification
+  and packaged paired performance measurements remain pending and report-only.
+- **GPU routing**: Persist stable Mesa render-node choices per installation,
+  apply shared host defaults at direct/store-hook/manager boundaries, and expose
+  `programs.modde.gpu.renderNode` for Home Manager integration. Record requested
+  routing and driver/inventory provenance without asserting actual game rendering.
 - **Build**: Add optional game, GUI, archive, PostgreSQL and manager Cargo
   features. Separate Nix application development, documentation and release
   shells; refresh pinned inputs and the Simit workflow patch.
