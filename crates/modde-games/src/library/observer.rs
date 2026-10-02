@@ -12,7 +12,27 @@ use anyhow::Result;
 /// game tree is empty; an observer outside the PID namespace cannot do this.
 #[cfg(target_os = "linux")]
 pub fn reap(arguments: &[OsString]) -> Result<ExitStatus> {
+    reap_with_status(arguments, None)
+}
+
+/// The private pipe is inherited only by this observer. CLOEXEC prevents the
+/// game and its descendants from holding it open or writing startup evidence.
+#[cfg(target_os = "linux")]
+pub fn reap_with_status(arguments: &[OsString], status_fd: Option<i32>) -> Result<ExitStatus> {
+    use std::os::fd::FromRawFd;
     use std::os::unix::process::ExitStatusExt;
+    let mut channel = if let Some(fd) = status_fd {
+        anyhow::ensure!(fd == 3, "observer status must use reserved descriptor 3");
+        // SAFETY: fcntl uses no pointers. The descriptor is supplied by the
+        // supervisor solely for this observer, and is closed when it returns.
+        if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+            return Err(std::io::Error::last_os_error()).context("opening observer status pipe");
+        }
+        // SAFETY: fcntl established that this inherited owned descriptor exists.
+        Some(unsafe { std::fs::File::from_raw_fd(fd) })
+    } else {
+        None
+    };
     let (program, arguments) = arguments
         .split_first()
         .context("observer command missing")?;
@@ -22,10 +42,21 @@ pub fn reap(arguments: &[OsString]) -> Result<ExitStatus> {
         return Err(std::io::Error::last_os_error())
             .context("enabling sandbox descendant observer");
     }
-    let mut child = std::process::Command::new(program)
-        .args(arguments)
-        .spawn()
-        .context("starting sandbox game command")?;
+    report(&mut channel, &serde_json::json!({"phase": "starting"}))?;
+    let mut child = match std::process::Command::new(program).args(arguments).spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            report(
+                &mut channel,
+                &serde_json::json!({"phase": "failed", "error": error.to_string()}),
+            )?;
+            return Err(error).context("starting sandbox game command");
+        }
+    };
+    // A broken diagnostic channel after spawn must never stop descendant reaping.
+    if let Err(error) = report(&mut channel, &serde_json::json!({"phase": "started"})) {
+        eprintln!("observer startup evidence failed: {error}");
+    }
     let mut outcome = child.wait().context("waiting for sandbox launcher")?;
     loop {
         let mut status = 0;
@@ -41,14 +72,35 @@ pub fn reap(arguments: &[OsString]) -> Result<ExitStatus> {
             let error = std::io::Error::last_os_error();
             match error.raw_os_error() {
                 Some(libc::EINTR) => {}
-                Some(libc::ECHILD) => return Ok(outcome),
+                Some(libc::ECHILD) => {
+                    report(
+                        &mut channel,
+                        &serde_json::json!({"phase": "completed", "raw_status": outcome.into_raw()}),
+                    )?;
+                    return Ok(outcome);
+                }
                 _ => return Err(error).context("waiting for sandbox descendants"),
             }
         }
     }
 }
 
+#[cfg(target_os = "linux")]
+fn report(channel: &mut Option<std::fs::File>, value: &serde_json::Value) -> Result<()> {
+    use std::io::Write;
+    if let Some(channel) = channel {
+        serde_json::to_writer(&mut *channel, value)?;
+        channel.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
 #[cfg(not(target_os = "linux"))]
 pub fn reap(_arguments: &[OsString]) -> Result<ExitStatus> {
     anyhow::bail!("sandbox descendant observation requires Linux")
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn reap_with_status(arguments: &[OsString], _status_fd: Option<i32>) -> Result<ExitStatus> {
+    reap(arguments)
 }

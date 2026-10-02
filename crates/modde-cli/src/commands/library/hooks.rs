@@ -26,7 +26,12 @@ pub(super) fn install(game: &LibraryGame) -> Result<String> {
     let directory = data.join("launch-hooks");
     std::fs::create_dir_all(&directory)?;
     let wrapper = directory.join(format!("{}.sh", game.id));
-    let binary = std::env::current_exe()?;
+    // Preserve the package/Home Manager entry point: the raw current_exe can
+    // bypass its database, GPU and library defaults when invoked by a store.
+    let binary = match std::env::var_os("MODDE_BIN") {
+        Some(binary) => launch_binary(std::path::PathBuf::from(binary))?,
+        None => std::env::current_exe()?,
+    };
     let script = format!(
         "#!/bin/sh\n# Generated exact-install command boundary; argv is never re-parsed.\nexec {} --config-dir {} --data-dir {} library wrap {} -- \"$@\"\n",
         quote(binary.to_str().context("non-UTF8 executable path")?),
@@ -105,10 +110,36 @@ pub(super) fn install(game: &LibraryGame) -> Result<String> {
     Ok(note)
 }
 
+fn launch_binary(binary: PathBuf) -> Result<PathBuf> {
+    if binary.is_absolute() {
+        ensure!(
+            binary.is_file(),
+            "MODDE_BIN is unavailable: {}",
+            binary.display()
+        );
+        Ok(binary)
+    } else {
+        modde_games::library::launch::resolve_program(
+            binary.as_os_str(),
+            &LaunchSettings::default(),
+        )
+    }
+}
+
 /// Heroic downloads before entering our wrapper and uploads after it returns.
 /// Both happen outside the selected profile's save transition (including bisect
 /// source restoration), so the provider must relinquish automatic save writes.
-pub(super) fn require_profile_save_boundary(game: &LibraryGame) -> Result<()> {
+pub(super) fn require_profile_save_boundary(
+    game: &LibraryGame,
+    settings: &LaunchSettings,
+) -> Result<()> {
+    if game.store == Store::Steam {
+        ensure!(
+            settings.steam_cloud_disabled,
+            "disable Steam Cloud for this game in Steam Properties, restart Steam, then save steam_cloud_disabled=true in this installation's launch settings before using profile-managed saves"
+        );
+        return Ok(());
+    }
     if !matches!(game.store, Store::Gog | Store::Epic | Store::Sideload) {
         return Ok(());
     }
@@ -561,4 +592,12 @@ mod tests {
         }
         assert!(validate_cloud_sync(&serde_json::json!({"autoSyncSaves": false})).is_ok());
     }
+}
+#[test]
+fn steam_profile_saves_require_an_explicit_cloud_disabled_setting() {
+    let game = LibraryGame::new(Store::Steam, "1".into(), "Steam game".into(), None);
+    let mut settings = LaunchSettings::default();
+    assert!(require_profile_save_boundary(&game, &settings).is_err());
+    settings.steam_cloud_disabled = true;
+    require_profile_save_boundary(&game, &settings).unwrap();
 }

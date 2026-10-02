@@ -28,10 +28,10 @@ use super::mutation::{
 pub(crate) fn run() -> Result<()> {
     let cli = Cli::parse();
     if let super::args::Commands::Library {
-        action: super::args::LibraryAction::Reap { command },
+        action: super::args::LibraryAction::Reap { command, status_fd },
     } = &cli.command
     {
-        let status = modde_games::library::observer::reap(command)?;
+        let status = modde_games::library::observer::reap_with_status(command, *status_fd)?;
         #[cfg(unix)]
         let code = {
             use std::os::unix::process::ExitStatusExt;
@@ -63,9 +63,15 @@ pub(crate) fn run() -> Result<()> {
     {
         return crate::commands::library::complete_observed(observation);
     }
+    #[cfg(feature = "gui")]
+    let gui = matches!(cli.command, Commands::Gui);
+    #[cfg(not(feature = "gui"))]
+    let gui = false;
     #[cfg(not(feature = "remote-telemetry"))]
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
+        .with_ansi(!gui)
+        .with_writer(std::sync::Mutex::new(tracing_writer(gui)))
         .init();
 
     #[cfg(feature = "remote-telemetry")]
@@ -73,7 +79,7 @@ pub(crate) fn run() -> Result<()> {
     #[cfg(feature = "remote-telemetry")]
     let _telemetry_runtime_guard = telemetry_runtime.enter();
     #[cfg(feature = "remote-telemetry")]
-    init_tracing()?;
+    init_tracing(gui)?;
     #[cfg(feature = "remote-telemetry")]
     init_remote_telemetry(&telemetry_runtime)?;
 
@@ -162,8 +168,10 @@ pub(crate) fn run() -> Result<()> {
 }
 
 #[cfg(feature = "remote-telemetry")]
-fn init_tracing() -> Result<()> {
-    let fmt_layer = tracing_subscriber::fmt::layer();
+fn init_tracing(gui: bool) -> Result<()> {
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(!gui)
+        .with_writer(std::sync::Mutex::new(tracing_writer(gui)));
     let filter = EnvFilter::from_default_env();
     let registry = tracing_subscriber::registry().with(filter).with(fmt_layer);
 
@@ -187,6 +195,16 @@ fn init_tracing() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn tracing_writer(gui: bool) -> Box<dyn std::io::Write + Send> {
+    if gui {
+        match modde_core::library::diagnostics::gui_log() {
+            Ok(log) => return Box::new(log),
+            Err(error) => eprintln!("Could not open persistent GUI log: {error}"),
+        }
+    }
+    Box::new(std::io::stderr())
 }
 
 #[cfg(feature = "remote-telemetry")]

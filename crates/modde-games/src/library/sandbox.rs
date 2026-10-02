@@ -124,6 +124,12 @@ pub(super) fn command(
     .into_iter()
     .flatten()
     {
+        if !path.is_dir() {
+            bail!(
+                "initialize sandbox prefix/save directories before launching; missing directory: {}",
+                path.display()
+            );
+        }
         if path.canonicalize()?.parent().is_none() {
             bail!("sandbox cannot expose the host root");
         }
@@ -154,7 +160,6 @@ pub(super) fn command(
     for path in [
         "/dev/dri",
         "/dev/snd",
-        "/dev/input",
         "/dev/nvidia0",
         "/dev/nvidia1",
         "/dev/nvidiactl",
@@ -163,6 +168,30 @@ pub(super) fn command(
         "/dev/nvidia-uvm-tools",
     ] {
         bind_if_exists(&mut command, "--dev-bind", Path::new(path));
+    }
+    // Raw keyboard/mouse events bypass the display server. Share gamepad nodes
+    // only, using udev's device classification (legacy js nodes are gamepads).
+    if let Ok(nodes) = std::fs::read_dir("/dev/input") {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        for node in nodes.flatten() {
+            let path = node.path();
+            let Ok(metadata) = path.symlink_metadata() else {
+                continue;
+            };
+            if !metadata.file_type().is_char_device() {
+                continue;
+            }
+            let device = metadata.rdev();
+            let properties = std::fs::read_to_string(format!(
+                "/run/udev/data/c{}:{}",
+                libc::major(device),
+                libc::minor(device)
+            ))
+            .unwrap_or_default();
+            if controller_node(node.file_name().to_str().unwrap_or_default(), &properties) {
+                bind(&mut command, "--dev-bind", &path);
+            }
+        }
     }
     // Preserve the logical HOME so native save paths and Wine's shell-folder
     // symlinks still resolve. Its contents are private; individual granted
@@ -292,6 +321,7 @@ pub(super) fn command(
         "XAUTHORITY",
         "PULSE_SERVER",
         "LD_LIBRARY_PATH",
+        "XDG_DATA_DIRS",
         "LIBGL_DRIVERS_PATH",
         "VK_ICD_FILENAMES",
         "VK_DRIVER_FILES",
@@ -345,9 +375,36 @@ fn bind_if_exists(command: &mut Command, mode: &str, path: &Path) {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn controller_node(name: &str, properties: &str) -> bool {
+    let numbered = |prefix| {
+        name.strip_prefix(prefix)
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    };
+    numbered("js")
+        || (numbered("event")
+            && properties.lines().any(|l| l == "E:ID_INPUT_JOYSTICK=1")
+            && !properties
+                .lines()
+                .any(|l| matches!(l, "E:ID_INPUT_KEYBOARD=1" | "E:ID_INPUT_MOUSE=1")))
+}
+
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn controller_grants_exclude_raw_keyboard_mouse_and_unclassified_events() {
+        assert!(controller_node("js0", ""));
+        assert!(controller_node("event12", "E:ID_INPUT_JOYSTICK=1\n"));
+        assert!(!controller_node("event0", "E:ID_INPUT_KEYBOARD=1\n"));
+        assert!(!controller_node(
+            "event1",
+            "E:ID_INPUT_JOYSTICK=1\nE:ID_INPUT_MOUSE=1\n"
+        ));
+        assert!(!controller_node("event2", ""));
+        assert!(!controller_node("by-id", "E:ID_INPUT_JOYSTICK=1\n"));
+    }
 
     #[test]
     fn a_symlink_cannot_turn_an_extra_mount_into_the_host_root() {

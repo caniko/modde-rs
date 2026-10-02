@@ -24,6 +24,19 @@ pub(crate) enum LibraryAction {
     },
     /// Show the persistent session and process evidence
     Status,
+    /// Export redacted structured evidence (raw logs and launch requests excluded)
+    Diagnostics {
+        /// Launch ID from status; defaults to the most recent attempt
+        #[arg(long)]
+        run: Option<String>,
+    },
+    /// Read the bounded tail of a private launch log
+    Logs {
+        #[arg(long)]
+        run: Option<String>,
+        #[arg(long, value_parser = ["game", "completion", "events"], default_value = "game")]
+        kind: String,
+    },
     /// Generate a Steam %command% / Heroic wrapper for this installation
     Hook { id: String },
     /// Enter the shared lifecycle at a store's actual game-command boundary
@@ -38,6 +51,8 @@ pub(crate) enum LibraryAction {
     /// In-sandbox descendant observer (invoked by modde)
     #[command(hide = true)]
     Reap {
+        #[arg(long, value_parser = clap::value_parser!(i32).range(3..=3))]
+        status_fd: Option<i32>,
         #[arg(last = true, required = true)]
         command: Vec<std::ffi::OsString>,
     },
