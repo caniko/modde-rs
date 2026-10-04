@@ -1,34 +1,45 @@
 # Library launch and sandbox handoff
 
-Qualification update (2026-10-01): execution is authorized. The automated
-feature/recovery/UI gates and real bubblewrap containment now pass, including
-detached lifetime and failure via an in-namespace observer. Rust 1.93.0 checking
-passes. The current qualification/lint/format/dependency edits are uncommitted
-on top of `9649bef`; nothing has been pushed. See
-`docs/src/reference/library-qualification.md` for evidence and remaining live
-provider/GPU/performance gates. The user selected native Linux as the required
-target and report-only performance measurements; Flatpak is follow-up work.
-The production native Nix package and its synthetic sandbox lifecycle pilot
-pass. The older snapshot below records the
-pre-qualification handoff and its historical edits-only constraint.
+## Current handoff, 2026-10-04
 
-Latest automated evidence: all-feature tests 2,068 passed; default-feature tests
-2,064 passed; strict workspace/all-target/all-feature Clippy and Rust 1.93 checks
-passed; treefmt and whitespace checks passed. The Nix regression gate revealed
-missing repository-truth documentation inputs; those are now included, but its
-rerun is blocked by another evaluation lease. Whole-repository `docs-validate`
-builds mdBook and then fails on pre-existing generated README badge links;
-installed Simit rejects the configured `ci.check_command` during regeneration.
-Audit has zero vulnerability errors and seven warnings, including the remaining
-`cryoglyph`/Iced `lru 0.16.4` unsoundness warning. Packaged fixture evidence is at
-`/data/scratch/tmp/opencode/modde-package-lifecycle-sa0lctho`; no real game or
-game-overhead measurement was run.
+The implementation is published at
+`0d3ce666e2362555b90d4d37b084cc8d86450eb9` on
+`integration/native-library-gpu` in [Modde PR #3](https://github.com/caniko/modde-rs/pull/3).
+Producer and native package CI passed; independent verification reports 2,092
+passed tests, zero failures and two ignored tests. The historical Canix consumer
+also passed actual-wrapper, real-bubblewrap lifecycle and diagnostic fixtures.
+See [Library and sandbox qualification](../src/reference/library-qualification.md)
+for exact revisions, artifacts and receipts. Later edits need their own checks;
+the approved consumer pin remains `0d3ce666…` until a replacement is selected.
 
-Commit-pass update (2026-09-30): the implementation below is now committed
-locally in `f3ae6aa`, `7bdaf80`, `9b78a06`, `33f17fc` and `4c35e97`.
-Nothing has been pushed. The checkout/patch-transfer instructions below describe
-the pre-commit snapshot; transfer the committed history for a current handoff.
-Execution qualification remains pending under the edits-only constraint.
+Native Linux is the required target. Flatpak is follow-up work. Performance is
+report-only: retain measurements, paired deltas and variability. No real-game
+performance or save-continuity qualification has occurred in this worker's scope.
+The `cryoglyph`/Iced dependency on `lru 0.16.4` and RUSTSEC-2026-0253 remains.
+
+The coordinator selected Canix
+`3b29bb33d125381f9d34b4f18657755cbe4a0379` for scoped non-activating qualification.
+The Modde worker owns its single corrected online VM retry and Modde
+package/wrapper binding. The ETL consumer owns the sole changed-hook Nomad run
+after measured selected graph/hook/context identity. The coordinator owns the
+combined profile-aware binding, final composition, packaged CLI/full local
+registry qualification, recovery/adoption, activation and writer release.
+Canix Actions remain **skipped-by-operator**. A moving checkout HEAD does not
+authorize rebinding, and source equality alone cannot transfer execution evidence.
+
+Next, deliver the component receipts, settle producer closeout/review before any
+replacement producer pin, and agree the Atlas runtime window. Entry must
+reconfirm Modde inactivity and the actual foreground marker/pause policy.
+Live direct/store/manager launches, Proton/UMU, interruption/save continuity and
+observed game-renderer evidence remain required. Budget about 80 minutes of
+gameplay plus setup for eight alternating five-minute off/on measurement pairs.
+Capability status remains Partial until end-to-end evidence supports changing it.
+
+## Historical pre-qualification snapshot
+
+The material below records the 2026-09-30 handoff. Its edits-only authorization,
+checkout/patch-transfer recipe and original execution checklist are historical;
+use the current exact-source selection and published history for new work.
 
 Snapshot: 2026-09-30. Continue the user's request to **implement full capability**:
 make modde a Lutris replacement for selecting an owned game in the GUI and playing
@@ -60,7 +71,7 @@ git ls-files --others --exclude-standard -z | tar --null -T - -czf /path/to/tran
 In a clean destination checkout at the base HEAD, apply the patch and extract
 the archive at the repository root. Compare `git status --short` with the source.
 
-## Authorization and qualification
+## Historical authorization and qualification (2026-09-30)
 
 - **Edits only remains the user's constraint.** Cargo checks/tests, formatting,
   GUI/game execution, containment checks and benchmarks need new authorization.
@@ -168,7 +179,7 @@ the archive at the repository root. Compare `git status --short` with the source
 | Regression source | `crates/modde-cli/tests/cli_library_{preparation,supervision}.rs`, `crates/modde-games/tests/{installation_context_tests,installation_prefix_tests,store_context_tests,library_sandbox_commands}.rs`, `crates/modde-core/tests/{installation_state_tests,save_transition_tests}.rs` |
 | Detailed behavior/status | `docs/src/guides/playing.md`, `docs/src/reference/parity.md`, `docs/capability-matrix.toml` |
 
-## Next work, in order
+## Historical next-work checklist (2026-09-30)
 
 1. Finish source-level signature/type/feature consistency review, especially new
    parser APIs, GUI fixtures, prefix helper and fake-bwrap deployment-refresh test.

@@ -18,10 +18,13 @@ A configured directory is not enough to launch a local game: choose its
 executable. Games do not need a mod plugin to appear in Library or run. A mod
 plugin is needed for profile deployment and profile-managed saves.
 
-This remains a **Partial, unqualified** capability. The implementation includes
-process supervision and store/manager integration, but compilation, regression
-execution, live provider compatibility, containment and game-performance
-measurements have not yet been completed for this change.
+This remains a **Partial** capability. Native-Linux compilation, regression
+tests, real bubblewrap containment and packaged lifecycle fixtures have passed
+for the approved implementation. Live GUI-to-game, Steam/Heroic/manager save
+continuity and real Proton/UMU compatibility still require Atlas qualification.
+Performance measurements are report-only and have not been collected for real
+games. See [Library and sandbox qualification](../reference/library-qualification.md)
+for the exact revisions, receipts and remaining gates.
 
 ## Owned games and provider coverage
 

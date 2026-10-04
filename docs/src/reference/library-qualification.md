@@ -5,12 +5,72 @@ implements saved per-installation launch configuration, profile/save transitions
 exact-install store hooks, durable descendant observation and paired performance
 capture. Automated fixtures establish these contracts; real-game and distribution
 qualification is still required before treating modde as a qualified Lutris
-replacement or claiming negligible sandbox overhead.
+replacement. Real-game sandbox performance remains unmeasured.
 
 The required implementation target is **native Linux**. Flatpak host-launch
 integration is a follow-up. Performance measurements are **report-only**, as
 selected by the user on 2026-10-01: retain measured deltas and evidence without a
 negligible-overhead pass/fail verdict.
+
+## Current qualification, 2026-10-04
+
+The approved producer revision is
+`0d3ce666e2362555b90d4d37b084cc8d86450eb9`, published on
+`integration/native-library-gpu` in [PR #3](https://github.com/caniko/modde-rs/pull/3).
+Its [producer CI](https://github.com/caniko/modde-rs/actions/runs/37031697945)
+and [native package CI](https://github.com/caniko/modde-rs/actions/runs/37031698041)
+passed. Independent verification retained the hosted checkout/tree identities
+and reports 2,092 passed tests, zero failures and two existing ignored tests:
+`/data/scratch/tmp/opencode/durability-modde-0d3-independent-producer-verification.json`.
+These results qualify that revision; later documentation or implementation
+changes require their own checks before a replacement pin is selected.
+
+The historical Canix consumer
+`8240764b480d0fff6aab77ef50f8767b5941676e` realized and privately published
+the actual Home Manager wrapper and native package:
+
+- Wrapper: `/nix/store/zdyx23lxxyzbj4z2gnzy5h4h8amwfxjj-modde-desktop-runtime`.
+- Native package: `/nix/store/8vbqbqbdp86qvrwc0yscicsz6ll2yfr2-modde-0.7.0`.
+- Binding: `/data/scratch/tmp/opencode/modde-atlas-repaired-committed-runtime-binding-20261002.json`.
+
+The actual-wrapper fixture used isolated SQLite/configuration/data directories
+and real bubblewrap. It passed successful completion, detached descendant
+failure, signal handling, failed inner-exec recovery, private/redacted diagnostics
+and journal cleanup. Durable raw statuses were `0`, `1792`, `15` and `256`
+respectively. The binding records the desktop entry, both wrapper defaults,
+compiled producer revision, NAR/deriver identities, launch receipts, retained
+output root and verified private publication. Defaults are PostgreSQL through
+`/run/postgresql`, render node `/dev/dri/by-path/pci-0000:03:00.0-render`, log level
+`info` and retention of 50 launches. The fixture's SQLite override does not
+establish live PostgreSQL or real-game save continuity.
+
+On 2026-10-04, read-only reverification confirmed those retained artifacts and
+receipts:
+`/data/scratch/tmp/opencode/modde-native-closeout-historical-verification-20261004T194904215074Z/receipt.json`
+(SHA-256 `4c272affec938bba414c72857199992683aa4a0a677a285ee664d4c0134ea81d`).
+This remains historical component evidence. A successor Canix source requires
+measured package, wrapper, defaults and dependency-context equality before
+execution evidence transfers. Equal source files alone do not establish it.
+
+Canix qualification runs locally on Atlas; its hosted Actions are
+**skipped-by-operator**. The coordinator selected
+`3b29bb33d125381f9d34b4f18657755cbe4a0379` for scoped non-activating qualification
+after reviewing the complete successor delta. The predecessor online VM failed
+because its stdout-only capture missed the intentional stderr stop; the corrected
+fixture preserves all 13 lifecycle assertions. That failure and earlier failed
+or cancelled attempts remain retained. Selection authorizes component checks,
+not production adoption or activation. Final composition, full local registry
+qualification and the production writer window remain coordinator-owned.
+
+Live game testing starts after those recovery/adoption/activation gates. At
+runtime entry, reconfirm Modde inactivity and the actual foreground marker/pause
+policy. Native direct, Steam, Heroic, Proton/UMU and manager paths need observed
+rendering, interruption recovery and save-continuity receipts. Eight alternating
+off/on measurement pairs require about 80 minutes of gameplay plus setup;
+retain paired deltas and variability without an overhead acceptance verdict.
+PR review/merge readiness remains separate from successful component CI.
+
+The dated sections below retain earlier implementation and failure evidence.
 
 ## Repeatable gates
 
@@ -100,15 +160,15 @@ canix cache binary build .#checks.x86_64-linux.library-regressions --include-tes
 
 | Gate | Required evidence or prerequisite |
 | --- | --- |
-| Nix regression gate | The source-filter issue is resolved; committed implementation `f09ce08` passed the exact gate recorded below. Diagnostic follow-ups require a new exact-source/package receipt. |
+| Nix regression gate | Approved producer `0d3ce666…` passed native package CI, including Nix regressions and packaged lifecycle. A replacement producer revision requires fresh exact-source qualification. |
 | GUI-to-Play | Atlas hardware-rendering diagnostics pass outside/inside bubblewrap. Live GUI-to-game rendering, saved configuration and completion evidence remain required. |
 | Steam and Heroic | Real exact-install hooks, launcher/cloud-sync setup, native and Wine/Proton/UMU commands, first-run prefix behavior and save continuity. |
 | Manager | Live manager forwarding, root lease/marker lifetime and recovery after interruption. |
 | Native nested runtimes | Verify supervision, mounts and failure without an unsandboxed fallback for actual Proton/UMU commands. |
 | Performance | Release/package runs and retained CSV/configuration/process evidence. Results are report-only. No real-game overhead has been measured. |
 | Dependency health | Current `cryoglyph`/Iced dependency on `lru 0.16.4` still carries RUSTSEC-2026-0253. Other unmaintained/yanked warnings also remain. |
-| Whole-repository documentation | Badge destinations and Simit policy are repaired; pinned generation and `docs-validate` passed for `416b6dd`. Follow-up generated CI and operational docs need current drift validation. |
-| Canix integration rollout | The earlier database-input, DNS, browser and old-Modde-module blockers are resolved. `9d0f1ce46` consumes the published GPU implementation, and Atlas evaluation/package lifecycle passed below. Follow-up logging/database/manager wiring needs matching pins and evaluation receipts before rebuild. |
+| Whole-repository documentation | Badge destinations and Simit policy are repaired. Closeout docs must retain exact-source claims and pass current link/command/mdBook validation. |
+| Canix integration rollout | Historical consumer `8240764b…` binds the approved producer, actual wrapper, logging/database/manager defaults and packaged lifecycle. Selected successor `3b29bb33…` needs coordinator-owned binding and affected checks before final composition, recovery/adoption and activation. |
 
 `event-listener 5.4.2` and `lru 0.18.2` replace the affected versions on the
 dependency edges that accept those patches. Audit warnings are not a clean
