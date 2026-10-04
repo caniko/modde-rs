@@ -4,6 +4,7 @@
 //! belong to an exact installation. Missing settings use launcher defaults.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -250,7 +251,11 @@ pub fn installation_id(entitlement: &str, path: &Path) -> String {
     hash.update(entitlement.as_bytes());
     hash.update([0]);
     hash.update(normalized.as_os_str().as_encoded_bytes());
-    format!("install-{:x}", hash.finalize())
+    let mut id = String::from("install-");
+    for byte in hash.finalize() {
+        write!(&mut id, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    id
 }
 
 /// Advisory resource lock. Never unlink a lock file: that would permit two
