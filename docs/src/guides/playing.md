@@ -512,7 +512,16 @@ and the exact generated config file, avoiding duplicate `--config` arguments.
 The peer-authenticated `can` role owns the `modde` database/schema and migrations;
 no PostgreSQL superuser role is needed. MangoHud and Vulkan diagnostics are present.
 
-After Atlas activation, test one entry at a time and retain its launch ID:
+The selected Canix `3b29bb33…` binding, measured Modde/remote-policy transfer
+and corrected online/changed-hook Nomad PostgreSQL backup VMs have passed their
+scoped checks with independent verification.
+Production recovery/adoption, final composition, writer admission and activation
+remain coordinator-owned gates. The VM result does not establish live Modde
+PostgreSQL or actual-game save continuity. See the
+[current qualification record](../reference/library-qualification.md#selected-canix-binding-and-component-acceptance)
+for exact artifacts and receipts.
+
+After admitted Atlas activation, test one entry at a time and retain its launch ID:
 
 1. Native direct launch with sandbox off, then on. Verify display, audio,
    controllers, successful completion and save continuity.

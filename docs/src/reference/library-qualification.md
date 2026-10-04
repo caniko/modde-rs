@@ -70,6 +70,126 @@ off/on measurement pairs require about 80 minutes of gameplay plus setup;
 retain paired deltas and variability without an overhead acceptance verdict.
 PR review/merge readiness remains separate from successful component CI.
 
+### Selected Canix binding and component acceptance
+
+The selected `3b29bb33…` combined binding and coordinator post-checks passed.
+Independent verification covers source NARs, ten standalone/embedded homes,
+41 recovery-record declarations, separate configured and final-service PostgreSQL
+packages, opaque derivation graphs, verified private `canix-fleet` publication
+and physical/registered managed roots. The retained inventory contains 72 exact
+derivations: 70 explicit selections plus the measured manager package/config
+output contexts. Evidence:
+
+- Sealed worker handoff:
+  `/data/scratch/tmp/opencode/durability-3b29-green-binding-worker-handoff-20261004T220520080406Z.json`
+  (SHA-256 `27fbdd313cb10fe9edaa55b5b276d6dc65a49a92e04b8bf53c560e165d9bdfa6`).
+- Combined binding:
+  `/data/scratch/tmp/opencode/durability-3b29-coordinator-combined-context-v2-20261004T213013602808Z/binding.json`
+  (SHA-256 `81e06c9737a36177488b9b2254231933c07ac1c5f10ff07b7ccfe68aa53fa0b6`).
+- Independent binding/root verification:
+  `/data/scratch/tmp/opencode/durability-3b29-bound-selection-context-v5-independent-20261004T220352406667Z/receipt.json`
+  (SHA-256 `f0972b6f996b28b023975277f63b3b64985aed2ad1cf84d6700bb5d56b0ff49f`).
+- Actual rendered production shell: unsuppressed ShellCheck and all twelve cleanup
+  cases passed in
+  `/data/scratch/tmp/opencode/durability-3b29-authoritative-full-script-native-20261004T215948931439Z/receipt.json`
+  (SHA-256 `f6bab51b5ac28f6b95f8bf3f9b01a11d204f91a99a3b353c05b8cb71e9172933`).
+
+Measured equality transferred the historical Modde wrapper/package and remote-policy
+results to this selection. The coordinator independently accepted artifact/NAR,
+deriver/reference, five-input cohort, defaults, database ownership, four launch
+statuses, remote opaque graph, private publication and root equality:
+`/data/scratch/tmp/opencode/durability-3b29-modde-remote-transfer-independent-20261004T221931871448Z/receipt.json`
+(SHA-256 `940b25629498d6d1220392bbb945bceb654f312dba4b24b19a382b6eefbd99f0`).
+The launch evidence retains its disposable SQLite/real-bubblewrap scope.
+
+Modde's storage cohort uses final-service PostgreSQL
+`/nix/store/rnyi9ykl60rghq1z2nbvl29jljjchak7-postgresql-and-plugins-18.6`.
+The separately verified configured PostgreSQL package has a different output
+(`3hc…`); it must not substitute for the final-service binding.
+
+### Corrected online VM result
+
+The sole actual corrected `pg-online-backup-only` retry passed on 2026-10-04.
+The reviewed v2 runner realized the selected opaque graph with normal capacity
+admission, one job/two cores and no further flake evaluation:
+
+- Derivation: `/nix/store/cn472qzq1g4ng8d9fm9pskpccll4jgap-vm-test-run-canix-pg-online-backup-only.drv`.
+- Output: `/nix/store/s219r8labpnic76scwfz4y9w6p8a53gk-vm-test-run-canix-pg-online-backup-only`.
+- Actual terminal:
+  `/data/scratch/tmp/opencode/modde-atlas-3b29-bound-pg-online-backup-only-immutable-executor/terminal.json`
+  (SHA-256 `ff27fce292c58b09e49605533bae733f508b09e2fa332050ac1bc90fe88ff05f`).
+- Worker post-terminal verification:
+  `/data/scratch/tmp/opencode/modde-3b29-online-terminal-verification-20261004T223136116229Z/receipt-v2.json`
+  (SHA-256 `d08e7ea2ff6a53f3ec4a240bd400476286a7054dff0f249161e545eb3529333f`).
+
+JUnit reports one test, zero failures/errors/skips. The successful complete
+rendered script retains all 13 lifecycle assertions, including intentional
+pre-adoption stops, INT/TERM interruption cleanup, receiver restoration, retained
+partial/acknowledged-row preservation, `LAST_SUCCESS` and four receipt hashes.
+The complete 1,207-line VM log and exact private publication/physical managed root
+were retained and rechecked. Captured intentional-stop stderr is checked by the
+script's assertions; the driver does not echo that captured text into its log.
+The initial post-terminal log-substring assumption failure is preserved alongside
+the corrected verification, as are the predecessor VM failure and admission-only
+nonexecution. This is VM component acceptance, not production record acceptance,
+adoption, activation or actual-game continuity.
+
+### Changed-hook Nomad VM and independent acceptance
+
+The user explicitly reassigned the sole changed-hook Nomad VM to the coordinator.
+That exact selected graph also passed through one opaque managed realization,
+one job/two cores, no source evaluation and no capacity override:
+
+- Derivation: `/nix/store/5s94bikx9yickgh6vrk0n28ymlwc233v-vm-test-run-canix-managed-pg-nomad-recovery.drv`.
+- Output: `/nix/store/5k26h6clpais856ajachcprgwl3jk00j-vm-test-run-canix-managed-pg-nomad-recovery`.
+- Actual terminal:
+  `/data/scratch/tmp/opencode/durability-3b29-coordinator-pg-recovery-nomad-only-executor/terminal.json`
+  (SHA-256 `2e9c96bd085eee707be88a9df8b7ee3234357df5783891fad41cd04c7aad2db2`).
+- Independent acceptance of both online and Nomad VM gates:
+  `/data/scratch/tmp/opencode/durability-3b29-vm-terminal-independent-v3-20261004T224505764092Z/receipt.json`
+  (SHA-256 `9d7c8a498c7109dacf0f49399d15c298d435d8d50874fa9ae00ab1691b4bd823`).
+
+Both gates report JUnit one test, zero failures/errors/skips and exact private
+`canix-fleet` publication/physical roots. Nomad's actual bound production hook
+checks export v2: exactly 2,000 files and 35 directories, all sizes/hashes and no
+extras. The unchanged 41 production SQL checks plus an additive saved-reviews
+fixture produce 42 equal records across source, local and off-host restores.
+Backup, epoch, system, metadata, manifest, snapshot, WAL and contract identities
+are bound. Cancel, wrong-export, stale-live-check and corrupt-metadata rejection
+paths reach successful whole-script completion. Verification-adapter failures
+remain retained: verbose live/ANSI logs differ from JUnit's representation, and
+the snapshot has no self-hash; its actual bytes/export and both restore hashes
+provide the binding. No fixture/assertion changes or second VM attempt were used.
+
+### Remaining closeout and production gates
+
+Scoped local qualification is green. Physical production Nomad restore, the last
+acknowledged-row boundary, writer window and final cohort remain unadmitted.
+Production ETL writer authority remains unassigned/unconfirmed; VM reassignment
+does not schedule or fence production. Final committed composition, packaged CLI
+and full runtime/stage qualification, writer window and activation remain pending.
+In particular, selected Raven stage commands use different Canix lease-launcher
+artifacts from the historical accepted stage. Historical component acceptance
+does not establish full-stage context identity across that change.
+The literal-safe `PGUSER` and source-revision projections also remain unresolved
+full-stage/CLI gates.
+
+[PR #2](https://github.com/caniko/modde-rs/pull/2), exact head
+`2cadcd139368620184fffd587df961684f90c60b`, remains open: its nine per-crate CI
+workflows and release workflow are absent from approved PR #3. Digest/manager
+fix coverage alone does not prove full supersession. Independent disposition:
+`/data/scratch/tmp/opencode/durability-modde-pr2-closeout-independent-20261004T222654796699Z/receipt.json`
+(SHA-256 `50c8d44f324a3b661cee9e156a12bf7dedabf25b3ec105e29654a82d458bcfa5`).
+CI/release work needs an explicit preservation or retirement decision before closure.
+
+PR #3 default-branch integration requires completed current-head substantive review
+and acceptable CI through the guarded review/merge interfaces. The installed Canix
+interfaces were unavailable at this snapshot; the Greptile credit-limit notice
+does not provide substantive review. Local documentation commits require their
+own qualification and do not replace approved producer `0d3ce666…` or inherit its
+hosted results. Generated docs, active/history roots, runners, queries and failed
+receipts remain retained while their closeout gates are pending.
+
 The dated sections below retain earlier implementation and failure evidence.
 
 ## Repeatable gates

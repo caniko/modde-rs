@@ -19,16 +19,54 @@ The `cryoglyph`/Iced dependency on `lru 0.16.4` and RUSTSEC-2026-0253 remains.
 
 The coordinator selected Canix
 `3b29bb33d125381f9d34b4f18657755cbe4a0379` for scoped non-activating qualification.
-The Modde worker owns its single corrected online VM retry and Modde
-package/wrapper binding. The ETL consumer owns the sole changed-hook Nomad run
-after measured selected graph/hook/context identity. The coordinator owns the
+The Modde worker completed its single corrected online VM retry and delivered
+the measured package/wrapper and remote-policy transfer. The coordinator
+independently accepted that transfer and the combined binding/post-checks.
+The user explicitly reassigned the sole changed-hook Nomad VM to the coordinator
+after the ETL worker became unavailable; that gate also passed. Production ETL
+writer authority is still unassigned/unconfirmed.
+The coordinator owns the
 combined profile-aware binding, final composition, packaged CLI/full local
 registry qualification, recovery/adoption, activation and writer release.
 Canix Actions remain **skipped-by-operator**. A moving checkout HEAD does not
 authorize rebinding, and source equality alone cannot transfer execution evidence.
 
-Next, deliver the component receipts, settle producer closeout/review before any
-replacement producer pin, and agree the Atlas runtime window. Entry must
+The corrected online VM passed with one JUnit test, zero failures/errors/skips
+and all 13 rendered lifecycle assertions preserved. Worker post-terminal
+verification retains the full 1,207-line log, exact private publication and
+physical managed output/binding roots:
+`/data/scratch/tmp/opencode/modde-3b29-online-terminal-verification-20261004T223136116229Z/receipt-v2.json`
+(SHA-256 `d08e7ea2ff6a53f3ec4a240bd400476286a7054dff0f249161e545eb3529333f`).
+This is the sole actual corrected retry, using normal admission, one job/two cores
+and no additional flake evaluation. Earlier failures/nonexecution remain retained.
+
+Independent verification accepted both online and changed-hook Nomad gates:
+`/data/scratch/tmp/opencode/durability-3b29-vm-terminal-independent-v3-20261004T224505764092Z/receipt.json`
+(SHA-256 `9d7c8a498c7109dacf0f49399d15c298d435d8d50874fa9ae00ab1691b4bd823`).
+Nomad's single selected realization also has one JUnit test with no failures,
+errors or skips, exact private publication/root, the unchanged 41 production SQL
+checks plus one fixture check, equal source/local/off-host records, and export v2
+with exactly 2,000 files/35 directories and all sizes/hashes/no extras.
+Scoped local qualification is green; physical production restore, the last
+acknowledged-row boundary, writer window and final cohort remain unadmitted.
+
+Modde's measured storage cohort is final-service PostgreSQL `rnyi…`, distinct
+from the configured `3hc…` package. Preserve both bindings. Raven's full-stage
+Canix lease-launcher artifacts also differ from historical acceptance; complete
+stage/runtime/CLI qualification remains a separate coordinator gate, including
+literal-safe `PGUSER` and source-revision projections.
+
+PR #2 stays open pending explicit CI/release preservation or retirement; its
+distinct release/per-crate CI workflows prevent a supersession claim. PR #3 needs
+substantive current-head review and acceptable CI through available guarded
+review/merge interfaces. Local docs remain native-qualified, with no replacement
+producer pin or inherited hosted qualification. Preserve active/history roots,
+generated docs and failed/cancelled receipts while their gates remain pending;
+cleanup requires exact-owned inactive regenerated artifacts and preservation
+through Doty.
+
+Next, settle producer closeout/review before any replacement producer pin,
+and agree the final composition and Atlas runtime window. Entry must
 reconfirm Modde inactivity and the actual foreground marker/pause policy.
 Live direct/store/manager launches, Proton/UMU, interruption/save continuity and
 observed game-renderer evidence remain required. Budget about 80 minutes of
