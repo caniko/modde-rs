@@ -150,6 +150,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documentation**: Record the selected Canix binding, independently accepted
+  Modde/remote-policy evidence transfer and independently accepted online/Nomad VMs.
+  Retain separate production/game acceptance gates, final-service PostgreSQL
+  identity, coordinator Nomad ownership and unresolved CI/release PR closeouts.
 - **Manager**: Explicitly release mutation leases even when forked children retain
   descriptors, and identify missing source-parent prerequisites in diagnostics.
 - **Manager**: Plan and apply compare prepared content and preserve unchanged files.
