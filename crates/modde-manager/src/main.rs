@@ -1015,7 +1015,7 @@ fn update_all(config: &Config) -> Result<()> {
             // local source plus a materialized state checkout, so
             // deployment never waits for them either.
             if !transaction::addon_follow(&addon.id)? {
-                let (image, locked) = transaction::reviewed_checkout(&addon)?;
+                let (image, locked) = transaction::reviewed_checkout(addon)?;
                 let digest = locked
                     .content_sha256
                     .clone()
@@ -1105,10 +1105,7 @@ fn assert_stopped(instance: &Instance) -> Result<()> {
             .status()
             .context("check game processes")?;
         if status.success() {
-            bail!(
-                "game process '{}' is running; stop it before reconciling",
-                process
-            );
+            bail!("game process '{process}' is running; stop it before reconciling");
         }
         if status.code() != Some(1) {
             bail!("pgrep failed while checking game processes: {status}");
@@ -1198,7 +1195,14 @@ fn safe_name(value: &str) -> String {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write;
+    bytes.iter().fold(
+        String::with_capacity(bytes.len() * 2),
+        |mut output, byte| {
+            write!(output, "{byte:02x}").expect("writing to a String cannot fail");
+            output
+        },
+    )
 }
 
 fn ensure_checkout(

@@ -1,4 +1,4 @@
-//! Declarative runtime wiring for launchable game instances (OctoWoW HD/Lutris).
+//! Declarative runtime wiring for launchable game instances (`OctoWoW` HD/Lutris).
 //!
 //! `status` and `plan` are read-only: they report verified/missing/mismatched/
 //! unverifiable items and never execute Wine, Lutris, or the launcher.
@@ -6,7 +6,10 @@
 //! `wineboot`, the Lutris game yml, and the Lutris `pga.db` row (backup-first,
 //! Lutris-closed gate). It never touches client binaries, MPQs, or game data.
 
-use super::*;
+use super::{
+    BTreeMap, Command, Context, Deserialize, Digest, Instance, Parser, Path, PathBuf, Result,
+    Serialize, Sha256, atomic_write_0600, bail, files, fs, hex,
+};
 use crate::transaction::overlap;
 use files::{Anchor, Image, Lease, fd_path, relative};
 use std::os::unix::fs::PermissionsExt;
@@ -86,7 +89,7 @@ pub struct Tunings {
     #[serde(default = "default_true")]
     pub dxvk: bool,
     #[serde(default)]
-    pub vkd3d: bool,
+    pub vkd3d: Vkd3d,
     #[serde(default = "default_true")]
     pub esync: bool,
     #[serde(default = "default_true")]
@@ -94,6 +97,11 @@ pub struct Tunings {
     #[serde(default)]
     pub env: BTreeMap<String, String>,
 }
+
+/// The independent Direct3D 12 translation choice retains a boolean wire format.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(transparent)]
+pub struct Vkd3d(bool);
 
 fn default_true() -> bool {
     true
@@ -125,7 +133,7 @@ pub struct LutrisEntry {
     #[serde(default = "default_game_slug")]
     pub game_slug: String,
     /// System command prefix (Lutris `system.prefix_command`): prepended to
-    /// the wine command. OctoWoW launcher uses the packaged stdio-repair
+    /// the wine command. `OctoWoW` launcher uses the packaged stdio-repair
     /// wrapper; a declared game-entry wrapper stays in front of the
     /// synthesized launch gate (see `game_gate_prefix`) instead of
     /// replacing it.
@@ -224,7 +232,7 @@ pub struct EntrySpec {
     pub runner_version: String,
     pub wine_arch: String,
     pub dxvk: bool,
-    pub vkd3d: bool,
+    pub vkd3d: Vkd3d,
     pub esync: bool,
     pub fsync: bool,
     pub dll_overrides: Vec<String>,
@@ -308,7 +316,7 @@ fn launcher_effective_tunings(wiring: &Wiring) -> Tunings {
             out.dxvk = dxvk;
         }
         if let Some(vkd3d) = patch.vkd3d {
-            out.vkd3d = vkd3d;
+            out.vkd3d = Vkd3d(vkd3d);
         }
         if let Some(esync) = patch.esync {
             out.esync = esync;
@@ -455,7 +463,7 @@ pub struct LaunchPatch {
     pub executable: Option<String>,
 }
 
-/// Reusable OctoWoW HD launch defaults. Site identity (accounts, paths,
+/// Reusable `OctoWoW` HD launch defaults. Site identity (accounts, paths,
 /// addon pins, user settings, endpoints, HD patch approval) stays in the
 /// consumer declaration; only reusable launch behavior lives here.
 ///
@@ -474,7 +482,7 @@ pub fn octowow_hd_defaults() -> Wiring {
         },
         tunings: Tunings {
             dxvk: false, // client bundles d3d9.dll; Lutris must not add a second layer
-            vkd3d: false,
+            vkd3d: Vkd3d(false),
             esync: true,
             fsync: true,
             env: BTreeMap::from([("WINEDEBUG".into(), "-all".into())]),
@@ -523,7 +531,7 @@ fn unpreset_defaults() -> Wiring {
         },
         tunings: Tunings {
             dxvk: true,
-            vkd3d: false,
+            vkd3d: Vkd3d(false),
             esync: true,
             fsync: true,
             env: BTreeMap::new(),
@@ -560,7 +568,7 @@ fn apply_patch(mut base: Wiring, patch: &WiringPatch) -> Wiring {
         base.tunings.dxvk = dxvk;
     }
     if let Some(vkd3d) = patch.tunings.vkd3d {
-        base.tunings.vkd3d = vkd3d;
+        base.tunings.vkd3d = Vkd3d(vkd3d);
     }
     if let Some(esync) = patch.tunings.esync {
         base.tunings.esync = esync;
@@ -610,7 +618,7 @@ fn apply_patch(mut base: Wiring, patch: &WiringPatch) -> Wiring {
     base
 }
 
-pub fn expand_preset(preset: Option<&str>, user: &Option<WiringPatch>) -> Result<Wiring> {
+pub fn expand_preset(preset: Option<&str>, user: Option<&WiringPatch>) -> Result<Wiring> {
     match (preset, user) {
         (None, None) => {
             bail!("wiring not configured for this instance (need preset or wiring block)")
@@ -629,7 +637,7 @@ pub fn expand_preset(preset: Option<&str>, user: &Option<WiringPatch>) -> Result
 
 /// Single resolution path for status, plan, and apply.
 pub fn resolve_wiring(instance: &Instance) -> Result<Wiring> {
-    expand_preset(instance.preset.as_deref(), &instance.wiring)
+    expand_preset(instance.preset.as_deref(), instance.wiring.as_ref())
 }
 
 /// Offline declaration validation: pure deserializer + resolver checks with
@@ -1090,29 +1098,27 @@ pub fn select_runner(
 ) -> Result<(Runner, bool)> {
     // No bypasses: "system" resolves through PATH and is recorded like any
     // other selection, so the executed artifact is always the reviewed one.
-    if !reselect {
-        if let Some(recorded) = read_recorded(instance)? {
-            if wiring.runtime.version != "latest" && wiring.runtime.version != recorded.version {
-                bail!(
-                    "declaration pins '{}' but '{}' is recorded; update the record explicitly",
-                    wiring.runtime.version,
-                    recorded.version
-                );
-            }
-            if is_executable(&recorded.path) {
-                return Ok((
-                    Runner {
-                        path: recorded.path,
-                        version: recorded.version,
-                    },
-                    true,
-                ));
-            }
+    if !reselect && let Some(recorded) = read_recorded(instance)? {
+        if wiring.runtime.version != "latest" && wiring.runtime.version != recorded.version {
             bail!(
-                "recorded runner '{}' no longer executes; pass --reselect to choose again",
-                recorded.path.display()
+                "declaration pins '{}' but '{}' is recorded; update the record explicitly",
+                wiring.runtime.version,
+                recorded.version
             );
         }
+        if is_executable(&recorded.path) {
+            return Ok((
+                Runner {
+                    path: recorded.path,
+                    version: recorded.version,
+                },
+                true,
+            ));
+        }
+        bail!(
+            "recorded runner '{}' no longer executes; pass --reselect to choose again",
+            recorded.path.display()
+        );
     }
     Ok((
         discover_runner(dirs, &wiring.runtime.kind, &wiring.runtime.version)?,
@@ -1139,7 +1145,8 @@ fn record_runner(instance: &Instance, runner: &Runner) -> Result<bool> {
     Ok(true)
 }
 
-/// Parse a 32-bit Windows executable header: returns (is_i386, large_address_aware).
+/// Parse a 32-bit Windows executable header: returns (`is_i386`, `large_address_aware`).
+#[cfg(test)]
 pub fn pe_exe_flags(bytes: &[u8]) -> Result<(bool, bool)> {
     if bytes.len() < 0x40 || &bytes[0..2] != b"MZ" {
         bail!("not a Windows executable (MZ header)");
@@ -1171,9 +1178,9 @@ pub fn pe_exe_flags_file(file: &mut fs::File) -> Result<(bool, bool)> {
     if &dos[0..2] != b"MZ" {
         bail!("not a Windows executable (MZ header)");
     }
-    let pe = u32::from_le_bytes(dos[0x3c..0x40].try_into().unwrap()) as u64;
+    let pe = u64::from(u32::from_le_bytes(dos[0x3c..0x40].try_into().unwrap()));
     // COFF header must start past DOS and stay within a sane header bound.
-    if pe < 0x40 || pe > (1 << 20) {
+    if !(0x40..=(1 << 20)).contains(&pe) {
         bail!("implausible PE offset {pe:#x}");
     }
     file.seek(SeekFrom::Start(pe))?;
@@ -1242,7 +1249,7 @@ fn existing_name(root: &Path, candidates: &[&str]) -> Result<Option<String>> {
     for candidate in candidates {
         match root_file_meta(root, candidate)? {
             Some(_) => return Ok(Some(candidate.to_string())),
-            None => continue,
+            None => {}
         }
     }
     Ok(None)
@@ -1407,7 +1414,7 @@ fn check_entry_yml(
         for key in keys {
             current = match current {
                 Some(serde_yaml_ng::Value::Mapping(map)) => {
-                    map.get(&serde_yaml_ng::Value::String(key.to_string()))
+                    map.get(serde_yaml_ng::Value::String(key.to_string()))
                 }
                 _ => None,
             };
@@ -1415,7 +1422,7 @@ fn check_entry_yml(
         current
     };
     let expect_str = |keys: &[&str], want: &str, label: &str| -> Option<String> {
-        match get(keys).and_then(|v| v.as_str()) {
+        match get(keys).and_then(serde_yaml_ng::Value::as_str) {
             Some(have) if have == want => None,
             Some(have) => Some(format!("{label} is '{have}', want '{want}'")),
             None => Some(format!("{label} missing, want '{want}'")),
@@ -1432,10 +1439,10 @@ fn check_entry_yml(
             problems.push(problem);
         }
     }
-    if let Some(prefix) = &spec.prefix {
-        if let Some(problem) = expect_str(&["game", "prefix"], prefix, "prefix") {
-            problems.push(problem);
-        }
+    if let Some(prefix) = &spec.prefix
+        && let Some(problem) = expect_str(&["game", "prefix"], prefix, "prefix")
+    {
+        problems.push(problem);
     }
     if let Some(problem) = expect_str(&["runner"], "wine", "runner") {
         problems.push(problem);
@@ -1456,13 +1463,13 @@ fn check_entry_yml(
     }
     for (key, want) in [
         ("dxvk", spec.dxvk),
-        ("vkd3d", spec.vkd3d),
+        ("vkd3d", spec.vkd3d.0),
         ("esync", spec.esync),
         ("fsync", spec.fsync),
         ("eac", false),
         ("battleye", false),
     ] {
-        match get(&["wine", key]).and_then(|v| v.as_bool()) {
+        match get(&["wine", key]).and_then(serde_yaml_ng::Value::as_bool) {
             Some(have) if have == want => {}
             Some(have) => problems.push(format!("wine.{key} is {have}, want {want}")),
             None => problems.push(format!("wine.{key} missing, want {want}")),
@@ -1473,10 +1480,10 @@ fn check_entry_yml(
     // and `/usr/lib` resolve to the FHS glibc, breaking the host wrapper
     // with a libc symbol lookup error); Lutris-managed runners keep theirs.
     let yml_version = get(&["wine", "version"])
-        .and_then(|v| v.as_str())
+        .and_then(serde_yaml_ng::Value::as_str)
         .unwrap_or("");
     let want_disable = yml_version == "system";
-    match get(&["system", "disable_runtime"]).and_then(|v| v.as_bool()) {
+    match get(&["system", "disable_runtime"]).and_then(serde_yaml_ng::Value::as_bool) {
         Some(have) if have == want_disable => {}
         Some(have) => problems.push(format!(
             "system.disable_runtime is {have}, want {want_disable} for wine version '{yml_version}'"
@@ -1485,7 +1492,8 @@ fn check_entry_yml(
             "system.disable_runtime missing, want {want_disable} for wine version '{yml_version}'"
         )),
     }
-    let overrides = get(&["system", "env", "WINEDLLOVERRIDES"]).and_then(|v| v.as_str());
+    let overrides =
+        get(&["system", "env", "WINEDLLOVERRIDES"]).and_then(serde_yaml_ng::Value::as_str);
     match overrides {
         Some(have) => {
             for dll in &spec.dll_overrides {
@@ -1501,17 +1509,17 @@ fn check_entry_yml(
     }
     match (
         &spec.command_prefix,
-        get(&["system", "prefix_command"]).and_then(|v| v.as_str()),
+        get(&["system", "prefix_command"]).and_then(serde_yaml_ng::Value::as_str),
     ) {
         (Some(want), Some(have)) if have == want => {}
         (Some(want), Some(have)) => {
-            problems.push(format!("system.prefix_command is '{have}', want '{want}'"))
+            problems.push(format!("system.prefix_command is '{have}', want '{want}'"));
         }
         (Some(want), None) => {
-            problems.push(format!("system.prefix_command missing, want '{want}'"))
+            problems.push(format!("system.prefix_command missing, want '{want}'"));
         }
         (None, Some(have)) => {
-            problems.push(format!("system.prefix_command is '{have}', want absent"))
+            problems.push(format!("system.prefix_command is '{have}', want absent"));
         }
         (None, None) => {}
     }
@@ -1860,34 +1868,34 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
     // shared inventory above: listing failures are already reported as
     // Unverifiable, so only that same successful listing can add a stray
     // finding here — never a fresh second read.
-    if let Some(patches) = &wiring.data_patches {
-        if patches.forbid_renames {
-            match &hd_inventory {
-                Ok(Some(names)) => {
-                    let strays: Vec<_> = names
-                        .iter()
-                        .filter_map(|name| classify_patch(name, &patches.native_letters))
-                        .collect();
-                    if !strays.is_empty() {
-                        items.push(item(
+    if let Some(patches) = &wiring.data_patches
+        && patches.forbid_renames
+    {
+        match &hd_inventory {
+            Ok(Some(names)) => {
+                let strays: Vec<_> = names
+                    .iter()
+                    .filter_map(|name| classify_patch(name, &patches.native_letters))
+                    .collect();
+                if !strays.is_empty() {
+                    items.push(item(
                             "hd-patch-letters",
                             ItemState::Mismatched,
                             format!("undeclared patch files: {}", strays.join(", ")),
                             "single-letter files outside native letters are known rename dodges; restore native letters"
                                 .into(),
                         ));
-                    }
                 }
-                Ok(None) => items.push(item(
-                    "hd-patch-letters",
-                    ItemState::Missing,
-                    "no Data/ directory".into(),
-                    "install the client before onboarding".into(),
-                )),
-                // Listing failures already surface per-letter above; no
-                // duplicate stray finding here.
-                Err(_) => {}
             }
+            Ok(None) => items.push(item(
+                "hd-patch-letters",
+                ItemState::Missing,
+                "no Data/ directory".into(),
+                "install the client before onboarding".into(),
+            )),
+            // Listing failures already surface per-letter above; no
+            // duplicate stray finding here.
+            Err(_) => {}
         }
     }
 
@@ -2096,59 +2104,58 @@ pub fn status(name: &str, instance: &Instance, dirs: &HomeDirs) -> Result<Vec<St
 
     // Launcher entry: same adapter, separate slug. Only reported when the
     // installer, its prefix, and the entry are all declared.
-    if let Some(launcher) = &wiring.launcher {
-        if let (Some(installer), Some(prefix), Some(entry)) =
+    if let Some(launcher) = &wiring.launcher
+        && let (Some(installer), Some(prefix), Some(entry)) =
             (&launcher.installer, &launcher.prefix, &launcher.lutris)
-        {
-            // The check compares against the recorded runner, never this
-            // placeholder: status resolves no runner version of its own.
-            let dummy = Runner {
-                path: PathBuf::new(),
-                version: String::new(),
-            };
-            let spec = match launcher_spec(
-                installer,
-                prefix,
-                entry,
-                &dummy,
-                &wiring,
-                launcher.executable.as_ref(),
-            ) {
-                Ok(spec) => Some(spec),
-                Err(e) => {
-                    items.push(item(
-                        "launcher-entry",
-                        ItemState::Unverifiable,
-                        format!("{e:#}"),
-                        "fix the launcher declaration".into(),
-                    ));
-                    None
-                }
-            };
-            if let Some(spec) = &spec {
-                let recorded =
-                    read_recorded(instance).map(|record| record.map(|record| record.version));
-                match lutris_yml_path(dirs, &entry.slug) {
-                    Some(path) => items.push(check_entry_yml(
-                        &path,
-                        "launcher-entry",
-                        "run: onboard register-launcher",
-                        spec,
-                        recorded,
-                    )),
-                    None => items.push(item(
-                        "launcher-entry",
-                        ItemState::Missing,
-                        format!("no {}.yml in Lutris config dirs", entry.slug),
-                        "run: onboard register-launcher".into(),
-                    )),
-                }
+    {
+        // The check compares against the recorded runner, never this
+        // placeholder: status resolves no runner version of its own.
+        let dummy = Runner {
+            path: PathBuf::new(),
+            version: String::new(),
+        };
+        let spec = match launcher_spec(
+            installer,
+            prefix,
+            entry,
+            &dummy,
+            &wiring,
+            launcher.executable.as_ref(),
+        ) {
+            Ok(spec) => Some(spec),
+            Err(e) => {
+                items.push(item(
+                    "launcher-entry",
+                    ItemState::Unverifiable,
+                    format!("{e:#}"),
+                    "fix the launcher declaration".into(),
+                ));
+                None
             }
-            // The launcher's stored client folder must equal the declared
-            // client root (register-launcher owns it; apply never touches
-            // launcher state).
-            items.push(launcher_client_dir_item(instance, &wiring, prefix));
+        };
+        if let Some(spec) = &spec {
+            let recorded =
+                read_recorded(instance).map(|record| record.map(|record| record.version));
+            match lutris_yml_path(dirs, &entry.slug) {
+                Some(path) => items.push(check_entry_yml(
+                    &path,
+                    "launcher-entry",
+                    "run: onboard register-launcher",
+                    spec,
+                    recorded,
+                )),
+                None => items.push(item(
+                    "launcher-entry",
+                    ItemState::Missing,
+                    format!("no {}.yml in Lutris config dirs", entry.slug),
+                    "run: onboard register-launcher".into(),
+                )),
+            }
         }
+        // The launcher's stored client folder must equal the declared
+        // client root (register-launcher owns it; apply never touches
+        // launcher state).
+        items.push(launcher_client_dir_item(instance, &wiring, prefix));
     }
 
     let _ = name;
@@ -2279,6 +2286,7 @@ fn lutris_running() -> Result<bool> {
 /// Render the deterministic Lutris game yml for this instance, including
 /// the synthesized launch-gate `prefix_command`. Anti-cheat is always
 /// absent: no EAC/BattleEye keys are ever emitted.
+#[cfg(test)]
 pub fn render_lutris_yml(
     name: &str,
     instance: &Instance,
@@ -2387,7 +2395,7 @@ pub fn render_entry_yml(spec: &EntrySpec) -> Result<String> {
                 ),
                 (
                     serde_yaml_ng::Value::String("vkd3d".into()),
-                    serde_yaml_ng::Value::Bool(spec.vkd3d),
+                    serde_yaml_ng::Value::Bool(spec.vkd3d.0),
                 ),
                 (
                     serde_yaml_ng::Value::String("esync".into()),
@@ -2638,10 +2646,10 @@ fn validated_prefix(prefix: &Path, root: &Path, wiring: &Wiring) -> Result<Optio
                 bail!("prefix path exists and is not a directory");
             }
             let arch = prefix_arch(prefix)?;
-            if let Some(arch) = &arch {
-                if arch != want_prefix_arch(wiring) {
-                    bail!("incompatible prefix arch={arch}; remove it explicitly");
-                }
+            if let Some(arch) = &arch
+                && arch != want_prefix_arch(wiring)
+            {
+                bail!("incompatible prefix arch={arch}; remove it explicitly");
             }
             Ok(arch)
         }
@@ -2748,7 +2756,7 @@ fn journal_event(instance: &Instance, name: &str, event: serde_json::Value) {
 
 /// Scrubbed process environment for `wineboot --init`: returns the inherited
 /// `WINE*` variables to remove plus the explicit values to set. Everything
-/// else (Nix runtime paths, HOME, XDG_RUNTIME_DIR, desktop session) is
+/// else (Nix runtime paths, HOME, `XDG_RUNTIME_DIR`, desktop session) is
 /// preserved — wineboot exits 0 without initializing when the session
 /// environment is missing. Pure over a snapshot for testability.
 fn scrub_wine_env(
@@ -2945,13 +2953,13 @@ pub fn apply(
     let root_anchor = Anchor::open(&instance.root)?;
     let _lease = root_anchor.lock()?;
     let prepared = prepare(name, instance, dirs, reselect, adopt)?;
-    if let Some(expected) = expect_runner {
-        if prepared.runner.version != expected {
-            bail!(
-                "resolved runner '{}' differs from expected '{expected}'; refusing to switch under a reviewed plan",
-                prepared.runner.version
-            );
-        }
+    if let Some(expected) = expect_runner
+        && prepared.runner.version != expected
+    {
+        bail!(
+            "resolved runner '{}' differs from expected '{expected}'; refusing to switch under a reviewed plan",
+            prepared.runner.version
+        );
     }
     // A repeat apply must be a literal no-op: the journal records mutations
     // and failures only, never routine verifications.
@@ -3682,7 +3690,7 @@ pub fn desktop_entry(
     Ok(())
 }
 
-/// Locate the OctoLauncher `settings.json` inside a launcher prefix and
+/// Locate the `OctoLauncher` `settings.json` inside a launcher prefix and
 /// return its prefix-relative path: exactly one
 /// `drive_c/users/*/AppData/Roaming/octo-launcher/settings.json` must
 /// exist. Zero means the launcher never ran (external step, never
@@ -7027,7 +7035,7 @@ mod tests {
         assert!(!wiring.tunings.dxvk);
         let effective = launcher_effective_tunings(&wiring);
         assert!(effective.dxvk);
-        assert!(!effective.vkd3d);
+        assert!(!effective.vkd3d.0);
         assert_eq!(effective.env.get("WINEDEBUG").unwrap(), "+fps");
         // Explicit false overrides an inherited true (field-level, so the
         // dxvk override above survives).
@@ -7121,7 +7129,7 @@ mod tests {
         // byte-identical: proof the toggles are Lutris-scoped.
         let mut toggled = rewired.clone();
         toggled.tunings.dxvk = !toggled.tunings.dxvk;
-        toggled.tunings.vkd3d = !toggled.tunings.vkd3d;
+        toggled.tunings.vkd3d.0 = !toggled.tunings.vkd3d.0;
         toggled.tunings.esync = !toggled.tunings.esync;
         toggled.tunings.fsync = !toggled.tunings.fsync;
         let base_set = resolve_launch_env_with(

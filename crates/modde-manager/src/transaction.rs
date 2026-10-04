@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    AddonDirectory, AddonRepo, BTreeMap, Change, ChangeKind, Command, Config, Context, Deserialize,
+    Digest, Instance, LockFile, LockedRepository, Parser, Path, PathBuf, Plan, Result, Sha256,
+    Value, assert_stopped, atomic_write_0600, bail, checkout_path, files, fs, hex, read_lock,
+    render_config, state_dir, validate_instance, verify_checkout_revision,
+};
 use files::{Anchor, Image};
 
 struct Operation {
@@ -187,15 +192,15 @@ impl Prepared {
         let result = (|| -> Result<()> {
             for (index, op) in self.operations.iter().enumerate() {
                 if fail_after.is_some_and(|(after, _)| after == committed.len()) {
-                    if fail_after.is_some_and(|(_, damage)| damage) {
-                        if let Some(&first) = committed.first() {
-                            let (_parent, path) = self.root.target(
-                                &self.operations[first].path,
-                                false,
-                                &mut Vec::new(),
-                            )?;
-                            fs::write(path, "concurrent user data")?;
-                        }
+                    if fail_after.is_some_and(|(_, damage)| damage)
+                        && let Some(&first) = committed.first()
+                    {
+                        let (_parent, path) = self.root.target(
+                            &self.operations[first].path,
+                            false,
+                            &mut Vec::new(),
+                        )?;
+                        fs::write(path, "concurrent user data")?;
                     }
                     bail!("injected commit failure");
                 }
@@ -236,7 +241,7 @@ impl Prepared {
                             })?;
                             pending_backup = None;
                         }
-                        return Err(error.into());
+                        return Err(error);
                     }
                 }
                 committed.push(index);
@@ -314,7 +319,9 @@ pub fn prepare(name: &str, instance: &Instance) -> Result<Prepared> {
         sources: Vec::new(),
     };
     let mut destinations = Vec::new();
-    let lock = if !instance.addons.is_empty() {
+    let lock = if instance.addons.is_empty() {
+        LockFile::default()
+    } else {
         let path = instance
             .lock_file
             .as_ref()
@@ -326,8 +333,6 @@ pub fn prepare(name: &str, instance: &Instance) -> Result<Prepared> {
         let lock: LockFile = serde_json::from_slice(bytes)?;
         prepared.sources.push((path.clone(), image, false));
         lock
-    } else {
-        LockFile::default()
     };
     for addon in &instance.addons {
         let locked = lock
@@ -734,10 +739,10 @@ pub fn verify_snapshot(
         Image::File(bytes) => bytes,
         _ => bail!("snapshot manifest must be a regular file"),
     };
-    if let Some(expected) = expected_manifest_sha256 {
-        if hex(&Sha256::digest(&manifest_bytes)) != expected.to_ascii_lowercase() {
-            bail!("snapshot manifest identity differs from approved digest");
-        }
+    if let Some(expected) = expected_manifest_sha256
+        && hex(&Sha256::digest(&manifest_bytes)) != expected.to_ascii_lowercase()
+    {
+        bail!("snapshot manifest identity differs from approved digest");
     }
     let parsed: SnapshotManifest =
         serde_json::from_slice(&manifest_bytes).context("parse snapshot manifest")?;
@@ -1033,6 +1038,7 @@ pub fn import(config: &Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ConfigFile;
     use std::io::Write;
 
     fn fixture() -> (tempfile::TempDir, Instance) {
