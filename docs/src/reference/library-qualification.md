@@ -244,6 +244,51 @@ must preserve isolated member checks and the multi-channel GitHub release workfl
 PR #2 stays open until the exact replacement candidate is qualified and its
 capability mapping is verified.
 
+### GitHub CI/release source qualification, 2026-10-05
+
+The managed Simit-only update `20261005T221507.725Z-2272603` promoted exactly
+one lock node to `1f5a180b7bd8d3cf4f1e8c3a105b33c251fac0e1`. All supported
+systems passed output evaluation; native Nix check builds were explicitly deferred.
+The Canix updater ordering repair `b1561cf76b1aaa9a460180413444e1b887a099c5`
+selects the lightweight check inventory before full output validation against the
+same immutable source. Seven updater tests, strict Clippy, an admin native build
+and this actual transaction passed with the existing admission thresholds intact.
+
+The patched native Simit generator regenerated CI, Nix-build and Pages workflows,
+plus the separate `release.yml`. Both CI and release `--check --diff` gates passed;
+actionlint with the real ShellCheck executable passed for all four workflows.
+`.github/scripts/check-crate-compatibility.sh` preserves the nine isolated default
+member checks, six minimal member checks and seven package inventories from
+PR #2. Its 42 expanded native commands exactly match the accepted isolated R8
+run, and all bound Rust/snapshot bytes remain unchanged. The additional
+`modde-xtask check` is retained as a hosted gate because its pinned implementation
+invokes `cargo fmt`; it has not been executed by the local agent.
+
+All 25 named release steps from PR #2 are mapped: 24 are exactly equivalent,
+while Windows packaging now retains the upstream conditional Authenticode
+sign/verify sequence. Windows archives, individual executable assets and the
+unsigned fallback remain available. GitHub releases, checksums/attestations,
+Attic, APT, AUR, COPR, Flathub, winget, Homebrew, Scoop, Chocolatey and
+announcements retain their source capabilities. Build-bearing Nix jobs are
+limited to one job and two cores; the installable matrix has concurrency one
+and includes the actual `simit-ci-generator` package.
+
+Evidence under
+`/data/scratch/tmp/opencode/modde-ci-reviewed-20261005-coordinator/`:
+
+- `managed-simit-promotion-verified-r6.json`: transaction, one-node lock delta
+  and preserved foreign files;
+- `regeneration-managed-r7/regeneration.json`: generator/configuration/workflow
+  fingerprints and passed generated-file drift;
+- `workflow-lint-generated-r1/receipt.json`: actual actionlint/ShellCheck result;
+- `pr2-capability-map-generated-r1.json`: exact-head member and release mapping.
+
+These are source/native-generator results. Production generator packaging,
+exact committed-candidate hosted qualification and substantive current-head
+review are separate gates. Release credential readiness is unestablished: the
+2026-10-05 repository secret and variable listings were both empty. PR #2 remains
+open until the replacement qualification and guarded integration complete.
+
 PR #3 default-branch integration requires completed current-head substantive review
 and acceptable CI through the guarded review/merge interfaces. The installed Canix
 interfaces were unavailable at this snapshot; the Greptile credit-limit notice

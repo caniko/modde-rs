@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CI/release**: Consume qualified Simit `1f5a180…` and generate GitHub Actions
+  verification and a separate multi-channel release workflow. Preserve isolated
+  default/minimal member checks and package inventories alongside aggregate
+  all-feature CI. Retain upstream optional Windows Authenticode signing and
+  bound Nix builds to one job and two cores.
 - **Library (Partial)**: Add a Library-first GUI with owned Steam/Heroic games,
   favorites, installation filters and saved per-installation launch settings.
   Share CLI, GUI, store-hook and manager launches through supervised sessions,
