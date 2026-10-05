@@ -434,8 +434,9 @@ mod tools_ui;
 mod wabbajack;
 
 pub(super) use fixtures::{db_lock, reset_isolated_db, test_db};
+#[cfg(feature = "cyberpunk")]
+pub(super) use profiles::complete_experiment_write;
 pub(super) use profiles::{
-    complete_create_profile_write, complete_experiment_write, complete_lock_write,
-    complete_reorder_write, loaded_test_app, mod_ids, profile_for_game, reload_seeded, seed_mod,
-    seed_profile,
+    complete_create_profile_write, complete_lock_write, complete_reorder_write, loaded_test_app,
+    mod_ids, profile_for_game, reload_seeded, seed_mod, seed_profile,
 };

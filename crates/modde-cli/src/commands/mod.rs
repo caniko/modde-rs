@@ -262,26 +262,46 @@ mod tests {
 
     #[test]
     fn stellar_blade_without_save_dir_reports_missing_directory() {
-        assert!(supports_save_profiles("stellar-blade").unwrap());
         assert!(resolve_save_dir("stellar-blade").is_none());
-
         let err = require_save_dir("stellar-blade").unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("save directory not found for game 'stellar-blade'")
-        );
+        if cfg!(feature = "ue4") {
+            assert!(supports_save_profiles("stellar-blade").unwrap());
+            assert!(
+                err.to_string()
+                    .contains("save directory not found for game 'stellar-blade'")
+            );
+        } else {
+            assert!(
+                supports_save_profiles("stellar-blade")
+                    .unwrap_err()
+                    .to_string()
+                    .contains("unknown game 'stellar-blade'")
+            );
+            assert!(err.to_string().contains("unknown game 'stellar-blade'"));
+        }
     }
 
     #[test]
     fn enabled_game_without_save_dir_reports_missing_directory() {
-        assert!(supports_save_profiles("skyrim-se").unwrap());
-
-        if resolve_save_dir("skyrim-se").is_none() {
-            let err = require_save_dir("skyrim-se").unwrap_err();
+        if cfg!(feature = "bethesda") {
+            assert!(supports_save_profiles("skyrim-se").unwrap());
+            if resolve_save_dir("skyrim-se").is_none() {
+                let err = require_save_dir("skyrim-se").unwrap_err();
+                assert!(
+                    err.to_string()
+                        .contains("save directory not found for game 'skyrim-se'")
+                );
+            }
+        } else {
             assert!(
-                err.to_string()
-                    .contains("save directory not found for game 'skyrim-se'")
+                supports_save_profiles("skyrim-se")
+                    .unwrap_err()
+                    .to_string()
+                    .contains("unknown game 'skyrim-se'")
             );
+            assert!(resolve_save_dir("skyrim-se").is_none());
+            let err = require_save_dir("skyrim-se").unwrap_err();
+            assert!(err.to_string().contains("unknown game 'skyrim-se'"));
         }
     }
 }

@@ -101,7 +101,13 @@ fn tool_apply_signature_ignores_internal_apply_state() {
 }
 
 #[test]
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn apply_tool_marks_tool_busy_immediately() {
+    let _guard = db_lock();
+    reset_isolated_db();
     let temp = tempfile::tempdir().expect("game dir");
     let mut app = test_app();
     app.selected_game = Some("skyrim-se".to_string());
@@ -116,6 +122,8 @@ fn apply_tool_marks_tool_busy_immediately() {
 
 #[test]
 fn optiscaler_activate_marks_tool_busy_immediately() {
+    let _guard = db_lock();
+    reset_isolated_db();
     let temp = tempfile::tempdir().expect("game dir");
     let mut app = test_app();
     app.selected_game = Some("skyrim-se".to_string());
@@ -130,6 +138,8 @@ fn optiscaler_activate_marks_tool_busy_immediately() {
 
 #[test]
 fn optiscaler_deactivate_marks_tool_busy_immediately() {
+    let _guard = db_lock();
+    reset_isolated_db();
     let temp = tempfile::tempdir().expect("game dir");
     let mut app = test_app();
     app.selected_game = Some("skyrim-se".to_string());
@@ -244,6 +254,10 @@ fn optiscaler_apply_validation_rejects_missing_ini() {
 }
 
 #[test]
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn optiscaler_apply_preserves_stellar_blade_selected_release() {
     let _guard = db_lock();
     reset_isolated_db();
@@ -268,7 +282,7 @@ fn optiscaler_apply_preserves_stellar_blade_selected_release() {
     config.set("proxy_dll", serde_json::json!("dxgi.dll"));
     config.set("copy_companion_files", serde_json::json!(true));
     config.set("enable_optipatcher", serde_json::json!(false));
-    let db = crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens");
+    let db = test_db();
     crate::app::block_on(db.save_tool_config(
         &GameId::from("stellar-blade"),
         "optiscaler",
@@ -285,7 +299,7 @@ fn optiscaler_apply_preserves_stellar_blade_selected_release() {
     );
     let result = tokio::runtime::Runtime::new()
         .expect("tokio runtime")
-        .block_on(apply_tool_for_game(
+        .block_on(crate::app::tool_ops::apply_tool_for_game(
             db.clone(),
             "stellar-blade".to_string(),
             game_dir.path().to_path_buf(),
@@ -306,6 +320,30 @@ fn optiscaler_apply_preserves_stellar_blade_selected_release() {
     assert_eq!(saved["release_asset"], asset);
     assert_eq!(saved["proxy_dll"], "dxgi.dll");
     assert_eq!(saved["enable_optipatcher"], false);
+}
+
+#[test]
+fn unavailable_tool_toggle_leaves_settings_untouched() {
+    let _guard = db_lock();
+    reset_isolated_db();
+    let mut app = test_app();
+    app.selected_game = Some("test-game".to_string());
+    // This tool ID is absent under every supported feature combination.
+    let tool_id = "fixture-unregistered-tool";
+    let task = app.update(Message::ToggleTool {
+        tool_id: tool_id.into(),
+        enabled: true,
+    });
+    assert_eq!(app.status_message, format!("Unknown tool: {tool_id}"));
+    assert!(app.tool_state.active_tool_id.is_none());
+    assert!(!app.tool_state.is_tool_busy(tool_id));
+    drop(task);
+    assert!(modde_core::library::mutation_lock().is_ok());
+    assert!(
+        crate::app::block_on(app.db.load_tool_config(&GameId::from("test-game"), tool_id))
+            .expect("read isolated tool settings")
+            .is_none()
+    );
 }
 
 #[test]

@@ -10,10 +10,22 @@ thread_local! {
 
 pub(crate) fn test_db() -> modde_core::db::ModdeDb {
     if DB_LOCK_HELD.with(Cell::get) {
-        crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens")
+        isolated_data_dir();
+        crate::app::block_on(modde_core::db::ModdeDb::open_at(
+            &modde_core::paths::db_path(),
+        ))
+        .expect("isolated SQLite db opens")
     } else {
         crate::app::block_on(modde_core::db::ModdeDb::open_memory()).expect("memory db opens")
     }
+}
+
+pub(crate) fn test_profile_manager() -> ProfileManager {
+    assert!(
+        DB_LOCK_HELD.with(Cell::get),
+        "file-backed fixture requires db_lock"
+    );
+    ProfileManager::with_db(test_db())
 }
 
 /// Process-wide test mutex. All lock-refusal tests share one
@@ -47,17 +59,19 @@ pub(crate) fn db_lock() -> DbLockGuard {
 /// tempdir so lock-refusal tests don't touch `~/.local/share/modde`.
 /// `OnceLock::get_or_init` makes this safe (idempotent) on every call.
 pub(crate) fn isolated_data_dir() {
-    ISOLATED_DATA_DIR.get_or_init(|| {
+    let dir = ISOLATED_DATA_DIR.get_or_init(|| {
         let dir = tempfile::tempdir().expect("create isolated modde data dir");
         modde_core::paths::set_data_dir(dir.path().to_path_buf());
         modde_core::paths::set_config_dir(dir.path().join("config"));
         dir
     });
+    assert_eq!(modde_core::paths::modde_data_dir(), dir.path());
+    assert_eq!(modde_core::paths::config_dir(), dir.path().join("config"));
 }
 
 pub(crate) fn reset_isolated_db() {
     isolated_data_dir();
-    let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB for reset");
+    let pm = test_profile_manager();
     crate::app::block_on(pm.db().clear_ui_test_state()).expect("clear UI test state during reset");
     let profiles = crate::app::block_on(pm.list()).expect("list isolated profiles for reset");
     for profile in profiles {
@@ -68,6 +82,10 @@ pub(crate) fn reset_isolated_db() {
     }
 }
 
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn optiscaler_release(
     tag: &str,
     asset: &str,
@@ -85,6 +103,10 @@ fn optiscaler_release(
     }
 }
 
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn complete_optiscaler_release_selection(app: &mut Modde) {
     let game_id = app.current_game_id().expect("game selected").to_string();
     let result = crate::app::block_on(
@@ -102,6 +124,10 @@ fn complete_optiscaler_release_selection(app: &mut Modde) {
     });
 }
 
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn complete_optiscaler_setting_write(app: &mut Modde, key: &str, value: serde_json::Value) {
     let game_id = app.current_game_id().expect("game selected").to_string();
     let result = crate::app::block_on(crate::app::tool_settings::save_tool_setting_for_game(
@@ -121,13 +147,17 @@ fn complete_optiscaler_setting_write(app: &mut Modde, key: &str, value: serde_js
 }
 
 #[test]
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn optiscaler_release_loaded_resets_stale_asset() {
     let _guard = db_lock();
     reset_isolated_db();
     let mut app = test_app();
     app.selected_game = Some("skyrim-se".to_string());
 
-    let db = crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens");
+    let db = test_db();
     let settings = serde_json::json!({
         "release_tag": "official:v0.9.1",
         "release_asset": "stale.zip"
@@ -168,6 +198,10 @@ fn optiscaler_release_loaded_resets_stale_asset() {
 }
 
 #[test]
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn optiscaler_release_tag_update_resets_asset() {
     let _guard = db_lock();
     reset_isolated_db();
@@ -207,7 +241,7 @@ fn optiscaler_release_tag_update_resets_asset() {
         serde_json::json!("official:v0.9.1"),
     );
 
-    let db = crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens");
+    let db = test_db();
     let row = crate::app::block_on(db.load_tool_config(&GameId::from("skyrim-se"), "optiscaler"))
         .expect("load tool config")
         .expect("tool config exists");
@@ -217,13 +251,17 @@ fn optiscaler_release_tag_update_resets_asset() {
 }
 
 #[test]
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn optiscaler_official_source_filters_out_goverlay_releases() {
     let _guard = db_lock();
     reset_isolated_db();
     let mut app = test_app();
     app.selected_game = Some("skyrim-se".to_string());
 
-    let db = crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens");
+    let db = test_db();
     let settings = serde_json::json!({
         "source_mode": "github_release",
         "release_tag": "official:v0.9.1",
@@ -256,6 +294,10 @@ fn optiscaler_official_source_filters_out_goverlay_releases() {
 }
 
 #[test]
+#[cfg(any(
+    all(target_os = "linux", feature = "linux-integrations"),
+    all(target_os = "windows", feature = "windows-integrations")
+))]
 fn optiscaler_goverlay_source_filters_by_channel_and_resets_selection() {
     let _guard = db_lock();
     reset_isolated_db();
@@ -285,7 +327,7 @@ fn optiscaler_goverlay_source_filters_by_channel_and_resets_selection() {
         serde_json::json!("goverlay_builds"),
     );
 
-    let db = crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens");
+    let db = test_db();
     let row = crate::app::block_on(db.load_tool_config(&GameId::from("skyrim-se"), "optiscaler"))
         .expect("load tool config")
         .expect("tool config exists");
@@ -337,13 +379,14 @@ fn proton_versions_loaded_populates_selected_version_options() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
 fn proton_versions_loaded_resets_stale_selected_version() {
     let _guard = db_lock();
     reset_isolated_db();
     let mut app = test_app();
     app.selected_game = Some("skyrim-se".to_string());
 
-    let db = crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens");
+    let db = test_db();
     let settings = serde_json::json!({ "selected_version": "GE-Proton9-stale" });
     crate::app::block_on(db.save_tool_config(
         &GameId::from("skyrim-se"),

@@ -24,6 +24,15 @@ include = [
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+# These integration suites exercise the feature-gated archive writer API.
+[[test]]
+name = "bsa_edge_cases"
+required-features = ["bethesda-archives"]
+
+[[test]]
+name = "bsa_repack_integration"
+required-features = ["bethesda-archives"]
+
 [lints]
 workspace = true
 

@@ -113,6 +113,47 @@ fn sample_profile(name: &str, game_id: &str) -> Profile {
     }
 }
 
+#[tokio::test]
+async fn ui_test_cleanup_clears_sqlite_fixture_state() {
+    let db = test_db().await;
+    let game = GameId::from("fixture-game");
+    db.save_tool_config(&game, "fixture-tool", true, "{}")
+        .await
+        .unwrap();
+    assert!(
+        db.load_tool_config(&game, "fixture-tool")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    db.clear_ui_test_state().await.unwrap();
+    assert!(
+        db.load_tool_config(&game, "fixture-tool")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[cfg(feature = "postgres")]
+#[tokio::test]
+async fn ui_test_cleanup_rejects_postgres_before_executing_sql() {
+    // A closed lazy pool cannot connect or execute SQL, even in the red test.
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://fixture@127.0.0.1:1/fixture")
+        .unwrap();
+    pool.close().await;
+    let db = ModdeDb {
+        db: Db::Postgres(pool),
+    };
+    let error = db.clear_ui_test_state().await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("UI test cleanup requires an isolated SQLite database")
+    );
+}
+
 mod patcher;
 #[cfg(feature = "postgres")]
 mod postgres;

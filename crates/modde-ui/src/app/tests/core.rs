@@ -263,6 +263,7 @@ fn stale_tools_loaded_result_is_ignored() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
 fn tool_toggle_write_persists_and_reload_reflects_committed_value() {
     let _guard = db_lock();
     reset_isolated_db();
@@ -296,7 +297,7 @@ fn tool_toggle_write_persists_and_reload_reflects_committed_value() {
 
     assert_eq!(reload_task.units(), 1);
     assert_eq!(app.tool_state.load_generation, 1);
-    let db = crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens");
+    let db = test_db();
     let row = crate::app::block_on(db.load_tool_config(&GameId::from("skyrim-se"), "mangohud"))
         .expect("load tool config")
         .expect("tool config exists");

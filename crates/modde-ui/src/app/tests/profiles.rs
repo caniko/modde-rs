@@ -24,7 +24,7 @@ pub(crate) fn seed_profile(
     lock: Option<LoadOrderLock>,
 ) {
     reset_isolated_db();
-    let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB");
+    let pm = fixtures::test_profile_manager();
     let profile = modde_core::profile::Profile {
         id: None,
         name: name.to_string(),
@@ -68,7 +68,7 @@ pub(crate) fn loaded_test_app(name: &str) -> Modde {
 /// Read the profile back from the isolated DB. Assertions should use
 /// this (not `app.loaded_profile`) to verify *persisted* state.
 pub(crate) fn reload_seeded(name: &str) -> modde_core::profile::Profile {
-    let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB");
+    let pm = fixtures::test_profile_manager();
     crate::app::block_on(pm.load(name, Some(&GameId::from("test-game"))))
         .expect("load seeded profile")
 }
@@ -148,6 +148,7 @@ pub(crate) fn complete_lock_write(app: &mut Modde, profile_name: &str, mod_id: &
     });
 }
 
+#[cfg(feature = "cyberpunk")]
 pub(crate) fn complete_experiment_write(
     app: &mut Modde,
     kind: ExperimentWriteKind,
@@ -175,7 +176,7 @@ fn select_game_filters_profiles_to_game_and_loads_active_profile() {
     let _guard = db_lock();
     reset_isolated_db();
     let game_dir = tempfile::tempdir().expect("game dir");
-    let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB");
+    let pm = fixtures::test_profile_manager();
     let _skyrim_id = crate::app::block_on(pm.create(&profile_for_game(
         "skyrim-profile",
         "skyrim-se",
@@ -224,7 +225,7 @@ fn select_game_falls_back_to_first_profile_for_game() {
     let _guard = db_lock();
     reset_isolated_db();
     let game_dir = tempfile::tempdir().expect("game dir");
-    let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB");
+    let pm = fixtures::test_profile_manager();
     crate::app::block_on(pm.create(&profile_for_game(
         "zeta",
         "cyberpunk2077",
@@ -365,7 +366,7 @@ fn select_game_clears_stale_selection_state() {
     let _guard = db_lock();
     reset_isolated_db();
     let game_dir = tempfile::tempdir().expect("game dir");
-    let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB");
+    let pm = fixtures::test_profile_manager();
     crate::app::block_on(pm.create(&profile_for_game(
         "cp-profile",
         "cyberpunk2077",
@@ -424,7 +425,7 @@ fn game_path_dialog_selection_stores_path_and_switches_context() {
     let _guard = db_lock();
     reset_isolated_db();
     let game_dir = tempfile::tempdir().expect("game dir");
-    let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB");
+    let pm = fixtures::test_profile_manager();
     crate::app::block_on(pm.create(&profile_for_game(
         "custom-profile",
         "custom-game",

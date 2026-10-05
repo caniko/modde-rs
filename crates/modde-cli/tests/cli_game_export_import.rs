@@ -78,6 +78,7 @@ fn export_user_game_round_trips_via_import() {
 }
 
 #[test]
+#[cfg(feature = "bethesda")]
 fn import_rejects_built_in_id_collision() {
     let fx = Fixture::new();
     let export_path = fx.root().join("skyrim.toml");
@@ -112,6 +113,7 @@ fn import_rejects_built_in_id_collision() {
 }
 
 #[test]
+#[cfg(feature = "ue4")]
 fn export_with_optiscaler_includes_profiles() {
     let fx = Fixture::new();
     let export_path = fx.root().join("stellar-blade.toml");

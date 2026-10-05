@@ -91,8 +91,13 @@ fn wabbajack_e2e_sidebar_navigation_defaults_to_current_game() {
 #[test]
 fn wabbajack_e2e_selecting_catalog_entry_prefills_install_target() {
     let mut app = test_app();
+    let game_id = if cfg!(feature = "bethesda") {
+        "skyrim-se"
+    } else {
+        "SkyrimSpecialEdition"
+    };
     app.settings
-        .set_game_path(&GameId::from("skyrim-se"), PathBuf::from("/games/skyrim"));
+        .set_game_path(&GameId::from(game_id), PathBuf::from("/games/skyrim"));
     app.active_view = View::WabbajackInstaller(WabbajackInstallerState {
         entries: vec![wabbajack_catalog_entry(
             "Legends of the Frost",
@@ -112,7 +117,7 @@ fn wabbajack_e2e_selecting_catalog_entry_prefills_install_target() {
     assert_eq!(state.selected_index, Some(0));
     assert_eq!(state.manual_source, "https://example.test/lotf.wabbajack");
     assert_eq!(state.hm_profile, "legends-of-the-frost");
-    assert_eq!(state.hm_game, "skyrim-se");
+    assert_eq!(state.hm_game, game_id);
     assert_eq!(state.hm_game_dir, "/games/skyrim");
 }
 

@@ -9,6 +9,7 @@ mod common;
 
 use common::Fixture;
 
+#[cfg(feature = "bethesda")]
 fn fake_executable(fx: &Fixture, name: &str) -> std::path::PathBuf {
     let path = fx.root().join(name);
     std::fs::write(&path, b"#!/bin/sh\nexit 0\n").unwrap();
@@ -21,6 +22,7 @@ fn fake_executable(fx: &Fixture, name: &str) -> std::path::PathBuf {
 }
 
 #[test]
+#[cfg(feature = "bethesda")]
 fn exec_add_then_list_round_trips() {
     let fx = Fixture::new();
     let exe = fake_executable(&fx, "fake-xedit");
@@ -65,6 +67,7 @@ fn exec_add_then_list_round_trips() {
 }
 
 #[test]
+#[cfg(feature = "bethesda")]
 fn exec_add_is_upsert() {
     // Re-running `add` with the same name overwrites the previous row.
     // This is what makes `add` double as `edit` per the TODO.
@@ -118,6 +121,7 @@ fn exec_add_is_upsert() {
 }
 
 #[test]
+#[cfg(feature = "bethesda")]
 fn exec_remove_drops_entry() {
     let fx = Fixture::new();
     let exe = fake_executable(&fx, "fake");
@@ -154,6 +158,7 @@ fn exec_remove_drops_entry() {
 }
 
 #[test]
+#[cfg(feature = "bethesda")]
 fn exec_alias_shares_storage_with_tool() {
     // Add via `exec`, list via `tool list-executables` — same row.
     let fx = Fixture::new();

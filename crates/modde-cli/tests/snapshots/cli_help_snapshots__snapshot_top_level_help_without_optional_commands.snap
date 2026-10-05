@@ -1,0 +1,50 @@
+---
+source: crates/modde-cli/tests/cli_help_snapshots.rs
+expression: "without_optional_commands(stdout(&[\"--help\"]))"
+---
+NixOS-native game mod manager
+
+Usage: modde [OPTIONS] <COMMAND>
+
+Commands:
+  library     Owned game catalogue and saved per-installation launch settings
+  profile     Manage profiles
+  lock        Export, sign, verify, and import portable modde.lock files
+  config      Inspect and set modde configuration (including the database backend)
+  play        Switch profile, deploy mods, and launch the game
+  perf        Capture and compare local performance telemetry
+  deploy      Deploy mods for the active or specified profile
+  hot-deploy  Patch one cosmetic mod into the live VFS without a full redeploy
+  rollback    Rollback to the previous deployment
+  install     Install mods from various sources
+  mod         Manage individual mods (remove, diagnose unknown-type dossiers)
+  verify      Verify installed file integrity
+  nexus       Nexus Mods account management
+  stock       Manage vanilla game snapshots
+  fomod       FOMOD installer utilities
+  save        Manage save file assignments
+  update      Check for mod updates from Nexus
+  patcher     Configure and run profile-scoped patcher pipeline stages
+  tool        Run external tools with overwrite capture
+  nxm         Handle nxm:// download links from Nexus Mods
+  wabbajack   Browse, download, and generate Home Manager snippets for Wabbajack modlists
+  scan        Scan game directory for installed mods
+  collisions  Analyse mod collisions and suggest optimisations
+  doctor      Diagnose profiles and crash logs with grounded evidence
+  bisect      Binary-search enabled mods to isolate a crash or performance regression
+  export      Export mod list to CSV
+  backup      Manage mod and plugin order backups
+  detect      Detect installed games across Steam and Heroic launchers
+  game        Manage user-defined games
+  instance    Manage modde instances (multiple data directories)
+  exec        Manage named launch targets (`xEdit`, `BodySlide`, `FNIS`, etc.)
+  skill       Install and update modde-maintained Codex skills
+  import      Import existing TOML profiles into the database
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --data-dir <DATA_DIR>          Override data directory (default: ~/.local/share/modde or $`MODDE_DATA_DIR`) [env: MODDE_DATA_DIR=]
+      --config-dir <CONFIG_DIR>      Override the base configuration directory used by modde and its session journal
+      --heap-profile <HEAP_PROFILE>  Write a DHAT heap profile. Requires the `heap-profile` cargo feature [env: MODDE_HEAP_PROFILE=]
+  -h, --help                         Print help
+  -V, --version                      Print version
