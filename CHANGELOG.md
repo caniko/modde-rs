@@ -175,6 +175,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Release**: Local release helpers now delegate to the same Simit APT
   publisher and resolve canix-managed credentials from the current workspace.
 
+### Fixed
+
+- **Test isolation**: Bind UI fixtures to disposable SQLite databases and reject
+  PostgreSQL in the test-cleanup helper before SQL execution. Assert disposable
+  data/configuration paths so inherited desktop database settings cannot redirect
+  fixture cleanup. Record the 2026-10-05 live-database exposure and pending
+  production recovery in the qualification reference.
+- **Feature checks**: Declare archive, manager and built-in-game test prerequisites
+  and cover them through explicit feature-enabled commands alongside minimal
+  builds. Keep default help snapshots and verify optional GUI/LOOT command
+  availability in lean builds. Test unsupported-game and unavailable-backend
+  refusal as well as enabled-feature behavior.
+
 ## [0.7.0] - 2026-07-10
 
 ### Added

@@ -221,12 +221,13 @@ acceptance precedes adoption/activation; explicit writer release follows require
 post-activation verification. Modde gameplay and measurements require their own
 explicit runtime admission and cannot inherit an expired recovery window.
 
-The coordinator's 2026-10-05 storage recheck also leaves an actual Atlas Btrfs
-blocker unresolved. The original scrub reported 60 uncorrectable errors and zero
-corrected. No newer matching journal errors were observed through 05:31 UTC,
-but no fresh scrub/affected-extent verification or corruption-clearance proof
-was obtained. Cumulative corruption counters do not establish post-scrub growth.
-Evidence:
+The coordinator's 2026-10-05 storage recheck leaves an Atlas Btrfs blocker
+unresolved. The operator's fresh read-only scrub reproduced 60 uncorrectable
+errors after scanning 4.97 TiB; corruption counters increased from 300 to 360.
+The operator deleted the identified damaged Regicide test executable and
+regenerated it successfully. Its complete read/hash passed, but no post-deletion
+zero-error scrub or complete remaining affected-file inventory establishes
+filesystem clearance. Historical evidence:
 `/data/scratch/tmp/opencode/durability-atlas-btrfs-persistence-20261005T053121748122Z/receipt.json`
 (SHA-256 `6b27f32a8eb2b7f33a02dac173dba02c7d2b0062098f21d4dc14de7863f6aab8`).
 The coordinator/storage owner must provide accepted fresh storage verification
@@ -238,7 +239,10 @@ workflows and release workflow are absent from approved PR #3. Digest/manager
 fix coverage alone does not prove full supersession. Independent disposition:
 `/data/scratch/tmp/opencode/durability-modde-pr2-closeout-independent-20261004T222654796699Z/receipt.json`
 (SHA-256 `50c8d44f324a3b661cee9e156a12bf7dedabf25b3ec105e29654a82d458bcfa5`).
-CI/release work needs an explicit preservation or retirement decision before closure.
+On 2026-10-05 the operator selected preservation of this scope. The CI update
+must preserve isolated member checks and the multi-channel GitHub release workflow;
+PR #2 stays open until the exact replacement candidate is qualified and its
+capability mapping is verified.
 
 PR #3 default-branch integration requires completed current-head substantive review
 and acceptable CI through the guarded review/merge interfaces. The installed Canix
@@ -501,13 +505,49 @@ Disposable PostgreSQL migration evidence at
 25 tables. Live Atlas inspection was read-only and reports `can|f|t|t|25` for
 role, superuser, schema usage/create and table count. No activation occurred.
 
-The newly generated GitHub checks cover workspace tests/Clippy, exact native
-package and Nix regressions, Home Manager runtime wrappers, and real packaged
-lifecycle. Pages now derives its environment and cache setup from the generator
-and shared CI configuration. Simit PR #27 fixes the missing setup propagation;
-Modde backports that fix and the upstream Pages environment/result-link fixes
-to its pinned generator. The all-workflow `simit init ci --check --diff` gate
-passes with no generated-file drift.
+### CI generator and preserved release scope
+
+The latest-CI update selects Simit
+`1f5a180b7bd8d3cf4f1e8c3a105b33c251fac0e1`. Its upstream Pages setup and
+concurrency fixes replace Modde's separate backports. Public flake systems
+exclude `x86_64-darwin`, retired by Nixpkgs 26.11 and already excluded by Modde's
+release policy; supported-system output validation remains required. The retained Modde
+compatibility patch preserves release artifact layout, COPR/AUR behavior,
+Chocolatey duplicate handling and badge destinations. Windows packaging uses
+upstream's optional Authenticode signing and its four-script ShellCheck coverage.
+
+`simit-ci-generator` exposes the same patched package used by the development
+shell. It is an explicit Nix CI output alongside `modde`, the library regressions
+and Home Manager runtime wrappers. The matrix captures results and uses one
+parallel build, one local job and two cores, with 90-minute timeouts and 14-day
+artifact retention. Required gates also set Nix limits directly, including the
+packaged lifecycle build; matrix limits alone do not govern those jobs.
+
+Aggregate all-feature tests and Clippy are complemented by `crate-compatibility`:
+isolated default-feature tests/Clippy for all nine members, no-default-feature
+checks for the six members covered by PR #2, package inventories for its seven
+packaged crates, and `modde-xtask check`. CI and the multi-channel release workflow
+are generated separately and both must pass `--check --diff`. Verification CI
+does not publish crates or replace the release workflow's signing, smoke,
+provenance, cache or downstream-publisher contracts.
+
+Feature-specific fixtures declare their prerequisites. The BSA integration suites
+require `bethesda-archives`; the manager subprocess suite requires `wow`. Additional
+minimal-plus-archives, minimal-plus-Linux-integration and minimal-plus-manager
+commands retain their execution coverage. A separate minimal CLI command enables
+only the game/database prerequisites for export, executable, patcher, scanner and
+configuration fixtures. UI game-picker assertions cover both
+registered-game normalization and the unsupported-game fallback. These additions
+retain the default/minimal member matrix and warnings-denied Clippy.
+
+The actual patched generator passed 107 library tests, 145 focused integration
+tests and warnings-denied all-target Clippy locally. ShellCheck was explicitly
+present; an earlier apparent pass without the checker is retained as non-covering
+evidence. Exact receipts are under
+`/data/scratch/tmp/opencode/modde-ci-reviewed-20261005-coordinator/`.
+Lock refresh, generated-file drift checks, actual Nix generator packaging and
+exact-candidate hosted qualification remain separate gates. These local results
+do not replace the approved `0d3ce666…` producer or establish PR closeout.
 
 Hosted containment jobs configure Ubuntu's unprofiled user-namespace policy
 on their disposable runner before testing bubblewrap's PID/network isolation.
@@ -516,3 +556,46 @@ Default public flake outputs do not consume private Apple SDK metadata. Authoriz
 macOS cross-build callers use `lib.mkOutputs` with explicit `macosSdkStorePath`,
 `macosSdkOutputHash` and `osxSdkVersion`; without an SDK, the cross-build package
 reports an unavailable prerequisite. Native Linux outputs require no SDK credentials.
+
+### Native UI test isolation incident, 2026-10-05
+
+The native UI test command at 19:59:25–20:00:47 UTC inherited the live Modde
+PostgreSQL configuration. Its temporary data/configuration directories did not
+override the database backend; fixture constructors honored that configuration,
+including profile and tool/history cleanup. The successful exit is non-covering
+for isolated qualification. A read-only inspection at 20:16:18 UTC found one
+profile and zero rows in the inspected tool, performance and bisect tables. No
+verified pre-test snapshot establishes the original inventory or quantifies loss.
+
+Tests were stopped and evidence retained in
+`/data/scratch/tmp/opencode/modde-ci-reviewed-20261005-coordinator/ui-test-isolation-incident.json`.
+The operator selected continued source repair with production recovery pending.
+No live restore or writeback was performed. Backup-service success does not prove
+recoverability; privileged backup/WAL inspection and managed recovery remain
+separate requirements before production durability acceptance.
+
+The source repair binds UI fixtures directly to SQLite, asserts disposable path
+ownership and rejects PostgreSQL in the test-cleanup helper before SQL execution.
+A regression test uses a closed lazy PostgreSQL pool, allowing the refusal contract
+to be checked without connecting or executing SQL. Native qualification scrubs
+database/operator environment overrides and uses disposable short HOME, XDG,
+runtime and temporary paths while retaining the approved Cargo/Rustup caches.
+Short paths preserve Unix-socket tests' actual path-length requirements.
+
+The repaired source is committed as
+`8c02443c047d688448a390ea9109c1be1de41099`. All 42 native policy commands
+exited zero with unchanged bound Rust sources and all 15 foreign files preserved.
+The two no-feature manager commands have no enabled targets; the explicit `wow`
+run passed its 13 subprocess cases. The core cleanup regression exercised SQLite
+and the closed-lazy PostgreSQL refusal. A separate UI run passed all 140 library
+tests with PostgreSQL environment overrides and that backend feature disabled.
+Existing ignored tests remain non-covering. Exact receipts are
+`native-crate-compatibility-r8/receipt.json`, `ui-fixture-adversarial/receipt.json`
+and `native-isolation-feature-terminal.json` under the retained evidence root.
+
+Managed Simit lock updates rolled back on admission failures and then exposed
+Linux-only tools in Apple Silicon's release shell. Those dependencies are being
+scoped to their declared platforms while native Darwin development/documentation
+and portable signing tools remain available. This source qualification does not
+establish lock promotion, generated workflow drift, Nix package equivalence,
+hosted acceptance or production data recovery.
