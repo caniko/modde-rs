@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: ${{ github.workflow_ref }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -31,11 +31,16 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31
 
+      - name: Configure GitHub input transport
+        run: |
+          git config --global --add url.https://github.com/.insteadOf ssh://git@github.com/
+          git config --global --add url.https://github.com/.insteadOf git@github.com:
+
       - name: Project setup 1
         run: sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache
 
       - name: Project setup 2
-        run: printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf
+        run: printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6

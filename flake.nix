@@ -15,7 +15,7 @@
     };
 
     simit = {
-      url = "git+https://github.com/caniko/simit.git?ref=trunk";
+      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=1f5a180b7bd8d3cf4f1e8c3a105b33c251fac0e1";
       inputs.nixpkgs.follows = "harbor-rs/nixpkgs";
       inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
       inputs.crane.follows = "harbor-rs/crane";
@@ -65,7 +65,8 @@
       macosSdkOutputHash ? null,
       osxSdkVersion ? "26.1",
     }:
-      flake-utils.lib.eachDefaultSystem (system: let
+    # Nixpkgs 26.11 retired Intel macOS; the release policy already excludes it.
+      flake-utils.lib.eachSystem (builtins.filter (system: system != "x86_64-darwin") flake-utils.lib.defaultSystems) (system: let
         pkgs = import nixpkgs {
           inherit system;
           overlays = [(import rust-overlay)];
@@ -88,7 +89,7 @@
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
         simitPackage = simit.packages.${system}.default.overrideAttrs (old: {
-          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch ./nix/patches/simit-github-concurrency.patch ./nix/patches/simit-pages-project-setup.patch];
+          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch];
         });
         plinthProject = plinth.packages.${system}.plinth-project;
         visualRubric = visual-rubric.packages.${system}.default;
@@ -286,31 +287,36 @@
         # Release-only tooling: packaging, signing, image/VM/container
         # workflows (see scripts/release-local-check.sh). Explicitly
         # activated via `nix develop .#release`, never in default.
-        releaseTools = with pkgs; [
-          appstream
-          cargo-about
-          cargo-cyclonedx
-          cargo-deb
-          cargo-sbom
-          coprCli
-          cosign
-          debootstrap
-          dnf5
-          dpkg
-          flatpak
-          flatpak-builder
-          forgejo-cli
-          grype
-          minisign
-          nodejs
-          osslsigncode
-          pacman
-          podman
-          qemu
-          reprepro
-          rpm
-          wineWow64Packages.stable
-        ];
+        releaseTools = with pkgs;
+          [
+            appstream
+            cargo-about
+            cargo-cyclonedx
+            cargo-deb
+            cargo-sbom
+            coprCli
+            cosign
+            dpkg
+            forgejo-cli
+            grype
+            minisign
+            nodejs
+            osslsigncode
+            podman
+            qemu
+            reprepro
+            rpm
+          ]
+          # These image/package tools and the pinned WoW64 variant are Linux-only;
+          # dnf5 also requires Linux-only librepo in the pinned Nixpkgs.
+          ++ lib.optionals stdenv.hostPlatform.isLinux [
+            debootstrap
+            dnf5
+            flatpak
+            flatpak-builder
+            pacman
+            wineWow64Packages.stable
+          ];
 
         docsPackages = with pkgs;
           [
@@ -591,10 +597,10 @@
       in {
         packages =
           {
-            inherit modde modde-manager modde-oracle docs website site;
+            inherit modde modde-manager docs website site;
             copr-cli = coprCli;
             default = modde;
-            harbor-rs = harbor-rs.packages.${system}.harbor-rs;
+            simit-ci-generator = simitPackage;
 
             flatpak-cargo-generator = let
               flatpakCargoGeneratorPy = pkgs.fetchurl {
@@ -703,6 +709,9 @@
               formula.formulaPath;
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            # The pinned Harbor CLI publishes build-platform packages for Linux.
+            harbor-rs = harbor-rs.packages.${system}.harbor-rs;
+            inherit modde-oracle;
             appimage-cli = harbor-rs.lib.mkAppImage {
               inherit system nix-appimage;
               program = "${modde}/bin/modde";
@@ -1748,31 +1757,34 @@
           program = let
             script = pkgs.writeShellApplication {
               name = "release-smoke";
-              runtimeInputs = with pkgs; [
-                appstream
-                coreutils
-                cosign
-                debootstrap
-                dnf5
-                dpkg
-                file
-                findutils
-                flatpak
-                flatpak-builder
-                git
-                gnugrep
-                gnutar
-                grype
-                gzip
-                jq
-                minisign
-                osslsigncode
-                podman
-                qemu
-                rpm
-                unzip
-                wineWow64Packages.stable
-              ];
+              runtimeInputs = with pkgs;
+                [
+                  appstream
+                  coreutils
+                  cosign
+                  dpkg
+                  file
+                  findutils
+                  git
+                  gnugrep
+                  gnutar
+                  grype
+                  gzip
+                  jq
+                  minisign
+                  osslsigncode
+                  podman
+                  qemu
+                  rpm
+                  unzip
+                ]
+                ++ lib.optionals stdenv.hostPlatform.isLinux [
+                  debootstrap
+                  dnf5
+                  flatpak
+                  flatpak-builder
+                  wineWow64Packages.stable
+                ];
               text = ''
                 repo="''${MODDE_SOURCE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
                 exec "$repo/scripts/smoke/run-smoke.sh" "$@"
@@ -1805,12 +1817,12 @@
                 repo="''${MODDE_SOURCE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
                 cd "$repo"
                 if [ -z "''${MODDE_LOCAL_CHECK_IN_DEVSHELL:-}" ]; then
-                  exec nix develop "$repo" -c env MODDE_LOCAL_CHECK_IN_DEVSHELL=1 "$0" "$@"
+                  exec nix develop --no-update-lock-file --max-jobs 1 --cores 2 "$repo" -c env MODDE_LOCAL_CHECK_IN_DEVSHELL=1 "$0" "$@"
                 fi
 
-                simit init release --check
-                simit init ci --ci-provider crow --platform forgejo --runtime nix --runner codefloe-global --workspace --check
-                nix flake check --keep-going
+                simit init release --platform github --ci-provider actions --check --diff
+                simit init ci --ci-provider actions --platform github --runtime nix --runner ubuntu-latest --workspace --workspace-strategy aggregate --publish-crates=false --with-artifacts=false --check --diff
+                nix flake check --keep-going --no-update-lock-file --max-jobs 1 --cores 2
                 cargo test --workspace --all-features
                 cargo clippy --workspace --all-targets --all-features -- --deny warnings
                 cargo deny check -W unmaintained advisories bans sources licenses
@@ -1828,38 +1840,38 @@
           program = let
             script = pkgs.writeShellApplication {
               name = "release-local-check";
-              runtimeInputs = with pkgs; [
-                appstream
-                cargo-about
-                cargo-cyclonedx
-                cargo-deb
-                cargo-deny
-                cargo-sbom
-                coprCli
-                coreutils
-                cosign
-                curl
-                debootstrap
-                dnf5
-                dpkg
-                file
-                findutils
-                forgejo-cli
-                git
-                gnugrep
-                gnupg
-                gnutar
-                gzip
-                jq
-                minisign
-                toolchain.rustToolchain
-                nix
-                nodejs
-                openssh
-                reprepro
-                rpm
-                util-linux
-              ];
+              runtimeInputs = with pkgs;
+                [
+                  appstream
+                  cargo-about
+                  cargo-cyclonedx
+                  cargo-deb
+                  cargo-deny
+                  cargo-sbom
+                  coprCli
+                  coreutils
+                  cosign
+                  curl
+                  dpkg
+                  file
+                  findutils
+                  forgejo-cli
+                  git
+                  gnugrep
+                  gnupg
+                  gnutar
+                  gzip
+                  jq
+                  minisign
+                  toolchain.rustToolchain
+                  nix
+                  nodejs
+                  openssh
+                  reprepro
+                  rpm
+                  util-linux
+                ]
+                ++ lib.optionals stdenv.hostPlatform.isLinux [debootstrap dnf5];
               text = ''
                 repo="''${MODDE_SOURCE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
                 exec bash "$repo/scripts/release-local-check.sh" "$@"
@@ -1923,47 +1935,50 @@
           program = let
             script = pkgs.writeShellApplication {
               name = "local-release-deploy";
-              runtimeInputs = with pkgs; [
-                appstream
-                cargo-about
-                cargo-cyclonedx
-                cargo-deb
-                cargo-deny
-                cargo-sbom
-                coprCli
-                coreutils
-                cosign
-                curl
-                debootstrap
-                dnf5
-                dpkg
-                file
-                findutils
-                flatpak
-                flatpak-builder
-                forgejo-cli
-                git
-                gnugrep
-                gnupg
-                gnutar
-                gzip
-                jq
-                minisign
-                nix
-                nodejs
-                openssh
-                osslsigncode
-                pacman
-                qemu
-                reprepro
-                rpm
-                toolchain.rustToolchain
-                unzip
-                util-linux
-                wineWow64Packages.stable
-                wget
-                zip
-              ];
+              runtimeInputs = with pkgs;
+                [
+                  appstream
+                  cargo-about
+                  cargo-cyclonedx
+                  cargo-deb
+                  cargo-deny
+                  cargo-sbom
+                  coprCli
+                  coreutils
+                  cosign
+                  curl
+                  dpkg
+                  file
+                  findutils
+                  forgejo-cli
+                  git
+                  gnugrep
+                  gnupg
+                  gnutar
+                  gzip
+                  jq
+                  minisign
+                  nix
+                  nodejs
+                  openssh
+                  osslsigncode
+                  qemu
+                  reprepro
+                  rpm
+                  toolchain.rustToolchain
+                  unzip
+                  util-linux
+                  wget
+                  zip
+                ]
+                ++ lib.optionals stdenv.hostPlatform.isLinux [
+                  debootstrap
+                  dnf5
+                  flatpak
+                  flatpak-builder
+                  pacman
+                  wineWow64Packages.stable
+                ];
               text = ''
                 repo="''${MODDE_SOURCE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
                 cd "$repo"
@@ -2100,25 +2115,39 @@
           canonical_domain = "modde.tartanoglu.com";
           source_branch = "trunk";
         };
-        ci.nix_builds = [".#modde" ".#checks.x86_64-linux.library-regressions" ".#checks.x86_64-linux.hm-runtime"];
+        ci.nix_builds = [".#modde" ".#simit-ci-generator" ".#checks.x86_64-linux.library-regressions" ".#checks.x86_64-linux.hm-runtime"];
+        ci.nix_build = {
+          timeout_minutes = 90;
+          max_parallel = 1;
+          max_jobs = 1;
+          cores = 2;
+          capture_results = true;
+          artifact_retention_days = 14;
+        };
         ci.extra_setup = [
           "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache"
-          "printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf"
+          "printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf"
         ];
         ci.required_gates = [
           {
             id = "generated-workflows";
-            run = "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c simit init ci --platform github --ci-provider actions --runtime nix --workspace --workspace-strategy aggregate --runner ubuntu-latest --publish-crates=false --with-artifacts=false --check --diff";
+            run = "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c simit init ci --platform github --ci-provider actions --runtime nix --workspace --workspace-strategy aggregate --runner ubuntu-latest --publish-crates=false --with-artifacts=false --check --diff && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c simit init release --platform github --ci-provider actions --check --diff";
             timeout_minutes = 30;
           }
           {
+            id = "crate-compatibility";
+            # Preserve PR #2's isolated member checks alongside aggregate all-feature CI.
+            run = "bash .github/scripts/check-crate-compatibility.sh";
+            timeout_minutes = 90;
+          }
+          {
             id = "library-qualification";
-            run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix develop -c cargo xtask library-qualify --containment --jobs 4";
+            run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c cargo xtask library-qualify --containment --jobs 4";
             timeout_minutes = 60;
           }
           {
             id = "library-package-lifecycle";
-            run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' | sudo tee -a /etc/nix/nix.conf && nix build .#modde --out-link result-qualified-package && nix develop -c cargo xtask library-package-qualify --binary \"$(readlink -f result-qualified-package)/bin/modde\" --output \"$RUNNER_TEMP/modde-package-receipt\"";
+            run = "bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix build --no-update-lock-file --max-jobs 1 --cores 2 .#modde --out-link result-qualified-package && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c cargo xtask library-package-qualify --binary \"$(readlink -f result-qualified-package)/bin/modde\" --output \"$RUNNER_TEMP/modde-package-receipt\"";
             timeout_minutes = 90;
           }
         ];
