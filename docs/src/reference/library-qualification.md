@@ -12,7 +12,7 @@ integration is a follow-up. Performance measurements are **report-only**, as
 selected by the user on 2026-10-01: retain measured deltas and evidence without a
 negligible-overhead pass/fail verdict.
 
-## Current qualification, 2026-10-04
+## Current qualification, 2026-10-05
 
 The approved producer revision is
 `0d3ce666e2362555b90d4d37b084cc8d86450eb9`, published on
@@ -161,6 +161,25 @@ remain retained: verbose live/ANSI logs differ from JUnit's representation, and
 the snapshot has no self-hash; its actual bytes/export and both restore hashes
 provide the binding. No fixture/assertion changes or second VM attempt were used.
 
+### Recovered six-stage literal provenance
+
+The exact `3b29bb33…` top-level derivation closure selects all six Raven ETL unit
+derivations. Read-only inspection recovered each unit's literal rendered text
+from `structuredAttrs.text`, establishing `User=pink_raven`, literal
+`PGUSER=pink_raven` and source revision
+`a96a22ab6f554631e72068acdf22baab4bdbe622`. These fields are byte-equal to
+historical `224…`, and every command context is represented by the selected
+unit derivation inputs. Evidence:
+`/data/scratch/tmp/opencode/durability-3b29-six-stage-literal-provenance-20261004T225802091632Z/receipt.json`
+(SHA-256 `d73f0b6fa9a96e91a62345c2fb5af55f97cd0bacb05129b89294e6482d59ecc4`).
+
+This closes the literal environment-projection evidence gap for `3b29…` without
+another flake evaluation or realization. Complete stage commands and contexts
+still differ: selected Canix lease-launcher output/derivation `wq42…`/`dsr3…`
+replace historical `17z…`/`b2i9…`. Literal-field equality does not transfer
+complete stage execution; the changed launcher and final composition still need
+their own qualification.
+
 ### Remaining closeout and production gates
 
 Scoped local qualification is green. Physical production Nomad restore, the last
@@ -171,8 +190,47 @@ and full runtime/stage qualification, writer window and activation remain pendin
 In particular, selected Raven stage commands use different Canix lease-launcher
 artifacts from the historical accepted stage. Historical component acceptance
 does not establish full-stage context identity across that change.
-The literal-safe `PGUSER` and source-revision projections also remain unresolved
-full-stage/CLI gates.
+The recovered literal fields above are accepted for `3b29…`; the final source
+must bind its own stage fields, commands, CLI artifacts and contexts.
+
+The coordinator must select an exact committed 40-character final Canix revision
+and enumerate its production recovery contract. The accepted 41 production SQL
+checks and additive VM fixture are specific to `3b29…`. Observed Forgejo source
+edits do not qualify a possible 49-record final contract. Each added or changed
+record needs an explicit owner, source-backed assertion and qualification of the
+changed scope.
+
+Evidence transfers artifact by artifact. Record one of three dispositions:
+
+| Disposition | Required evidence |
+| --- | --- |
+| Identical and transferable | Measured derivation/output, NAR, relevant inputs/defaults and execution-context equality, with retained publication/root evidence. |
+| Changed and requiring qualification | Explicit delta and admitted qualification of the changed package, launcher, hook, recovery contract or runtime behavior. |
+| Pending | The exact missing evidence and its owner; no acceptance inferred from source similarity or a previous pass. |
+
+A changed recovery hook or SQL contract cannot inherit the prior scope's VM
+acceptance. Any required final-source attempt is separately coordinator-admitted;
+the sole corrected online and changed-hook Nomad attempts for `3b29…` remain
+closed green. Qualification uses normal bounded admission and retains failed,
+cancelled and intermediate evidence.
+
+Production admission must bind the exact final artifacts, confirmed writer owners
+and protected workloads, UTC start/end/deadline, last-acknowledged boundary,
+acceptance criteria and the failure/deadline recovery action. Physical restore
+acceptance precedes adoption/activation; explicit writer release follows required
+post-activation verification. Modde gameplay and measurements require their own
+explicit runtime admission and cannot inherit an expired recovery window.
+
+The coordinator's 2026-10-05 storage recheck also leaves an actual Atlas Btrfs
+blocker unresolved. The original scrub reported 60 uncorrectable errors and zero
+corrected. No newer matching journal errors were observed through 05:31 UTC,
+but no fresh scrub/affected-extent verification or corruption-clearance proof
+was obtained. Cumulative corruption counters do not establish post-scrub growth.
+Evidence:
+`/data/scratch/tmp/opencode/durability-atlas-btrfs-persistence-20261005T053121748122Z/receipt.json`
+(SHA-256 `6b27f32a8eb2b7f33a02dac173dba02c7d2b0062098f21d4dc14de7863f6aab8`).
+The coordinator/storage owner must provide accepted fresh storage verification
+before production admission; successful historical VM gates do not clear it.
 
 [PR #2](https://github.com/caniko/modde-rs/pull/2), exact head
 `2cadcd139368620184fffd587df961684f90c60b`, remains open: its nine per-crate CI

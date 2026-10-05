@@ -1,6 +1,6 @@
 # Library launch and sandbox handoff
 
-## Current handoff, 2026-10-04
+## Current handoff, 2026-10-05
 
 The implementation is published at
 `0d3ce666e2362555b90d4d37b084cc8d86450eb9` on
@@ -53,8 +53,12 @@ acknowledged-row boundary, writer window and final cohort remain unadmitted.
 Modde's measured storage cohort is final-service PostgreSQL `rnyi…`, distinct
 from the configured `3hc…` package. Preserve both bindings. Raven's full-stage
 Canix lease-launcher artifacts also differ from historical acceptance; complete
-stage/runtime/CLI qualification remains a separate coordinator gate, including
-literal-safe `PGUSER` and source-revision projections.
+stage/runtime/CLI qualification remains a separate coordinator gate.
+The six selected units' literal `User`, `PGUSER` and source revision are now
+proven for exact `3b29…` through their bound derivation text:
+`/data/scratch/tmp/opencode/durability-3b29-six-stage-literal-provenance-20261004T225802091632Z/receipt.json`
+(SHA-256 `d73f0b6fa9a96e91a62345c2fb5af55f97cd0bacb05129b89294e6482d59ecc4`).
+That recovered provenance does not qualify execution through the changed launcher.
 
 PR #2 stays open pending explicit CI/release preservation or retirement; its
 distinct release/per-crate CI workflows prevent a supersession claim. PR #3 needs
@@ -65,8 +69,38 @@ generated docs and failed/cancelled receipts while their gates remain pending;
 cleanup requires exact-owned inactive regenerated artifacts and preservation
 through Doty.
 
-Next, settle producer closeout/review before any replacement producer pin,
-and agree the final composition and Atlas runtime window. Entry must
+### Onward execution gates
+
+Producer publication prerequisites can progress independently of final consumer
+qualification. If producer closeout changes a pin, refresh final selection and
+the affected qualification. Further Modde execution awaits the coordinator's
+final-source selection and qualified review/merge-interface handoffs.
+
+| Gate | Owner | Exit evidence |
+| --- | --- | --- |
+| Publication prerequisites | Repository/CI owners | Qualified guarded interfaces, explicit PR #2 CI/release disposition and exact-head review/CI for the publication candidate. |
+| Final composition | Coordinator | Committed 40-character Canix source, approved pins and an enumerated production recovery contract. |
+| Final qualification | Coordinator | Final binding/private publication/roots, packaged CLI and changed-launcher qualification, with artifact-by-artifact transfer dispositions. |
+| Storage readiness | Coordinator/storage owner | Accepted fresh verification of the actual unresolved Atlas Btrfs corruption; historical quiet journals and cumulative counters do not prove clearance. |
+| Production recovery admission | Coordinator and confirmed writer owners | Exact artifacts/workloads, UTC start/end/deadline, acknowledgement boundary, physical restore acceptance and failure/deadline recovery disposition. |
+| Adoption/activation and verification | Coordinator | Required post-activation checks pass, followed by explicit writer release. |
+| Real games and report-only measurements | Modde worker after explicit runtime admission | Rendering, launch/recovery/save continuity receipts and eight alternating off/on pairs. |
+| Final closeout | Respective owners | Receipt-backed documentation and eligible preserved exact-owned inactive regenerated artifacts cleaned through Doty. |
+
+For each final artifact, record identical-and-transferable, changed-and-requiring-
+qualification, or pending. Transfer needs measured derivation/output, NAR,
+defaults/inputs and relevant execution-context equality. Changed hooks or SQL
+contracts require qualification of the changed scope; a possible 49-record final
+contract is not covered by the accepted 41 production checks plus one VM fixture.
+New final-source attempts need coordinator admission and do not reopen either
+closed `3b29…` VM attempt. Canix Actions remain skipped-by-operator.
+
+Storage evidence remains unresolved in
+`/data/scratch/tmp/opencode/durability-atlas-btrfs-persistence-20261005T053121748122Z/receipt.json`
+(SHA-256 `6b27f32a8eb2b7f33a02dac173dba02c7d2b0062098f21d4dc14de7863f6aab8`).
+Production admission requires the coordinator/storage owner's fresh verification.
+
+At admitted runtime entry,
 reconfirm Modde inactivity and the actual foreground marker/pause policy.
 Live direct/store/manager launches, Proton/UMU, interruption/save continuity and
 observed game-renderer evidence remain required. Budget about 80 minutes of
