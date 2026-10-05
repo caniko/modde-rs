@@ -150,6 +150,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documentation**: Close the exact six-stage literal environment-provenance
+  gap while retaining changed-launcher qualification. Define final-source
+  evidence transfer, recovery-contract scope and bounded production admission,
+  with writer release after post-activation verification and the unresolved
+  Atlas storage-readiness prerequisite.
 - **Documentation**: Record the selected Canix binding, independently accepted
   Modde/remote-policy evidence transfer and independently accepted online/Nomad VMs.
   Retain separate production/game acceptance gates, final-service PostgreSQL
