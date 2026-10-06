@@ -26,7 +26,8 @@
     plinth.follows = "visual-rubric/plinth";
 
     visual-rubric = {
-      url = "git+https://github.com/caniko/visual-rubric.git";
+      url = "git+https://github.com/caniko/visual-rubric.git?ref=trunk&rev=7e63e9458ff65327b5a1501fdc7723a07166702d";
+      inputs.plinth.url = "git+https://github.com/caniko/plinth.git?ref=trunk&rev=6f17df07bf3c3a33a753c459872e035774a1a27d";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.flake-utils.follows = "flake-utils";
@@ -345,6 +346,7 @@
             ./CONTRIBUTING.md
             ./crates
             ./crates/modde-manager
+            ./vendor/cryoglyph
             ./docs/capability-matrix.toml
             ./docs/src/reference/parity.md
             ./docs/src/games/supported-games.md
@@ -376,6 +378,9 @@
           pname = "modde";
           version = moddeVersion;
           inherit src nativeBuildInputs buildInputs cargoVendorDir;
+          # Cryoglyph is a local registry patch. Dependency-only builds replace
+          # path crates with dummy APIs, so every target compiles its real source.
+          cargoArtifacts = null;
           strictDeps = true;
           MODDE_BUILD_REVISION = self.rev or self.dirtyRev or "unknown";
           MODDE_GIT_SHA = self.rev or self.dirtyRev or "unknown";
@@ -404,14 +409,8 @@
             doCheck = false;
           };
 
-        cargoArtifacts = craneLib.buildDepsOnly nativePackageArgs;
-        managerCargoArtifacts = craneLib.buildDepsOnly managerPackageArgs;
-        oracleCargoArtifacts = craneLib.buildDepsOnly oraclePackageArgs;
-
         modde = craneLib.buildPackage (nativePackageArgs
           // {
-            inherit cargoArtifacts;
-
             postInstall = ''
               for bin in "$out"/bin/*; do
                 wrapProgram "$bin" \
@@ -435,7 +434,6 @@
           });
         modde-manager = craneLib.buildPackage (managerPackageArgs
           // {
-            cargoArtifacts = managerCargoArtifacts;
             meta = with pkgs.lib; {
               description = "Declarative post-setup game-client manager";
               license = licenses.gpl3Only;
@@ -445,8 +443,6 @@
           });
         modde-oracle = craneLib.buildPackage (oraclePackageArgs
           // {
-            cargoArtifacts = oracleCargoArtifacts;
-
             meta = with pkgs.lib; {
               description = "Opt-in empirical mod compatibility oracle service for modde";
               license = with licenses; [gpl3Only];
@@ -569,30 +565,16 @@
             cargoBuildExtraArgs = "--workspace --features windows-integrations";
             doCheck = false;
           };
-        windowsCargoArtifacts = craneLib.buildDepsOnly windowsArgs;
         modde-windows = craneLib.buildPackage (windowsArgs
           // {
-            cargoArtifacts = windowsCargoArtifacts;
             postInstall = ''
               cp ${pkgs.pkgsCross.mingwW64.windows.mcfgthreads}/bin/libmcfgthread-2.dll "$out/bin/"
             '';
           });
-        aarch64LinuxCargoArtifacts = craneLibAarch64.buildDepsOnly aarch64LinuxArgs;
-        modde-aarch64-linux = craneLibAarch64.buildPackage (aarch64LinuxArgs
-          // {
-            cargoArtifacts = aarch64LinuxCargoArtifacts;
-          });
-        darwinArmCargoArtifacts =
-          if darwinCrossBuilderArm != null
-          then darwinCrossBuilderArm.buildDepsOnly darwinArmArgs
-          else null;
+        modde-aarch64-linux = craneLibAarch64.buildPackage aarch64LinuxArgs;
         modde-darwin-aarch64 =
           if darwinCrossBuilderArm != null
-          then
-            darwinCrossBuilderArm.buildPackage (darwinArmArgs
-              // {
-                cargoArtifacts = darwinArmCargoArtifacts;
-              })
+          then darwinCrossBuilderArm.buildPackage darwinArmArgs
           else mkDarwinUnavailable "modde-darwin-aarch64";
       in {
         packages =
@@ -1684,14 +1666,12 @@
           # --containment`; Nix sandboxes run the deterministic recovery gates.
           library-regressions = craneLib.cargoTest (commonArgs
             // {
-              inherit cargoArtifacts;
               doCheck = true;
               cargoExtraArgs = "--locked --package modde --package modde-core --package modde-games --package modde-ui --all-features --lib --bins --test installation_state_tests --test save_transition_tests --test repo_truth_tests --test diagnostic_retention_tests --test installation_context_tests --test installation_prefix_tests --test store_context_tests --test library_sandbox_commands --test cli_library_preparation --test cli_library_supervision";
               nativeBuildInputs = nativeBuildInputs ++ [pkgs.sqlite];
             });
           manager = craneLib.cargoTest (managerPackageArgs
             // {
-              cargoArtifacts = managerCargoArtifacts;
               doCheck = true;
               nativeBuildInputs =
                 managerPackageArgs.nativeBuildInputs ++ [pkgs.procps pkgs.git pkgs.sqlite];

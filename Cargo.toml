@@ -11,6 +11,7 @@ members = [
   "crates/modde-xtask",
   "crates/modde-manager",
 ]
+exclude = ["vendor/cryoglyph"]
 
 [workspace.package]
 version = "0.7.0"
@@ -108,7 +109,7 @@ zstd = { version = "0.13.3", default-features = false, features = ["zstdmt"] }
 
 # Byte buffers / caches
 bytes = "1.11.1"
-lru = "0.18.0"
+lru = "0.18.2"
 parking_lot = "0.12.5"
 dashmap = "6.1.0"
 
@@ -228,4 +229,6 @@ codegen-units = 1
 strip = true
 
 [patch.crates-io]
+# Backport upstream's fixed lru dependency while retaining Iced 0.14's WGPU API.
+cryoglyph = { path = "vendor/cryoglyph" }
 fomod-oxide = { git = "https://github.com/caniko/rs-fomod-oxide.git", rev = "d1f53c4e61007a57c5ae5118e5937d4f592e1188" }

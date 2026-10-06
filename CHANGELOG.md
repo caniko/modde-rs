@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Site builds**: Consume qualified Plinth `6f17df0…` through the existing
+  Visual Rubric input path, including its private build-scoped compiler-cache
+  fallback for hosted Pages builds. Retain the selected Visual Rubric source.
+- **Dependency safety**: Backport Cryoglyph's upstream `lru 0.18.2` dependency
+  change into the checksum-verified published release to remove the vulnerable
+  `lru 0.16.4` path while retaining Iced 0.14's WGPU 27 graphics API. Preserve
+  upstream source and licenses with a repeatable verification command.
+  Compile real sources in Nix native, cross and test builds so Crane never
+  substitutes a dummy API for the local registry patch.
 - **CI/release**: Consume qualified Simit `1f5a180…` and generate GitHub Actions
   verification and a separate multi-channel release workflow. Preserve isolated
   default/minimal member checks and package inventories alongside aggregate
@@ -65,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   showed `VanillaFixes.exe` is an 88 KiB MinGW launcher (`CreateProcessW`,
   plus dynamic `LoadLibrary`/`GetProcAddress`, no update/help strings in
   a static ASCII scan, identical hash on both hosts) — running it is
-  only known to *launch* the client, never to update it. No supported
+  only known to _launch_ the client, never to update it. No supported
   update procedure has been established: the static scan cannot rule
   out updater behavior elsewhere (companion `VfPatcher.dll` role
   unestablished, dynamic resolution present), so the readiness-bypass
@@ -145,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overrides, offline validate, registration/readiness split).
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized
   `system.prefix_command` (`modde-manager onboard gate --instance <name>
-  --`, composed behind any declared wrapper). It enforces the same game
+--`, composed behind any declared wrapper). It enforces the same game
   launch readiness a native launch enforces, then execs the appended
   command unchanged. A missing `--config` re-execs at most once through
   the PATH `modde-manager` (marker-bounded, self-skipping) so the bare
@@ -198,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **CLI**: New discovery commands: `tool doctor`, `tool settings`, `tool
-  profiles`, `tool sources` — all read-only, all with `--json`.
+profiles`, `tool sources` — all read-only, all with `--json`.
 - **CLI**: `tool doctor --fix` automatically applies the first recommended
   fix command when issues are detected.
 - **CLI**: `tool setup` for guided OptiScaler configuration without the GUI.
