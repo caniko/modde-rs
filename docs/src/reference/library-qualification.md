@@ -12,7 +12,65 @@ integration is a follow-up. Performance measurements are **report-only**, as
 selected by the user on 2026-10-01: retain measured deltas and evidence without a
 negligible-overhead pass/fail verdict.
 
-## Current qualification, 2026-10-05
+## Current qualification, 2026-10-06
+
+### Merged default source
+
+[PR #3](https://github.com/caniko/modde-rs/pull/3) merged normally as
+`db5b249feba133587a9289b66ed6da5191d3517d`, tree
+`4fdf1d1fc999c55794014fa1bc60b5bf8e942f58`. Its
+[default CI](https://github.com/caniko/modde-rs/actions/runs/37394134753) passed all
+five jobs and its [Nix matrix](https://github.com/caniko/modde-rs/actions/runs/37394134597)
+passed all four builds. Independent guarded selection matched every retained
+derivation/output pair to this exact revision and verified all sixteen artifact
+file hashes and the source NAR. Receipt:
+`/data/nvme0/can/ProjectState/generated/modde-ci-source-closeout-db5b249-20261006/default-independent-20261006T064801Z/receipt.json`
+(SHA-256 `fe9dface81759c84e6b795714f55ee1c355b26f988dae509f4f8632daeb84d37`).
+
+The [Pages run](https://github.com/caniko/modde-rs/actions/runs/37394134864) failed
+before deployment while compiling Plinth. Harbor's compiler wrapper reported
+`no managed cache transport is available` and exited 75. The producer follow-up
+selects the existing Plinth cache repair and requires a successful Modde site
+build and deployment at its own candidate revision.
+
+[PR #2](https://github.com/caniko/modde-rs/pull/2) closed as superseded after the
+operator selected preservation. The exact capability mapping retains nine
+default members, six minimal members, seven package inventories and all 25 named
+release steps, including optional Windows Authenticode signing. Optional Greptile
+review remained unavailable; native protection imposed no mandatory provider
+review. Release credential readiness and actual channel delivery remain separate
+gates.
+
+### Producer dependency follow-up
+
+The follow-up pins Plinth `6f17df07bf3c3a33a753c459872e035774a1a27d` beneath
+`visual-rubric/plinth`. The root Plinth alias and Simit follow that same source;
+Visual Rubric retains its existing `7e63e9458ff65327b5a1501fdc7723a07166702d`
+revision. The managed declaration/lock update passed all-output evaluation on
+`x86_64-linux`, `aarch64-linux` and `aarch64-darwin`; check builds were explicitly
+deferred. Plinth's upstream CI and Pages passed, but Modde's changed site still
+requires its own package and deployment acceptance.
+
+Cryoglyph's published `0.1.0` release requires vulnerable `lru 0.16`. Upstream
+fixed that dependency in `a7a4b4b5a9fe9bf621c5c858489520fe0661ae5f`, alongside a
+graphics stack incompatible with Iced 0.14. The follow-up therefore retains the
+published WGPU 27/Cosmic Text 0.15 API and backports only the fixed `lru 0.18.2`
+declarations. `scripts/vendor-cryoglyph.py --check` verifies the source archive
+checksum and every vendored file; upstream Rust/WGSL sources and licenses remain
+byte-identical. The Nix production source includes this patch; native, cross and
+test derivations compile real sources with `cargoArtifacts = null`, preserving
+Harbor's rejection of unsafe dummy dependency-only builds.
+
+Native verification in an isolated SQLite home passed workspace all-feature,
+all-target compilation and warnings-denied Clippy. All-feature tests passed
+2,095 cases, with zero failures and two ignored; minimal UI tests passed 201
+cases with zero failures. `cargo audit --json` passed with zero vulnerabilities,
+including removal of RUSTSEC-2026-0253. Four unmaintained and two yanked-package
+warnings remain recorded. These are local source/dependency results; changed
+production derivations and the exact committed hosted candidate require their
+own receipts.
+
+### Approved Canix runtime cohort
 
 The approved producer revision is
 `0d3ce666e2362555b90d4d37b084cc8d86450eb9`, published on
@@ -202,11 +260,11 @@ changed scope.
 
 Evidence transfers artifact by artifact. Record one of three dispositions:
 
-| Disposition | Required evidence |
-| --- | --- |
-| Identical and transferable | Measured derivation/output, NAR, relevant inputs/defaults and execution-context equality, with retained publication/root evidence. |
-| Changed and requiring qualification | Explicit delta and admitted qualification of the changed package, launcher, hook, recovery contract or runtime behavior. |
-| Pending | The exact missing evidence and its owner; no acceptance inferred from source similarity or a previous pass. |
+| Disposition                         | Required evidence                                                                                                                  |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Identical and transferable          | Measured derivation/output, NAR, relevant inputs/defaults and execution-context equality, with retained publication/root evidence. |
+| Changed and requiring qualification | Explicit delta and admitted qualification of the changed package, launcher, hook, recovery contract or runtime behavior.           |
+| Pending                             | The exact missing evidence and its owner; no acceptance inferred from source similarity or a previous pass.                        |
 
 A changed recovery hook or SQL contract cannot inherit the prior scope's VM
 acceptance. Any required final-source attempt is separately coordinator-admitted;
@@ -233,16 +291,14 @@ filesystem clearance. Historical evidence:
 The coordinator/storage owner must provide accepted fresh storage verification
 before production admission; successful historical VM gates do not clear it.
 
-[PR #2](https://github.com/caniko/modde-rs/pull/2), exact head
-`2cadcd139368620184fffd587df961684f90c60b`, remains open: its nine per-crate CI
-workflows and release workflow are absent from approved PR #3. Digest/manager
-fix coverage alone does not prove full supersession. Independent disposition:
+The initial [PR #2](https://github.com/caniko/modde-rs/pull/2) comparison used head
+`2cadcd139368620184fffd587df961684f90c60b` and found nine per-crate CI workflows
+and a release workflow absent from the then-approved PR #3 source. Its historical
+non-supersession disposition remains retained:
 `/data/scratch/tmp/opencode/durability-modde-pr2-closeout-independent-20261004T222654796699Z/receipt.json`
 (SHA-256 `50c8d44f324a3b661cee9e156a12bf7dedabf25b3ec105e29654a82d458bcfa5`).
-On 2026-10-05 the operator selected preservation of this scope. The CI update
-must preserve isolated member checks and the multi-channel GitHub release workflow;
-PR #2 stays open until the exact replacement candidate is qualified and its
-capability mapping is verified.
+On 2026-10-05 the operator selected preservation. The qualified replacement
+retained those capabilities and PR #2 closed on 2026-10-06, as recorded above.
 
 ### GitHub CI/release source qualification, 2026-10-05
 
@@ -283,19 +339,17 @@ Evidence under
 - `workflow-lint-generated-r1/receipt.json`: actual actionlint/ShellCheck result;
 - `pr2-capability-map-generated-r1.json`: exact-head member and release mapping.
 
-These are source/native-generator results. Production generator packaging,
-exact committed-candidate hosted qualification and substantive current-head
-review are separate gates. Release credential readiness is unestablished: the
-2026-10-05 repository secret and variable listings were both empty. PR #2 remains
-open until the replacement qualification and guarded integration complete.
-
-PR #3 default-branch integration requires completed current-head substantive review
-and acceptable CI through the guarded review/merge interfaces. The installed Canix
-interfaces were unavailable at this snapshot; the Greptile credit-limit notice
-does not provide substantive review. Local documentation commits require their
-own qualification and do not replace approved producer `0d3ce666…` or inherit its
-hosted results. Generated docs, active/history roots, runners, queries and failed
-receipts remain retained while their closeout gates are pending.
+These source/native-generator results are followed by the packaged-generator,
+exact hosted-revision binding and merge receipts recorded above. Release
+credential readiness is unestablished: the
+2026-10-05 repository secret and variable listings were both empty. The release
+capability mapping establishes source preservation, while actual channel delivery
+requires its own credentials and acceptance. Normal native forge integration
+completed under the governing optional-review policy. The Greptile credit-limit
+notice supplies no substantive review. Later documentation and implementation
+changes need their own qualification and do not replace approved runtime producer
+`0d3ce666…` or inherit earlier hosted results. Generated docs, active/history roots,
+runners, queries and failed receipts remain retained for their scoped gates.
 
 The dated sections below retain earlier implementation and failure evidence.
 
@@ -365,7 +419,7 @@ canix cache binary build .#checks.x86_64-linux.library-regressions --include-tes
   `publicationAddressIntents`; the same failure was reproduced on unmodified
   trunk `2faa0dd33f17386fb9123c2015bf6593d0159e40`.
   The separate browser smoke job also failed with `binary is not a Firefox
-  executable`; its derivation is byte-identical on trunk and the GPU branch.
+executable`; its derivation is byte-identical on trunk and the GPU branch.
   Browser adapter, evaluation and runtime jobs passed in the PR workflow.
 - Canix's normal producer refreshed its vendored Fleetix schema and topology;
   all 50 authored Pkl files validated, and the topology sidecar is current.
@@ -385,17 +439,17 @@ canix cache binary build .#checks.x86_64-linux.library-regressions --include-tes
 
 ## Outstanding qualification
 
-| Gate | Required evidence or prerequisite |
-| --- | --- |
-| Nix regression gate | Approved producer `0d3ce666…` passed native package CI, including Nix regressions and packaged lifecycle. A replacement producer revision requires fresh exact-source qualification. |
-| GUI-to-Play | Atlas hardware-rendering diagnostics pass outside/inside bubblewrap. Live GUI-to-game rendering, saved configuration and completion evidence remain required. |
-| Steam and Heroic | Real exact-install hooks, launcher/cloud-sync setup, native and Wine/Proton/UMU commands, first-run prefix behavior and save continuity. |
-| Manager | Live manager forwarding, root lease/marker lifetime and recovery after interruption. |
-| Native nested runtimes | Verify supervision, mounts and failure without an unsandboxed fallback for actual Proton/UMU commands. |
-| Performance | Release/package runs and retained CSV/configuration/process evidence. Results are report-only. No real-game overhead has been measured. |
-| Dependency health | Current `cryoglyph`/Iced dependency on `lru 0.16.4` still carries RUSTSEC-2026-0253. Other unmaintained/yanked warnings also remain. |
-| Whole-repository documentation | Badge destinations and Simit policy are repaired. Closeout docs must retain exact-source claims and pass current link/command/mdBook validation. |
-| Canix integration rollout | Historical consumer `8240764b…` binds the approved producer, actual wrapper, logging/database/manager defaults and packaged lifecycle. Selected successor `3b29bb33…` needs coordinator-owned binding and affected checks before final composition, recovery/adoption and activation. |
+| Gate                           | Required evidence or prerequisite                                                                                                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nix regression gate            | Approved producer `0d3ce666…` passed native package CI, including Nix regressions and packaged lifecycle. A replacement producer revision requires fresh exact-source qualification.                                                                                                  |
+| GUI-to-Play                    | Atlas hardware-rendering diagnostics pass outside/inside bubblewrap. Live GUI-to-game rendering, saved configuration and completion evidence remain required.                                                                                                                         |
+| Steam and Heroic               | Real exact-install hooks, launcher/cloud-sync setup, native and Wine/Proton/UMU commands, first-run prefix behavior and save continuity.                                                                                                                                              |
+| Manager                        | Live manager forwarding, root lease/marker lifetime and recovery after interruption.                                                                                                                                                                                                  |
+| Native nested runtimes         | Verify supervision, mounts and failure without an unsandboxed fallback for actual Proton/UMU commands.                                                                                                                                                                                |
+| Performance                    | Release/package runs and retained CSV/configuration/process evidence. Results are report-only. No real-game overhead has been measured.                                                                                                                                               |
+| Dependency health              | The fixed Cryoglyph graph passed native checks and an audit with zero vulnerabilities. Changed packages and the exact hosted candidate require qualification; four unmaintained and two yanked warnings remain separately tracked.                                                    |
+| Whole-repository documentation | Badge destinations and Simit policy are repaired. Closeout docs must retain exact-source claims and pass current link/command/mdBook validation.                                                                                                                                      |
+| Canix integration rollout      | Historical consumer `8240764b…` binds the approved producer, actual wrapper, logging/database/manager defaults and packaged lifecycle. Selected successor `3b29bb33…` needs coordinator-owned binding and affected checks before final composition, recovery/adoption and activation. |
 
 `event-listener 5.4.2` and `lru 0.18.2` replace the affected versions on the
 dependency edges that accept those patches. Audit warnings are not a clean
@@ -590,9 +644,10 @@ tests and warnings-denied all-target Clippy locally. ShellCheck was explicitly
 present; an earlier apparent pass without the checker is retained as non-covering
 evidence. Exact receipts are under
 `/data/scratch/tmp/opencode/modde-ci-reviewed-20261005-coordinator/`.
-Lock refresh, generated-file drift checks, actual Nix generator packaging and
-exact-candidate hosted qualification remain separate gates. These local results
-do not replace the approved `0d3ce666…` producer or establish PR closeout.
+Lock refresh, generated-file drift, actual Nix generator packaging and
+exact-candidate hosted qualification subsequently passed for the merged source
+recorded above. These results do not replace the approved `0d3ce666…` runtime
+producer or qualify later implementation changes.
 
 Hosted containment jobs configure Ubuntu's unprofiled user-namespace policy
 on their disposable runner before testing bubblewrap's PID/network isolation.
@@ -638,9 +693,8 @@ Existing ignored tests remain non-covering. Exact receipts are
 `native-crate-compatibility-r8/receipt.json`, `ui-fixture-adversarial/receipt.json`
 and `native-isolation-feature-terminal.json` under the retained evidence root.
 
-Managed Simit lock updates rolled back on admission failures and then exposed
-Linux-only tools in Apple Silicon's release shell. Those dependencies are being
-scoped to their declared platforms while native Darwin development/documentation
-and portable signing tools remain available. This source qualification does not
-establish lock promotion, generated workflow drift, Nix package equivalence,
-hosted acceptance or production data recovery.
+Earlier managed Simit updates rolled back on admission failures and then exposed
+Linux-only tools in Apple Silicon's release shell. Platform-scoped repairs,
+lock promotion, generated workflow drift and exact hosted package bindings
+subsequently passed. The isolated source repair and CI closeout do not establish
+production data recovery.

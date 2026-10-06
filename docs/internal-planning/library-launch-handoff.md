@@ -1,21 +1,29 @@
 # Library launch and sandbox handoff
 
-## Current handoff, 2026-10-05
+## Current handoff, 2026-10-06
 
-The implementation is published at
-`0d3ce666e2362555b90d4d37b084cc8d86450eb9` on
-`integration/native-library-gpu` in [Modde PR #3](https://github.com/caniko/modde-rs/pull/3).
-Producer and native package CI passed; independent verification reports 2,092
-passed tests, zero failures and two ignored tests. The historical Canix consumer
-also passed actual-wrapper, real-bubblewrap lifecycle and diagnostic fixtures.
-See [Library and sandbox qualification](../src/reference/library-qualification.md)
-for exact revisions, artifacts and receipts. Later edits need their own checks;
-the approved consumer pin remains `0d3ce666…` until a replacement is selected.
+[Modde PR #3](https://github.com/caniko/modde-rs/pull/3) merged into `trunk` as
+`db5b249feba133587a9289b66ed6da5191d3517d`. All five default CI jobs and four Nix
+builds passed; independent verification matched the retained artifacts to that
+exact executed revision. PR #2 closed with its isolated member checks and release
+capabilities preserved. Pages failed in Plinth's compiler-cache wrapper before
+deployment. See [Library and sandbox qualification](../src/reference/library-qualification.md)
+for exact sources, artifacts and receipts.
+
+Canix still selects `0d3ce666e2362555b90d4d37b084cc8d86450eb9`. Its producer and
+native package CI passed, with 2,092 passed tests, zero failures and two ignored
+tests. The historical consumer passed actual-wrapper, real-bubblewrap lifecycle
+and diagnostic fixtures. A replacement runtime pin requires coordinator selection
+and final consumer qualification.
 
 Native Linux is the required target. Flatpak is follow-up work. Performance is
 report-only: retain measurements, paired deltas and variability. No real-game
 performance or save-continuity qualification has occurred in this worker's scope.
-The `cryoglyph`/Iced dependency on `lru 0.16.4` and RUSTSEC-2026-0253 remains.
+The producer follow-up backports Cryoglyph's upstream `lru 0.18.2` dependency
+change into the checksummed published release, retaining Iced 0.14's WGPU 27 API.
+Native all-feature tests passed 2,095 cases with zero failures and two ignored;
+minimal UI tests passed 201, and the audit found zero vulnerabilities. Changed
+packages and the exact hosted candidate require their own qualification.
 
 The coordinator selected Canix
 `3b29bb33d125381f9d34b4f18657755cbe4a0379` for scoped non-activating qualification.
@@ -60,11 +68,10 @@ proven for exact `3b29…` through their bound derivation text:
 (SHA-256 `d73f0b6fa9a96e91a62345c2fb5af55f97cd0bacb05129b89294e6482d59ecc4`).
 That recovered provenance does not qualify execution through the changed launcher.
 
-PR #2 stays open pending explicit CI/release preservation or retirement; its
-distinct release/per-crate CI workflows prevent a supersession claim. PR #3 needs
-substantive current-head review and acceptable CI through available guarded
-review/merge interfaces. Local docs remain native-qualified, with no replacement
-producer pin or inherited hosted qualification. Preserve active/history roots,
+PR closeout and CI/release capability preservation are complete. Optional Greptile
+review was unavailable and is not counted as a pass; repository protection imposed
+no mandatory provider review. Credentialed release-channel delivery and the next
+producer candidate still require their own acceptance. Preserve active/history roots,
 generated docs and failed/cancelled receipts while their gates remain pending;
 cleanup requires exact-owned inactive regenerated artifacts and preservation
 through Doty.
@@ -72,20 +79,20 @@ through Doty.
 ### Onward execution gates
 
 Producer publication prerequisites can progress independently of final consumer
-qualification. If producer closeout changes a pin, refresh final selection and
-the affected qualification. Further Modde execution awaits the coordinator's
-final-source selection and qualified review/merge-interface handoffs.
+qualification. If the producer follow-up changes a pin, refresh final selection
+and the affected qualification. Runtime execution awaits the coordinator's exact
+final-source selection and admission.
 
-| Gate | Owner | Exit evidence |
-| --- | --- | --- |
-| Publication prerequisites | Repository/CI owners | Qualified guarded interfaces, explicit PR #2 CI/release disposition and exact-head review/CI for the publication candidate. |
-| Final composition | Coordinator | Committed 40-character Canix source, approved pins and an enumerated production recovery contract. |
-| Final qualification | Coordinator | Final binding/private publication/roots, packaged CLI and changed-launcher qualification, with artifact-by-artifact transfer dispositions. |
-| Storage readiness | Coordinator/storage owner | Accepted fresh verification of the actual unresolved Atlas Btrfs corruption; historical quiet journals and cumulative counters do not prove clearance. |
-| Production recovery admission | Coordinator and confirmed writer owners | Exact artifacts/workloads, UTC start/end/deadline, acknowledgement boundary, physical restore acceptance and failure/deadline recovery disposition. |
-| Adoption/activation and verification | Coordinator | Required post-activation checks pass, followed by explicit writer release. |
-| Real games and report-only measurements | Modde worker after explicit runtime admission | Rendering, launch/recovery/save continuity receipts and eight alternating off/on pairs. |
-| Final closeout | Respective owners | Receipt-backed documentation and eligible preserved exact-owned inactive regenerated artifacts cleaned through Doty. |
+| Gate                                    | Owner                                         | Exit evidence                                                                                                                                          |
+| --------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Producer follow-up                      | Repository/CI owners                          | Exact Plinth consumption, fixed Cryoglyph dependency path, generated CI/release convergence and exact-candidate package/hosted acceptance.             |
+| Final composition                       | Coordinator                                   | Committed 40-character Canix source, approved pins and an enumerated production recovery contract.                                                     |
+| Final qualification                     | Coordinator                                   | Final binding/private publication/roots, packaged CLI and changed-launcher qualification, with artifact-by-artifact transfer dispositions.             |
+| Storage readiness                       | Coordinator/storage owner                     | Accepted fresh verification of the actual unresolved Atlas Btrfs corruption; historical quiet journals and cumulative counters do not prove clearance. |
+| Production recovery admission           | Coordinator and confirmed writer owners       | Exact artifacts/workloads, UTC start/end/deadline, acknowledgement boundary, physical restore acceptance and failure/deadline recovery disposition.    |
+| Adoption/activation and verification    | Coordinator                                   | Required post-activation checks pass, followed by explicit writer release.                                                                             |
+| Real games and report-only measurements | Modde worker after explicit runtime admission | Rendering, launch/recovery/save continuity receipts and eight alternating off/on pairs.                                                                |
+| Final closeout                          | Respective owners                             | Receipt-backed documentation and eligible preserved exact-owned inactive regenerated artifacts cleaned through Doty.                                   |
 
 For each final artifact, record identical-and-transferable, changed-and-requiring-
 qualification, or pending. Transfer needs measured derivation/output, NAR,
@@ -238,18 +245,18 @@ the archive at the repository root. Compare `git status --short` with the source
 
 ## Code map
 
-| Area | Repository paths |
-| --- | --- |
-| Shared lifecycle, receipts, hooks, observation | `crates/modde-cli/src/commands/library.rs`, `commands/library/{hooks,process}.rs` |
-| CLI dispatch/leases/helper arguments | `crates/modde-cli/src/cli/{args/library.rs,runtime.rs,dispatch/,mutation/}` |
-| Catalogue, installation/save contexts, prefixes, sandbox | `crates/modde-games/src/library/{providers,context,launch,runtime,sandbox,operations}.rs` |
-| Preferences, identities, journals, save transitions | `crates/modde-core/src/library.rs`, `library/{identity,session,save_transition}.rs`, `paths.rs` |
-| Capture/ingestion/benchmarks/bisects | `crates/modde-core/src/performance.rs`, `crates/modde-cli/src/commands/perf.rs`, `commands/bisect/` |
-| GUI handlers/settings/race guards | `crates/modde-ui/src/app/{update.rs,update_parts/library.rs,update_parts/navigation.rs,tests/library.rs}`, `src/views/library.rs`, `src/views/library/settings.rs` |
-| Manager bridge and durable markers | `crates/modde-manager/src/{main,wiring}.rs` (`.modde-library-session.json`) |
-| Fingerprints/dependencies | `crates/modde-games/src/save_fingerprint.rs`, `crates/modde-cli/Cargo.toml` (production `tempfile`) |
-| Regression source | `crates/modde-cli/tests/cli_library_{preparation,supervision}.rs`, `crates/modde-games/tests/{installation_context_tests,installation_prefix_tests,store_context_tests,library_sandbox_commands}.rs`, `crates/modde-core/tests/{installation_state_tests,save_transition_tests}.rs` |
-| Detailed behavior/status | `docs/src/guides/playing.md`, `docs/src/reference/parity.md`, `docs/capability-matrix.toml` |
+| Area                                                     | Repository paths                                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared lifecycle, receipts, hooks, observation           | `crates/modde-cli/src/commands/library.rs`, `commands/library/{hooks,process}.rs`                                                                                                                                                                                                   |
+| CLI dispatch/leases/helper arguments                     | `crates/modde-cli/src/cli/{args/library.rs,runtime.rs,dispatch/,mutation/}`                                                                                                                                                                                                         |
+| Catalogue, installation/save contexts, prefixes, sandbox | `crates/modde-games/src/library/{providers,context,launch,runtime,sandbox,operations}.rs`                                                                                                                                                                                           |
+| Preferences, identities, journals, save transitions      | `crates/modde-core/src/library.rs`, `library/{identity,session,save_transition}.rs`, `paths.rs`                                                                                                                                                                                     |
+| Capture/ingestion/benchmarks/bisects                     | `crates/modde-core/src/performance.rs`, `crates/modde-cli/src/commands/perf.rs`, `commands/bisect/`                                                                                                                                                                                 |
+| GUI handlers/settings/race guards                        | `crates/modde-ui/src/app/{update.rs,update_parts/library.rs,update_parts/navigation.rs,tests/library.rs}`, `src/views/library.rs`, `src/views/library/settings.rs`                                                                                                                  |
+| Manager bridge and durable markers                       | `crates/modde-manager/src/{main,wiring}.rs` (`.modde-library-session.json`)                                                                                                                                                                                                         |
+| Fingerprints/dependencies                                | `crates/modde-games/src/save_fingerprint.rs`, `crates/modde-cli/Cargo.toml` (production `tempfile`)                                                                                                                                                                                 |
+| Regression source                                        | `crates/modde-cli/tests/cli_library_{preparation,supervision}.rs`, `crates/modde-games/tests/{installation_context_tests,installation_prefix_tests,store_context_tests,library_sandbox_commands}.rs`, `crates/modde-core/tests/{installation_state_tests,save_transition_tests}.rs` |
+| Detailed behavior/status                                 | `docs/src/guides/playing.md`, `docs/src/reference/parity.md`, `docs/capability-matrix.toml`                                                                                                                                                                                         |
 
 ## Historical next-work checklist (2026-09-30)
 
