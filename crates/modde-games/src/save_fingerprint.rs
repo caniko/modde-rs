@@ -17,7 +17,9 @@ fn fingerprint_at(profile: &Profile, store: &Path) -> SaveFingerprint {
     SaveFingerprint::compute(&profile.mods, |id| {
         // Wabbajack IDs identify input archives; directive outputs are split
         // across its staging tree and cannot be classified by archive ID.
-        if matches!(profile.source, ProfileSource::Wabbajack { .. }) { return true; }
+        if matches!(profile.source, ProfileSource::Wabbajack { .. }) {
+            return true;
+        }
         plugin.is_none_or(|plugin| plugin.classify_mod(&store.join(id)).affects_saves())
     })
 }
@@ -36,20 +38,37 @@ mod tests {
             std::fs::write(directory.join(file), "fixture").unwrap();
         }
         let mut profile = Profile {
-            id: None, name: "not-deployed".into(), game_id: "stardew-valley".into(),
-            source: ProfileSource::Manual, overrides: root.path().join("overrides"),
-            load_order_rules: Default::default(), load_order_lock: None,
-            mods: ["cosmetic", "script", "missing"].into_iter().map(|id| EnabledMod {
-                mod_id: id.into(), enabled: true, ..Default::default()
-            }).collect(),
+            id: None,
+            name: "not-deployed".into(),
+            game_id: "stardew-valley".into(),
+            source: ProfileSource::Manual,
+            overrides: root.path().join("overrides"),
+            load_order_rules: Default::default(),
+            load_order_lock: None,
+            mods: ["cosmetic", "script", "missing"]
+                .into_iter()
+                .map(|id| EnabledMod {
+                    mod_id: id.into(),
+                    enabled: true,
+                    ..Default::default()
+                })
+                .collect(),
         };
         let fingerprint = fingerprint_at(&profile, root.path());
         assert_eq!(fingerprint.mod_ids.as_slice(), &["missing", "script"]);
         profile.name = "renamed-profile".into();
         assert_eq!(fingerprint_at(&profile, root.path()), fingerprint);
         profile.mods[1].enabled = false;
-        assert_eq!(fingerprint_at(&profile, root.path()).mod_ids.as_slice(), &["missing"]);
-        profile.source = ProfileSource::Wabbajack { manifest_hash: "manifest".into() };
-        assert_eq!(fingerprint_at(&profile, root.path()).mod_ids.as_slice(), &["cosmetic", "missing"]);
+        assert_eq!(
+            fingerprint_at(&profile, root.path()).mod_ids.as_slice(),
+            &["missing"]
+        );
+        profile.source = ProfileSource::Wabbajack {
+            manifest_hash: "manifest".into(),
+        };
+        assert_eq!(
+            fingerprint_at(&profile, root.path()).mod_ids.as_slice(),
+            &["cosmetic", "missing"]
+        );
     }
 }

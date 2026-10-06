@@ -1,6 +1,5 @@
 ---
 source: crates/modde-cli/tests/cli_help_snapshots.rs
-assertion_line: 40
 expression: "stdout(&[\"--help\"])"
 ---
 NixOS-native game mod manager
@@ -8,6 +7,7 @@ NixOS-native game mod manager
 Usage: modde [OPTIONS] <COMMAND>
 
 Commands:
+  library     Owned game catalogue and saved per-installation launch settings
   profile     Manage profiles
   lock        Export, sign, verify, and import portable modde.lock files
   config      Inspect and set modde configuration (including the database backend)
@@ -46,6 +46,7 @@ Commands:
 
 Options:
       --data-dir <DATA_DIR>          Override data directory (default: ~/.local/share/modde or $`MODDE_DATA_DIR`) [env: MODDE_DATA_DIR=]
+      --config-dir <CONFIG_DIR>      Override the base configuration directory used by modde and its session journal
       --heap-profile <HEAP_PROFILE>  Write a DHAT heap profile. Requires the `heap-profile` cargo feature [env: MODDE_HEAP_PROFILE=]
   -h, --help                         Print help
   -V, --version                      Print version

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CI/release**: Consume qualified Simit `1f5a180…` and generate GitHub Actions
+  verification and a separate multi-channel release workflow. Preserve isolated
+  default/minimal member checks and package inventories alongside aggregate
+  all-feature CI. Retain upstream optional Windows Authenticode signing and
+  bound Nix builds to one job and two cores.
 - **Library (Partial)**: Add a Library-first GUI with owned Steam/Heroic games,
   favorites, installation filters and saved per-installation launch settings.
   Share CLI, GUI, store-hook and manager launches through supervised sessions,
@@ -16,8 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sandbox (Partial)**: Add disabled-by-default per-installation bubblewrap
   settings and alternating paired MangoHud captures. Require measured frame
   times and usable post-warmup samples, convert MangoHud elapsed nanoseconds,
-  and preserve observed exit status during re-ingestion. Compilation, regression
-  execution, containment qualification and overhead measurements remain pending.
+  and preserve observed exit status during re-ingestion. Feature builds, lifecycle
+  regressions and real containment qualification pass; live-game qualification
+  and packaged paired performance measurements remain pending and report-only.
+- **GPU routing**: Persist stable Mesa render-node choices per installation,
+  apply shared host defaults at direct/store-hook/manager boundaries, and expose
+  `programs.modde.gpu.renderNode` for Home Manager integration. Record requested
+  routing and driver/inventory provenance without asserting actual game rendering.
 - **Build**: Add optional game, GUI, archive, PostgreSQL and manager Cargo
   features. Separate Nix application development, documentation and release
   shells; refresh pinned inputs and the Simit workflow patch.
@@ -145,6 +155,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documentation**: Close the exact six-stage literal environment-provenance
+  gap while retaining changed-launcher qualification. Define final-source
+  evidence transfer, recovery-contract scope and bounded production admission,
+  with writer release after post-activation verification and the unresolved
+  Atlas storage-readiness prerequisite.
+- **Documentation**: Record the selected Canix binding, independently accepted
+  Modde/remote-policy evidence transfer and independently accepted online/Nomad VMs.
+  Retain separate production/game acceptance gates, final-service PostgreSQL
+  identity, coordinator Nomad ownership and unresolved CI/release PR closeouts.
 - **Manager**: Explicitly release mutation leases even when forked children retain
   descriptors, and identify missing source-parent prerequisites in diagnostics.
 - **Manager**: Plan and apply compare prepared content and preserve unchanged files.
@@ -160,6 +179,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `caniko/scoop-modde` as the configured downstream repositories.
 - **Release**: Local release helpers now delegate to the same Simit APT
   publisher and resolve canix-managed credentials from the current workspace.
+
+### Fixed
+
+- **Test isolation**: Bind UI fixtures to disposable SQLite databases and reject
+  PostgreSQL in the test-cleanup helper before SQL execution. Assert disposable
+  data/configuration paths so inherited desktop database settings cannot redirect
+  fixture cleanup. Record the 2026-10-05 live-database exposure and pending
+  production recovery in the qualification reference.
+- **Feature checks**: Declare archive, manager and built-in-game test prerequisites
+  and cover them through explicit feature-enabled commands alongside minimal
+  builds. Keep default help snapshots and verify optional GUI/LOOT command
+  availability in lean builds. Test unsupported-game and unavailable-backend
+  refusal as well as enabled-feature behavior.
 
 ## [0.7.0] - 2026-07-10
 
@@ -198,6 +230,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Wabbajack**: Report impossible apply-memory reservations and bound admission
+  waits instead of hanging indefinitely in small or busy memory scopes. Preserve
+  the safety reserve, diagnostics aborts and resumable staging; isolate tiny
+  installer fixtures from the CI runner's live memory pressure.
 - **OptiScaler**: Scanner no longer classifies backup files
   (`amd_fidelityfx_vk.dll.b`) as unmanaged companions — requires `.dll`
   extension for the `amd_fidelityfx` and `libxess` prefix checks.

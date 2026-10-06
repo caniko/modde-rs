@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn test_help_text() {
         let text = help_text();
-        assert!(!text.is_empty());
+        assert_ne!(text, "");
         assert!(text.contains("Ctrl+D"));
         assert!(text.contains("Deploy mods"));
         assert!(text.contains("F5"));

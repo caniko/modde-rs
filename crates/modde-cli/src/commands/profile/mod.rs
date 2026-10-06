@@ -92,9 +92,12 @@ pub async fn handle(action: ProfileAction) -> Result<()> {
             context.require_save_management()?;
             let save_dir = &context.saves.directory;
             let current = pm.active(&context.saves.scope).await?;
-            let fp = if let Some(current) = current { compute_fingerprint(&pm, &current.profile.name, &game).await } else { None };
-            match context.activate_profile(&pm, &name, fp.as_ref()).await?
-            {
+            let fp = if let Some(current) = current {
+                compute_fingerprint(&pm, &current.profile.name, &game).await
+            } else {
+                None
+            };
+            match context.activate_profile(&pm, &name, fp.as_ref()).await? {
                 ActivateResult::Activated => {
                     info!(profile = %name, "switched to profile");
                     if save_dir.is_some() {
@@ -137,7 +140,11 @@ pub async fn handle(action: ProfileAction) -> Result<()> {
             let context = installation_context(&game, &pm).await?;
             context.require_save_management()?;
             let current = pm.active(&context.saves.scope).await?;
-            let fp = if let Some(current) = current { compute_fingerprint(&pm, &current.profile.name, &game).await } else { None };
+            let fp = if let Some(current) = current {
+                compute_fingerprint(&pm, &current.profile.name, &game).await
+            } else {
+                None
+            };
             context.try_profile(&pm, &name, fp.as_ref()).await?;
             let depth = pm
                 .active(&context.saves.scope)
@@ -153,15 +160,12 @@ pub async fn handle(action: ProfileAction) -> Result<()> {
             context.require_save_management()?;
 
             // Compute fingerprint for the current (about-to-be-rolled-back) profile
-            let fp = pm
-                .active(&context.saves.scope)
-                .await?
-                .and_then(|info| {
-                    if !supports_save_profiles(&game).ok()? {
-                        return None;
-                    }
-                    Some(modde_games::save_fingerprint(&info.profile))
-                });
+            let fp = pm.active(&context.saves.scope).await?.and_then(|info| {
+                if !supports_save_profiles(&game).ok()? {
+                    return None;
+                }
+                Some(modde_games::save_fingerprint(&info.profile))
+            });
 
             let restored = context.rollback_profile(&pm, fp.as_ref()).await?;
             println!("Rolled back to profile: {restored}");

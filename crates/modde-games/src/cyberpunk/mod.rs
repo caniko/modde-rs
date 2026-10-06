@@ -216,8 +216,12 @@ impl GamePlugin for Cyberpunk2077 {
     }
 
     fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
-        crate::library::context::steam_user_path(install, prefix, "1091500",
-            Path::new("Saved Games/CD Projekt Red/Cyberpunk 2077"))
+        crate::library::context::steam_user_path(
+            install,
+            prefix,
+            "1091500",
+            Path::new("Saved Games/CD Projekt Red/Cyberpunk 2077"),
+        )
     }
 
     fn classify_mod(&self, mod_dir: &Path) -> ModSafety {

@@ -46,8 +46,15 @@ async fn readiness_reports_ready_manifest() {
         .unwrap();
 
     assert!(report.install_ready);
-    assert!(report.hard_blockers.is_empty());
-    assert_eq!(report.normalized_game, if cfg!(feature = "bethesda") { "skyrim-se" } else { "skyrimspecialedition" });
+    assert_eq!(report.hard_blockers, [] as [std::string::String; 0]);
+    assert_eq!(
+        report.normalized_game,
+        if cfg!(feature = "bethesda") {
+            "skyrim-se"
+        } else {
+            "skyrimspecialedition"
+        }
+    );
 }
 
 #[tokio::test]
@@ -72,7 +79,7 @@ async fn readiness_blocks_missing_manual_archive() {
 
     assert!(!report.install_ready);
     assert_eq!(report.manual_downloads.len(), 1);
-    assert!(report.hard_blockers.is_empty());
+    assert_eq!(report.hard_blockers, [] as [std::string::String; 0]);
 }
 
 #[tokio::test]

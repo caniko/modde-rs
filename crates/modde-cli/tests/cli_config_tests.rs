@@ -91,6 +91,7 @@ fn set_database_writes_expected_settings_toml_without_password() {
 }
 
 #[test]
+#[cfg(feature = "postgres")]
 fn show_reports_settings_and_discrete_env_overrides_with_sources() {
     let fx = Fixture::new();
     set_discrete_postgres(&fx);
@@ -150,6 +151,21 @@ fn show_reports_settings_and_discrete_env_overrides_with_sources() {
         env_stdout.contains("user: env_user (from MODDE_DATABASE_USER)"),
         "unexpected show output:\n{env_stdout}"
     );
+}
+
+#[test]
+#[cfg(not(feature = "postgres"))]
+fn show_rejects_disabled_postgres_backend_without_connecting() {
+    let fx = Fixture::new();
+    set_discrete_postgres(&fx);
+    let output = assert_failure(
+        fx.cmd()
+            .args(["config", "show"])
+            .output()
+            .expect("spawn config show"),
+    );
+    assert!(stdout(&output).contains("database backend: postgres (from settings.toml)"));
+    assert!(stderr(&output).contains("PostgreSQL support requires the postgres feature"));
 }
 
 #[test]

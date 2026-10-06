@@ -115,7 +115,7 @@ fn test_patch_only_magic() {
 fn test_patch_empty_ops() {
     let patch = build_patch(&[]);
     let result = apply_patch(b"source data", &patch).unwrap();
-    assert!(result.is_empty());
+    assert_eq!(result, [] as [u8; 0]);
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_patch_copy_offset_at_end() {
     let cop = copy_op(5, 0);
     let patch = build_patch(&[(OP_COPY, &cop)]);
     let result = apply_patch(source, &patch).unwrap();
-    assert!(result.is_empty());
+    assert_eq!(result, [] as [u8; 0]);
 }
 
 #[test]

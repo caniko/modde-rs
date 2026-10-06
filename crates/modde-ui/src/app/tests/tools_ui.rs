@@ -146,7 +146,11 @@ fn browse_nexus_defaults_to_loaded_profile_before_selected_game() {
 
     assert_eq!(
         app.browse_nexus.selected_game_id.as_deref(),
-        Some("skyrim-se")
+        if cfg!(feature = "bethesda") {
+            Some("skyrim-se")
+        } else {
+            None
+        }
     );
 }
 
@@ -170,7 +174,7 @@ fn browse_nexus_game_change_clears_results_and_starts_load() {
     app.browse_nexus.error = Some("stale".to_string());
     app.browse_nexus.install_status = Some("stale install".to_string());
 
-    let _ = app.update(Message::BrowseGameChanged(Some("fallout4".to_string())));
+    let task = app.update(Message::BrowseGameChanged(Some("fallout4".to_string())));
 
     assert_eq!(
         app.browse_nexus.selected_game_id.as_deref(),
@@ -180,7 +184,8 @@ fn browse_nexus_game_change_clears_results_and_starts_load() {
     assert!(app.browse_nexus.collections.is_empty());
     assert!(app.browse_nexus.error.is_none());
     assert!(app.browse_nexus.install_status.is_none());
-    assert!(app.browse_nexus.loading);
+    assert_eq!(app.browse_nexus.loading, cfg!(feature = "bethesda"));
+    assert_eq!(task.units() > 0, cfg!(feature = "bethesda"));
 }
 
 #[test]
@@ -192,7 +197,11 @@ fn browse_nexus_excludes_games_without_verified_numeric_id() {
     );
     assert_eq!(
         Modde::nexus_domain_for_game("skyrim-se").as_deref(),
-        Some("skyrimspecialedition")
+        if cfg!(feature = "bethesda") {
+            Some("skyrimspecialedition")
+        } else {
+            None
+        }
     );
 }
 
@@ -264,7 +273,7 @@ fn test_set_nexus_api_key_draft() {
     let mut app = test_app();
     let _ = app.update(Message::SetNexusApiKeyDraft("abc123".to_string()));
     assert_eq!(app.nexus_api_key_draft, "abc123");
-    assert!(app.settings.nexus_api_key.is_empty());
+    assert_eq!(app.settings.nexus_api_key, "");
 }
 
 #[test]
@@ -322,7 +331,7 @@ fn test_cancel_new_profile_dialog() {
     let _ = app.update(Message::CancelNewProfileDialog);
 
     assert!(!app.new_profile_dialog_open);
-    assert!(app.new_profile_name.is_empty());
+    assert_eq!(app.new_profile_name, "");
 }
 
 #[test]
@@ -351,7 +360,7 @@ fn test_submit_new_profile_creates_profile_and_closes_dialog() {
     complete_create_profile_write(&mut app, "ui-profile-create", "skyrim-se");
 
     assert!(!app.new_profile_dialog_open);
-    assert!(app.new_profile_name.is_empty());
+    assert_eq!(app.new_profile_name, "");
     assert_eq!(app.active_profile.as_deref(), Some("ui-profile-create"));
     assert_eq!(app.status_message, "Profile created");
 }
@@ -383,7 +392,7 @@ fn stale_profile_write_done_is_ignored() {
 fn experiment_try_then_commit_write_completion_updates_state() {
     let _guard = db_lock();
     reset_isolated_db();
-    let pm = crate::app::block_on(ProfileManager::open()).expect("open isolated DB");
+    let pm = fixtures::test_profile_manager();
     let install = tempfile::tempdir().expect("installation");
     let saves = tempfile::tempdir().expect("saves");
     crate::app::block_on(pm.create(&profile_for_game(
@@ -397,15 +406,30 @@ fn experiment_try_then_commit_write_completion_updates_state() {
             .expect("load experiment profile");
 
     let mut app = test_app();
-    app.settings.set_game_path(&GameId::from("cyberpunk2077"), install.path().into());
-    let game = modde_games::library::catalogue(&app.settings).unwrap().games.into_iter()
-        .find(|game| game.install_path.as_deref() == Some(install.path())).unwrap();
+    app.settings
+        .set_game_path(&GameId::from("cyberpunk2077"), install.path().into());
+    let game = modde_games::library::catalogue(&app.settings)
+        .unwrap()
+        .games
+        .into_iter()
+        .find(|game| game.install_path.as_deref() == Some(install.path()))
+        .unwrap();
     modde_core::library::LibraryPreferences::update(|prefs| {
-        prefs.launches.insert(game.id, modde_core::library::LaunchSettings {
-            save_directory: Some(saves.path().into()), ..Default::default()
-        });
-    }).unwrap();
-    let context = crate::app::block_on(modde_games::library::context::for_game(&app.settings, "cyberpunk2077", pm.db())).unwrap();
+        prefs.launches.insert(
+            game.id,
+            modde_core::library::LaunchSettings {
+                save_directory: Some(saves.path().into()),
+                ..Default::default()
+            },
+        );
+    })
+    .unwrap();
+    let context = crate::app::block_on(modde_games::library::context::for_game(
+        &app.settings,
+        "cyberpunk2077",
+        pm.db(),
+    ))
+    .unwrap();
     crate::app::block_on(pm.activate_scoped("experiment-profile", &context.saves, None)).unwrap();
     drop(pm);
     app.selected_game = Some("cyberpunk2077".to_string());
@@ -447,8 +471,13 @@ fn test_select_game() {
 #[test]
 fn wabbajack_select_entry_prefills_profiled_game_dir() {
     let mut app = test_app();
+    let game_id = if cfg!(feature = "bethesda") {
+        "skyrim-se"
+    } else {
+        "SkyrimSpecialEdition"
+    };
     app.settings
-        .set_game_path(&GameId::from("skyrim-se"), PathBuf::from("/games/skyrim"));
+        .set_game_path(&GameId::from(game_id), PathBuf::from("/games/skyrim"));
     app.active_view = View::WabbajackInstaller(WabbajackInstallerState {
         entries: vec![modde_sources::wabbajack::catalog::WabbajackCatalogEntry {
             title: "Legends of the Frost".to_string(),
@@ -478,7 +507,7 @@ fn wabbajack_select_entry_prefills_profiled_game_dir() {
         panic!("expected Wabbajack installer view");
     };
     assert_eq!(state.hm_profile, "legends-of-the-frost");
-    assert_eq!(state.hm_game, "skyrim-se");
+    assert_eq!(state.hm_game, game_id);
     assert_eq!(state.hm_game_dir, "/games/skyrim");
     assert!(!state.hm_game_dir_user_edited);
 }

@@ -1,4 +1,9 @@
-use super::*;
+use super::{
+    AddonDirectory, AddonRepo, BTreeMap, Change, ChangeKind, Command, Config, Context, Deserialize,
+    Digest, Instance, LockFile, LockedRepository, Path, PathBuf, Plan, Result, Sha256, Value,
+    assert_stopped, atomic_write_0600, bail, checkout_path, files, fs, hex, read_lock,
+    render_config, state_dir, validate_instance, verify_checkout_revision,
+};
 use files::{Anchor, Image};
 
 struct Operation {
@@ -187,15 +192,15 @@ impl Prepared {
         let result = (|| -> Result<()> {
             for (index, op) in self.operations.iter().enumerate() {
                 if fail_after.is_some_and(|(after, _)| after == committed.len()) {
-                    if fail_after.is_some_and(|(_, damage)| damage) {
-                        if let Some(&first) = committed.first() {
-                            let (_parent, path) = self.root.target(
-                                &self.operations[first].path,
-                                false,
-                                &mut Vec::new(),
-                            )?;
-                            fs::write(path, "concurrent user data")?;
-                        }
+                    if fail_after.is_some_and(|(_, damage)| damage)
+                        && let Some(&first) = committed.first()
+                    {
+                        let (_parent, path) = self.root.target(
+                            &self.operations[first].path,
+                            false,
+                            &mut Vec::new(),
+                        )?;
+                        fs::write(path, "concurrent user data")?;
                     }
                     bail!("injected commit failure");
                 }
@@ -236,7 +241,7 @@ impl Prepared {
                             })?;
                             pending_backup = None;
                         }
-                        return Err(error.into());
+                        return Err(error);
                     }
                 }
                 committed.push(index);
@@ -314,7 +319,9 @@ pub fn prepare(name: &str, instance: &Instance) -> Result<Prepared> {
         sources: Vec::new(),
     };
     let mut destinations = Vec::new();
-    let lock = if !instance.addons.is_empty() {
+    let lock = if instance.addons.is_empty() {
+        LockFile::default()
+    } else {
         let path = instance
             .lock_file
             .as_ref()
@@ -326,8 +333,6 @@ pub fn prepare(name: &str, instance: &Instance) -> Result<Prepared> {
         let lock: LockFile = serde_json::from_slice(bytes)?;
         prepared.sources.push((path.clone(), image, false));
         lock
-    } else {
-        LockFile::default()
     };
     for addon in &instance.addons {
         let locked = lock
@@ -511,18 +516,25 @@ fn validate_catalog(addons: Vec<CatalogEntry>) -> Result<BTreeMap<String, Catalo
             bail!("addon catalog has an empty id");
         }
         if !entry.repository.starts_with("https://github.com/") {
-            bail!("addon catalog entry '{}' is not an https GitHub URL", entry.id);
+            bail!(
+                "addon catalog entry '{}' is not an https GitHub URL",
+                entry.id
+            );
         }
         if entry.branch.is_empty() {
             bail!("addon catalog entry '{}' has no branch", entry.id);
         }
-        if entry.revision.len() != 40
-            || !entry.revision.bytes().all(|c| c.is_ascii_hexdigit())
-        {
-            bail!("addon catalog entry '{}' has no full commit SHA-1", entry.id);
+        if entry.revision.len() != 40 || !entry.revision.bytes().all(|c| c.is_ascii_hexdigit()) {
+            bail!(
+                "addon catalog entry '{}' has no full commit SHA-1",
+                entry.id
+            );
         }
         if entry.directories.is_empty() {
-            bail!("addon catalog entry '{}' has no directory mapping", entry.id);
+            bail!(
+                "addon catalog entry '{}' has no directory mapping",
+                entry.id
+            );
         }
         if map.insert(entry.id.clone(), entry).is_some() {
             bail!("duplicate addon catalog id");
@@ -727,10 +739,10 @@ pub fn verify_snapshot(
         Image::File(bytes) => bytes,
         _ => bail!("snapshot manifest must be a regular file"),
     };
-    if let Some(expected) = expected_manifest_sha256 {
-        if hex(&Sha256::digest(&manifest_bytes)) != expected.to_ascii_lowercase() {
-            bail!("snapshot manifest identity differs from approved digest");
-        }
+    if let Some(expected) = expected_manifest_sha256
+        && hex(&Sha256::digest(&manifest_bytes)) != expected.to_ascii_lowercase()
+    {
+        bail!("snapshot manifest identity differs from approved digest");
     }
     let parsed: SnapshotManifest =
         serde_json::from_slice(&manifest_bytes).context("parse snapshot manifest")?;
@@ -860,10 +872,7 @@ pub(crate) fn materialize_checkout(
         Ok(_) => {
             let current = source(checkout, true)?;
             if digest_image(&current)? != expected_digest {
-                bail!(
-                    "state checkout changed underneath: {}",
-                    checkout.display()
-                );
+                bail!("state checkout changed underneath: {}", checkout.display());
             }
             return Ok(false);
         }
@@ -875,7 +884,10 @@ pub(crate) fn materialize_checkout(
     files::write_image(checkout, image)?;
     let written = source(checkout, true)?;
     if digest_image(&written)? != expected_digest {
-        bail!("staged checkout verification failed: {}", checkout.display());
+        bail!(
+            "staged checkout verification failed: {}",
+            checkout.display()
+        );
     }
     Ok(true)
 }
@@ -1026,6 +1038,7 @@ pub fn import(config: &Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{ConfigFile, SavedVariables, SeedTree, assert_recent_checkout};
     use std::io::Write;
 
     fn fixture() -> (tempfile::TempDir, Instance) {
@@ -1137,10 +1150,7 @@ mod tests {
         let pfui = &catalog["pfUI"];
         assert_eq!(pfui.repository, "https://github.com/shagu/pfUI.git");
         assert_eq!(pfui.branch, "master");
-        assert_eq!(
-            pfui.revision,
-            "b2f6df84a93a4ce6adbe1fd8f0372454795151f1"
-        );
+        assert_eq!(pfui.revision, "b2f6df84a93a4ce6adbe1fd8f0372454795151f1");
         assert!(pfui.follow);
         // Pin-only entries (dead origins) never fetch.
         assert!(!catalog["aux-addon"].follow);
@@ -1159,10 +1169,7 @@ mod tests {
             "https://github.com/paokkerkir/pfQuest-octo.git"
         );
         assert_eq!(octo.branch, "main");
-        assert_eq!(
-            octo.revision,
-            "dd3dc1fb80afe7a71e5c8ca8c31ca2a3ef57af67"
-        );
+        assert_eq!(octo.revision, "dd3dc1fb80afe7a71e5c8ca8c31ca2a3ef57af67");
         assert!(octo.follow);
         // TurtleWoW click-casting fork (1.12, SuperWoW-optional).
         let clique = &catalog["Clique"];
@@ -1171,10 +1178,7 @@ mod tests {
             "https://github.com/MarcelineVQ/Clique.git"
         );
         assert_eq!(clique.branch, "master");
-        assert_eq!(
-            clique.revision,
-            "872d441ca796e08eba79747909632cf3097100a9"
-        );
+        assert_eq!(clique.revision, "872d441ca796e08eba79747909632cf3097100a9");
         assert!(clique.follow);
     }
 

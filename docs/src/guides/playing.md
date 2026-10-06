@@ -18,10 +18,13 @@ A configured directory is not enough to launch a local game: choose its
 executable. Games do not need a mod plugin to appear in Library or run. A mod
 plugin is needed for profile deployment and profile-managed saves.
 
-This remains a **Partial, unqualified** capability. The implementation includes
-process supervision and store/manager integration, but compilation, regression
-execution, live provider compatibility, containment and game-performance
-measurements have not yet been completed for this change.
+This remains a **Partial** capability. Native-Linux compilation, regression
+tests, real bubblewrap containment and packaged lifecycle fixtures have passed
+for the approved implementation. Live GUI-to-game, Steam/Heroic/manager save
+continuity and real Proton/UMU compatibility still require Atlas qualification.
+Performance measurements are report-only and have not been collected for real
+games. See [Library and sandbox qualification](../reference/library-qualification.md)
+for the exact revisions, receipts and remaining gates.
 
 ## Owned games and provider coverage
 
@@ -299,6 +302,36 @@ game exit, and sandboxing such a handoff is rejected.
 
 ## Session status and recovery
 
+Every accepted Play/store-hook/manager attempt allocates a private launch bundle
+before resolving or preflighting the command. `library status` lists the ten most
+recent attempts, including completed and rejected launches, with IDs and paths:
+
+```sh
+modde library status
+modde library logs --run RUN_ID
+modde library logs --run RUN_ID --kind completion
+modde library logs --run RUN_ID --kind events
+modde library diagnostics --run RUN_ID > modde-launch-diagnostics.json
+```
+
+Omit `--run` to inspect the latest attempt. Logs show a bounded 8 KiB tail.
+Bundles live under `<modde-data-dir>/logs/launches/`; directories are owner-only
+and output files are mode 0600. `game.log` captures combined stdout/stderr in the
+supervisor, even after the GUI or launching CLI exits. `completion.log` records
+the detached completion worker, and `events.jsonl` records lifecycle phases.
+The GUI's persistent tracing file is `<modde-data-dir>/logs/gui.log`, rotated at
+startup after 5 MiB with three backups. Library exposes **Open logs** and
+**Export latest diagnostics**.
+
+Exports contain structured settings, mount and process evidence, completion
+results and phase timestamps. Argument values, environment values, error text,
+raw output and private launch requests are excluded. Filesystem paths, profile
+names and hardware identifiers remain for diagnosis; an export is not anonymous.
+Raw local logs may contain whatever the game prints. Completed ordinary bundles
+retain the latest 50 by default (`MODDE_LOG_KEEP_LAUNCHES` changes this); pending
+sessions, pending completion receipts, unfinished attempts and performance/bisect
+bundles are protected. Runtime caches, save vaults and journals are not pruned.
+
 An unfinished session survives GUI restarts and blocks profile, deployment and
 save mutations. Inspect the journal and process evidence with:
 
@@ -319,6 +352,17 @@ Confirmation cannot override a live observer lease or an active session cgroup.
 `UMU_CONTAINER_NSENTER=1` is rejected because reconnecting to an existing UMU
 service can run the game outside this session's descendant tree. Direct launches
 clear an inherited value unless it is explicitly supplied in launch settings.
+Sandboxed launches also run an observer inside the PID namespace. It keeps
+bubblewrap's game command alive until detached descendants exit and returns a
+failure if any observed descendant fails. Observing bubblewrap only from the
+host would allow an early launcher exit to kill the game and report success.
+The inner observer acknowledges command execution through a private inherited
+pipe, closed on game exec. `boundary_started` means the outer process spawned;
+`started` means the native command or in-namespace command spawned. Neither proves
+which renderer a game used. Failure before inner startup retains preparation for
+`library recover`; missing inner completion evidence requires explicit exit
+confirmation. Inner signal statuses and detached failures survive bubblewrap's
+outer exit-code normalization.
 If a save directory has disappeared, restore it before retrying capture; modde
 does not treat a missing directory as a new empty save set.
 
@@ -403,8 +447,10 @@ silently retries without isolation.
 
 The sandbox mounts the game, prefix and save directories writable, mod-store and
 staging targets read-only, plus explicit user-granted paths. It supplies system
-libraries, Nix store paths, GPU/driver resources, display/audio sockets and input
-devices. Resolved command and wrapper executables are granted individually;
+libraries, Nix store paths, GPU/driver resources, display/audio sockets and
+classified controller nodes. Raw keyboard/mouse event devices and unclassified
+events are not automatically exposed; devices such as hidraw or uinput need
+explicit grants. Resolved command and wrapper executables are granted individually;
 dedicated Wine/Proton/UMU runtime trees and store-declared runtime mounts are also
 included. An arbitrary wrapper's parent directory is not granted automatically.
 The complete discovered mount set is probed before deployment or save switching.
@@ -437,7 +483,69 @@ measurements with the same runner, prefix, settings, warmed caches and scene.
 Record startup time, frame-time distributions and run-to-run variation; do not
 infer parity from a successful launch alone.
 
+### First-run prefixes and cloud saves
+
+Initialize Wine/Proton/UMU in the store before selecting a managed profile.
+Confirm the physical Wine root has `drive_c`, resolve UMU's `pfx` alias, and save
+that root in the prefix field. The runner-facing `WINEPREFIX` and compat root
+must resolve to that same installation; an uninitialized or mismatching prefix
+fails before live saves or profiles change. The sandbox binds that exact compat
+root rather than a writable parent shared by other installations. Missing
+sandbox prefix/save directories must be initialized before launch.
+
+For profile-managed Steam saves, disable Steam Cloud for the game in Steam
+Properties and restart Steam, then check **Steam Cloud is disabled** in the
+installation's settings (JSON: `steam_cloud_disabled: true`). This is your saved
+assertion, not automatic verification of Steam's server-side state. Heroic needs
+its matching configuration to explicitly contain `autoSyncSaves: false`, followed
+by a restart. Cloud clients write outside the profile save boundary; preserving
+their metadata does not make simultaneous synchronization safe.
+
+### Atlas production iteration
+
+Atlas's Home Manager runtime wraps desktop and companion CLI entry points with
+database, GPU, logging and manager defaults. Generated store hooks pin this same
+wrapper and explicit configuration/data roots. Regenerate hooks after package
+relocation or an upgrade that removes their pinned store path. The declarative
+OctoWoW configuration is supplied to the GUI using the unwrapped manager binary
+and the exact generated config file, avoiding duplicate `--config` arguments.
+The peer-authenticated `can` role owns the `modde` database/schema and migrations;
+no PostgreSQL superuser role is needed. MangoHud and Vulkan diagnostics are present.
+
+The selected Canix `3b29bb33…` binding, measured Modde/remote-policy transfer
+and corrected online/changed-hook Nomad PostgreSQL backup VMs have passed their
+scoped checks with independent verification.
+Production recovery/adoption, final composition, writer admission and activation
+remain coordinator-owned gates. The VM result does not establish live Modde
+PostgreSQL or actual-game save continuity. See the
+[current qualification record](../reference/library-qualification.md#selected-canix-binding-and-component-acceptance)
+for exact artifacts and receipts.
+
+After admitted Atlas activation, test one entry at a time and retain its launch ID:
+
+1. Native direct launch with sandbox off, then on. Verify display, audio,
+   controllers, successful completion and save continuity.
+2. Native Steam and Heroic hooks. Confirm each hook targets the selected install,
+   uses saved settings and reports inner startup rather than just store handoff.
+3. Initialized Proton/UMU installs, including a physical-prefix alias. Inspect
+   cache/update permissions and external Wine services; qualify the actual
+   renderer separately from the requested GPU route.
+4. OctoWoW from the Library. Check its manager root marker/lease through launch
+   and exit, then exercise interruption and the journal's recovery command.
+5. Close the GUI or interrupt the launching CLI while a game is running. Confirm
+   logs continue, mutation guards remain held, descendants exit before capture,
+   and a restarted GUI displays the correct session phase.
+
+For a failure, retain/export diagnostics before changing settings. Use
+`library recover` only for preparation, `library finish` for observed exit, or
+explicit exit confirmation after checking all Wine/game processes have stopped.
+Exercise save restoration with disposable profiles before testing valuable saves.
+Then use the report-only eight-pair protocol in the qualification reference.
+
 ## Performance capture and paired sandbox runs
+
+See the [qualification record](../reference/library-qualification.md) for the
+checks that have run and the live-game evidence still required.
 
 `modde perf run` and bisect candidates use the same installation-scoped
 preparation, supervision and save capture as Play. Configure MangoHud for the
@@ -506,6 +614,8 @@ failed exit or an unknown status.
 
 No overhead measurements have been collected for this implementation. The
 commands and reports provide the measurement workflow, not a performance result.
+Real-game measurements will be report-only: retain paired deltas and evidence
+without assigning a negligible-overhead pass/fail verdict.
 
 ## Provider references
 
@@ -519,3 +629,28 @@ commands and reports provide the measurement workflow, not a performance result.
 
 See also [Save Management](saves.md), [Deployment](deployment.md),
 [Executables](executables.md), [Tools](tools.md) and [Profiles](profiles.md).
+## GPU selection
+
+Library → Launch Settings includes an optional **GPU render node**. Use a stable
+PCI alias such as `/dev/dri/by-path/pci-0000:03:00.0-render`; probe-order names
+such as `renderD128` are rejected. The corresponding JSON field is
+`"gpu_render_node": "/dev/dri/by-path/pci-0000:03:00.0-render"`.
+
+Saved installation choices take precedence over `MODDE_GPU_RENDER_NODE`, the
+optional host default supplied by `programs.modde.gpu.renderNode` in Home Manager.
+An explicit GPU-selection variable in the saved launch environment also overrides
+the host default when no render node is saved; `DRI_PRIME=0` can request Mesa's
+desktop default for an individual installation.
+Leaving both unset preserves desktop/launcher GPU routing. The host default
+applies at direct game, exact-install store-hook and manager boundaries; ordinary
+store URI dispatch cannot apply a saved GPU override. This setting selects the
+game process, not the modde GUI renderer.
+
+Explicit node selection validates the live character device, PCI identity,
+read/write access and AMD/Intel Mesa driver before save/profile changes. It uses
+Mesa's documented `DRI_PRIME=pci-...` preference for OpenGL and Vulkan. Conflicting
+manual GPU-selection variables are rejected; incompatible inherited selection
+variables are removed for a typed selection. Proprietary NVIDIA routing remains
+available through explicit launch environment settings. Requested routing and
+host/driver inventory are retained as evidence, not treated as proof of the
+renderer a game actually used.

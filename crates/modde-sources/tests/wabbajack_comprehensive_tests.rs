@@ -136,7 +136,7 @@ fn test_patch_large_binary_data() {
 fn test_patch_empty_source_empty_output() {
     let patch = build_patch(&[]);
     let result = apply_patch(b"", &patch).unwrap();
-    assert!(result.is_empty());
+    assert_eq!(result, [] as [u8; 0]);
 }
 
 #[test]
@@ -186,7 +186,7 @@ async fn test_validator_empty_manifest_returns_empty_report() {
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.total_files, 0);
     assert_eq!(report.verified, 0);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }
 
@@ -229,7 +229,7 @@ async fn test_validator_all_files_present_and_correct() {
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.total_files, 2);
     assert_eq!(report.verified, 2);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }
 
@@ -362,7 +362,7 @@ async fn test_validator_deeply_nested_files() {
 
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.verified, 1);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
 }
 
 #[tokio::test]
@@ -619,6 +619,6 @@ async fn test_validator_many_files_stress() {
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.total_files, 100);
     assert_eq!(report.verified, 100);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }

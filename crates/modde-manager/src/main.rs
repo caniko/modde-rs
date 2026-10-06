@@ -1015,12 +1015,18 @@ fn update_all(config: &Config) -> Result<()> {
             // local source plus a materialized state checkout, so
             // deployment never waits for them either.
             if !transaction::addon_follow(&addon.id)? {
-                let (image, locked) = transaction::reviewed_checkout(&addon)?;
-                let digest = locked.content_sha256.clone().context("reviewed checkout lacks a digest")?;
+                let (image, locked) = transaction::reviewed_checkout(addon)?;
+                let digest = locked
+                    .content_sha256
+                    .clone()
+                    .context("reviewed checkout lacks a digest")?;
                 let checkout = checkout_path(instance, &addon.id);
                 transaction::materialize_checkout(&checkout, &image, &digest)?;
                 lock.repositories.insert(addon.id.clone(), locked);
-                println!("{name}: {} locked at pin (no live origin to follow)", addon.id);
+                println!(
+                    "{name}: {} locked at pin (no live origin to follow)",
+                    addon.id
+                );
                 continue;
             }
             let checkout = ensure_checkout(
@@ -1078,8 +1084,14 @@ fn capture_all(config: &Config) -> Result<()> {
 fn assert_stopped(instance: &Instance) -> Result<()> {
     if instance.root.exists() {
         let anchor = files::Anchor::open(&instance.root)?;
-        if !matches!(anchor.read(Path::new(".modde-library-session.json"), false)?, files::Image::Missing) {
-            bail!("modde Library owns an unfinished session in {}; finish or recover that session before changing this instance", instance.root.display());
+        if !matches!(
+            anchor.read(Path::new(".modde-library-session.json"), false)?,
+            files::Image::Missing
+        ) {
+            bail!(
+                "modde Library owns an unfinished session in {}; finish or recover that session before changing this instance",
+                instance.root.display()
+            );
         }
     }
     for process in &instance.processes {
@@ -1093,10 +1105,7 @@ fn assert_stopped(instance: &Instance) -> Result<()> {
             .status()
             .context("check game processes")?;
         if status.success() {
-            bail!(
-                "game process '{}' is running; stop it before reconciling",
-                process
-            );
+            bail!("game process '{process}' is running; stop it before reconciling");
         }
         if status.code() != Some(1) {
             bail!("pgrep failed while checking game processes: {status}");
@@ -1186,7 +1195,13 @@ fn safe_name(value: &str) -> String {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write as _;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })
 }
 
 fn ensure_checkout(
@@ -1469,13 +1484,19 @@ mod tests {
         let flat = root.path().join("flat");
         fs::create_dir_all(&flat).unwrap();
         fs::write(flat.join("modde-manager"), "#!/bin/sh\nexit 0\n").unwrap();
-        fs::set_permissions(flat.join("modde-manager"), fs::Permissions::from_mode(0o644))
-            .unwrap();
+        fs::set_permissions(
+            flat.join("modde-manager"),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
         let good = root.path().join("good");
         fs::create_dir_all(&good).unwrap();
         fs::write(good.join("modde-manager"), "#!/bin/sh\nexit 0\n").unwrap();
-        fs::set_permissions(good.join("modde-manager"), fs::Permissions::from_mode(0o755))
-            .unwrap();
+        fs::set_permissions(
+            good.join("modde-manager"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
         let path = std::env::join_paths([shadow_dir, flat, good.clone()]).unwrap();
         assert_eq!(
             find_config_fallback(&exe, Some(path.as_os_str())).unwrap(),
@@ -1550,19 +1571,23 @@ mod tests {
     }
 
     fn git_repo_with_origin(dir: &Path, origin: &str) {
-        assert!(Command::new("git")
-            .args(["init", "--quiet"])
-            .arg(dir)
-            .status()
-            .unwrap()
-            .success());
-        assert!(Command::new("git")
-            .args(["-C"])
-            .arg(dir)
-            .args(["remote", "add", "origin", origin])
-            .status()
-            .unwrap()
-            .success());
+        assert!(
+            Command::new("git")
+                .args(["init", "--quiet"])
+                .arg(dir)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(
+            Command::new("git")
+                .args(["-C"])
+                .arg(dir)
+                .args(["remote", "add", "origin", origin])
+                .status()
+                .unwrap()
+                .success()
+        );
     }
 
     fn test_instance(dir: &tempfile::TempDir) -> Instance {

@@ -53,7 +53,7 @@ fn preview_reports_changed_when_proxy_or_ini_differ() {
             .changed_files
             .contains(&PathBuf::from("OptiScaler.ini"))
     );
-    assert!(preview.missing_inputs.is_empty());
+    assert_eq!(preview.missing_inputs, [] as [std::string::String; 0]);
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn preview_reports_unchanged_and_does_not_create_target_dirs() {
         .preview_apply_for(game.path(), None, &config)
         .expect("preview");
 
-    assert!(preview.changed_files.is_empty());
+    assert_eq!(preview.changed_files, [] as [std::path::PathBuf; 0]);
     assert!(
         preview
             .unchanged_files

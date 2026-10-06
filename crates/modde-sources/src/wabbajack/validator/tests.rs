@@ -22,7 +22,7 @@ async fn test_validate_empty_manifest() {
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.total_files, 0);
     assert_eq!(report.verified, 0);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }
 
@@ -93,7 +93,7 @@ async fn preflight_and_validate_accept_compressed_logical_files() {
     assert!(preflight_staging(&manifest, staging.path()).await);
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.verified, 1);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }
 
@@ -195,7 +195,7 @@ async fn test_validate_correct_file() {
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.total_files, 1);
     assert_eq!(report.verified, 1);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }
 
@@ -424,6 +424,6 @@ async fn test_validate_nested_file_path() {
     let report = validate_install(&manifest, staging.path()).await.unwrap();
     assert_eq!(report.total_files, 1);
     assert_eq!(report.verified, 1);
-    assert!(report.missing.is_empty());
+    assert_eq!(report.missing, [] as [std::string::String; 0]);
     assert!(report.mismatches.is_empty());
 }

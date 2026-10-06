@@ -38,7 +38,10 @@ fn user_game_registered_alongside_built_ins() {
 
     let games = all_games();
     assert!(games.iter().any(|game| game.game_id == "custom-generic"));
-    assert_eq!(games.iter().any(|game| game.game_id == "skyrim-se"), cfg!(feature = "bethesda"));
+    assert_eq!(
+        games.iter().any(|game| game.game_id == "skyrim-se"),
+        cfg!(feature = "bethesda")
+    );
 
     let supported = supported_games();
     assert!(

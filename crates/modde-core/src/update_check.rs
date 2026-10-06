@@ -9,8 +9,7 @@ use tokio::fs;
 
 use crate::settings::AppSettings;
 
-const DEFAULT_RELEASE_URL: &str =
-    "https://api.github.com/repos/caniko/modde-rs/releases/latest";
+const DEFAULT_RELEASE_URL: &str = "https://api.github.com/repos/caniko/modde-rs/releases/latest";
 const CACHE_TTL: Duration = Duration::from_hours(24);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

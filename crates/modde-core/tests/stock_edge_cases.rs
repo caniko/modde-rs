@@ -39,7 +39,7 @@ async fn test_snapshot_empty_directory() {
         .snapshot(&GameId::from("empty-game"), src.path())
         .await
         .unwrap();
-    assert!(!snap.hash.is_empty());
+    assert_ne!(snap.hash, "");
     // Verify still passes (empty tree is consistent)
     let ok = mgr.verify(&GameId::from("empty-game")).await.unwrap();
     assert!(ok);
@@ -57,7 +57,7 @@ async fn test_snapshot_single_file() {
         .snapshot(&GameId::from("single-file"), src.path())
         .await
         .unwrap();
-    assert!(!snap.hash.is_empty());
+    assert_ne!(snap.hash, "");
 
     let ok = mgr.verify(&GameId::from("single-file")).await.unwrap();
     assert!(ok);
@@ -79,7 +79,7 @@ async fn test_snapshot_deeply_nested() {
         .unwrap();
     let ok = mgr.verify(&GameId::from("deep-game")).await.unwrap();
     assert!(ok);
-    assert!(!snap.hash.is_empty());
+    assert_ne!(snap.hash, "");
 }
 
 #[tokio::test]

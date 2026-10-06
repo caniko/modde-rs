@@ -111,6 +111,8 @@ impl From<ButtonAction> for Message {
             ButtonAction::BrowseExecutablePath => Message::BrowseExecutablePath,
             ButtonAction::BrowseExecutableWorkingDir => Message::BrowseExecutableWorkingDir,
             ButtonAction::RefreshLibrary => Message::LibraryRefresh,
+            ButtonAction::OpenLibraryLogs => Message::LibraryOpenLogs,
+            ButtonAction::ExportLibraryDiagnostics => Message::LibraryExportDiagnostics,
             ButtonAction::FavoriteLibraryEntry(id) => Message::LibraryFavorite(id),
             ButtonAction::InstallLibraryEntry(id) => Message::LibraryInstall(id),
             ButtonAction::SaveLibraryLaunch => Message::LibrarySaveLaunch,

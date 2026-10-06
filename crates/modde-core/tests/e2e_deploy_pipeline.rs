@@ -363,7 +363,10 @@ async fn test_profile_manager_full_lifecycle() {
     let mgr = ProfileManager::with_db(ModdeDb::open_memory().await.unwrap());
 
     // Initially empty
-    assert!(mgr.list().await.unwrap().is_empty());
+    assert_eq!(
+        mgr.list().await.unwrap(),
+        [] as [modde_core::ProfileSummary; 0]
+    );
 
     // Create profiles
     let p1 = Profile {

@@ -71,7 +71,7 @@ fn settings_round_trip_preserves_all_fields() {
 #[test]
 fn settings_load_missing_file_gives_defaults() {
     let loaded = AppSettings::load_from(&PathBuf::from("/nonexistent/path/settings.toml"));
-    assert!(loaded.nexus_api_key.is_empty());
+    assert_eq!(loaded.nexus_api_key, "");
     assert!(loaded.game_paths.is_empty());
     assert!(loaded.selected_game.is_none());
 }
@@ -175,7 +175,7 @@ async fn ui_init_no_profiles_no_settings_gives_nothing() {
 
     let (profiles, selected) = simulate_ui_init(&pm, &mut settings).await;
 
-    assert!(profiles.is_empty());
+    assert_eq!(profiles, [] as [modde_core::ProfileSummary; 0]);
     assert!(selected.is_none());
     assert!(settings.selected_game.is_none());
 }
