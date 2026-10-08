@@ -12,6 +12,7 @@
 //! `BOOLEAN`, and the timestamp `TEXT` columns keep a `to_char(now(), …)`
 //! default so they read back as the same `String` format `SQLite` produces.
 
+use sqlx::AssertSqlSafe;
 use tracing::info;
 
 use crate::error::Result;
@@ -41,7 +42,7 @@ async fn sqlite_user_version(pool: &sqlx::SqlitePool) -> Result<i64> {
 
 async fn sqlite_set_user_version(pool: &sqlx::SqlitePool, version: i64) -> Result<()> {
     // PRAGMA values cannot be bound; `version` is an internal constant.
-    sqlx::query(&format!("PRAGMA user_version = {version}"))
+    sqlx::query(AssertSqlSafe(format!("PRAGMA user_version = {version}")))
         .execute(pool)
         .await?;
     Ok(())
@@ -49,7 +50,8 @@ async fn sqlite_set_user_version(pool: &sqlx::SqlitePool, version: i64) -> Resul
 
 async fn sqlite_column_exists(pool: &sqlx::SqlitePool, table: &str, column: &str) -> Result<bool> {
     use sqlx::Row;
-    let rows = sqlx::query(&format!("PRAGMA table_info({table})"))
+    // Identifiers come only from the internal migration ladder below.
+    let rows = sqlx::query(AssertSqlSafe(format!("PRAGMA table_info({table})")))
         .fetch_all(pool)
         .await?;
     for row in &rows {
@@ -70,9 +72,10 @@ async fn sqlite_add_column_if_missing(
     if sqlite_column_exists(pool, table, column).await? {
         return Ok(());
     }
-    sqlx::raw_sql(&format!(
+    // Table, column, and definition are fixed strings from the migration ladder.
+    sqlx::raw_sql(AssertSqlSafe(format!(
         "ALTER TABLE {table} ADD COLUMN {column} {definition};"
-    ))
+    )))
     .execute(pool)
     .await?;
     Ok(())

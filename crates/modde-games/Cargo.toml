@@ -63,7 +63,7 @@ serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true, optional = true }
 toml = { workspace = true }
 tokio = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["query"] }
 zip = { workspace = true }
 futures = { workspace = true }
 flate2 = { workspace = true }
@@ -78,4 +78,4 @@ xxhash-rust = { workspace = true }
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
-tracing-test = { version = "0.2", features = ["no-env-filter"] }
+tracing-test = { version = "0.2.6", features = ["no-env-filter"] }

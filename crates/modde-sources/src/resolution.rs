@@ -237,6 +237,9 @@ impl ModdeDependencyProvider {
 }
 
 impl Interner for ModdeDependencyProvider {
+    type NameId = NameId;
+    type SolvableId = SolvableId;
+
     fn display_solvable(&self, solvable: SolvableId) -> impl fmt::Display + '_ {
         let record = self.pool.resolve_solvable(solvable);
         format!("{} {}", self.display_name(record.name), record.record)

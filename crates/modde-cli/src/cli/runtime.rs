@@ -235,6 +235,7 @@ fn init_remote_telemetry(runtime: &tokio::runtime::Runtime) -> Result<()> {
             target_triple: target_platform(),
         },
         context: serde_json::json!({}),
+        context_files: Vec::new(),
         sent_retention_days: 90,
     })
     .context("failed to install remote telemetry panic hook")?;

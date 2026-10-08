@@ -21,7 +21,7 @@
 use std::borrow::Cow;
 
 use sqlx::sqlite::{SqliteArguments, SqlitePool, SqliteRow};
-use sqlx::{Arguments, Row};
+use sqlx::{Arguments, AssertSqlSafe, Row};
 
 #[cfg(feature = "postgres")]
 use sqlx::postgres::{PgArguments, PgPool, PgRow};
@@ -188,7 +188,7 @@ fn bind_err(e: impl std::fmt::Display) -> CoreError {
     CoreError::Other(format!("failed to bind SQL parameter: {e}").into())
 }
 
-fn sqlite_args(vals: &[Val]) -> Result<SqliteArguments<'static>> {
+fn sqlite_args(vals: &[Val]) -> Result<SqliteArguments> {
     let mut args = SqliteArguments::default();
     for v in vals {
         match v {
@@ -250,8 +250,8 @@ fn rewrite_placeholders(sql: &str) -> String {
     out
 }
 
-fn prepare_sql(dialect: Dialect, sql: &str) -> Cow<'_, str> {
-    match dialect {
+fn prepare_sql(dialect: Dialect, sql: &str) -> AssertSqlSafe<String> {
+    let sql = match dialect {
         Dialect::Sqlite => {
             if sql.contains("{NOW}") {
                 Cow::Owned(sql.replace("{NOW}", "datetime('now')"))
@@ -264,7 +264,10 @@ fn prepare_sql(dialect: Dialect, sql: &str) -> Cow<'_, str> {
             let sql = sql.replace("{NOW}", "to_char(now(), 'YYYY-MM-DD HH24:MI:SS')");
             Cow::Owned(rewrite_placeholders(&sql))
         }
-    }
+    };
+    // Callers supply internal SQL templates; user data is bound separately via Val.
+    // Only fixed dialect syntax is interpolated here.
+    AssertSqlSafe(sql.into_owned())
 }
 
 /// An open connection pool to one of the supported backends.
@@ -292,7 +295,7 @@ impl Db {
         match self {
             Db::Sqlite(pool) => {
                 let args = sqlite_args(vals)?;
-                Ok(sqlx::query_with(&sql, args)
+                Ok(sqlx::query_with(sql, args)
                     .execute(pool)
                     .await?
                     .rows_affected())
@@ -300,7 +303,7 @@ impl Db {
             #[cfg(feature = "postgres")]
             Db::Postgres(pool) => {
                 let args = pg_args(vals)?;
-                Ok(sqlx::query_with(&sql, args)
+                Ok(sqlx::query_with(sql, args)
                     .execute(pool)
                     .await?
                     .rows_affected())
@@ -319,13 +322,13 @@ impl Db {
         match self {
             Db::Sqlite(pool) => {
                 let args = sqlite_args(vals)?;
-                let rows = sqlx::query_with(&sql, args).fetch_all(pool).await?;
+                let rows = sqlx::query_with(sql, args).fetch_all(pool).await?;
                 rows.iter().map(|r| map(r as &dyn DbRow)).collect()
             }
             #[cfg(feature = "postgres")]
             Db::Postgres(pool) => {
                 let args = pg_args(vals)?;
-                let rows = sqlx::query_with(&sql, args).fetch_all(pool).await?;
+                let rows = sqlx::query_with(sql, args).fetch_all(pool).await?;
                 rows.iter().map(|r| map(r as &dyn DbRow)).collect()
             }
         }
@@ -342,7 +345,7 @@ impl Db {
         match self {
             Db::Sqlite(pool) => {
                 let args = sqlite_args(vals)?;
-                match sqlx::query_with(&sql, args).fetch_optional(pool).await? {
+                match sqlx::query_with(sql, args).fetch_optional(pool).await? {
                     Some(r) => Ok(Some(map(&r as &dyn DbRow)?)),
                     None => Ok(None),
                 }
@@ -350,7 +353,7 @@ impl Db {
             #[cfg(feature = "postgres")]
             Db::Postgres(pool) => {
                 let args = pg_args(vals)?;
-                match sqlx::query_with(&sql, args).fetch_optional(pool).await? {
+                match sqlx::query_with(sql, args).fetch_optional(pool).await? {
                     Some(r) => Ok(Some(map(&r as &dyn DbRow)?)),
                     None => Ok(None),
                 }
@@ -369,13 +372,13 @@ impl Db {
         match self {
             Db::Sqlite(pool) => {
                 let args = sqlite_args(vals)?;
-                let r = sqlx::query_with(&sql, args).fetch_one(pool).await?;
+                let r = sqlx::query_with(sql, args).fetch_one(pool).await?;
                 map(&r as &dyn DbRow)
             }
             #[cfg(feature = "postgres")]
             Db::Postgres(pool) => {
                 let args = pg_args(vals)?;
-                let r = sqlx::query_with(&sql, args).fetch_one(pool).await?;
+                let r = sqlx::query_with(sql, args).fetch_one(pool).await?;
                 map(&r as &dyn DbRow)
             }
         }
@@ -413,7 +416,7 @@ impl DbTx<'_> {
         match self {
             DbTx::Sqlite(tx) => {
                 let args = sqlite_args(vals)?;
-                Ok(sqlx::query_with(&sql, args)
+                Ok(sqlx::query_with(sql, args)
                     .execute(&mut **tx)
                     .await?
                     .rows_affected())
@@ -421,7 +424,7 @@ impl DbTx<'_> {
             #[cfg(feature = "postgres")]
             DbTx::Postgres(tx) => {
                 let args = pg_args(vals)?;
-                Ok(sqlx::query_with(&sql, args)
+                Ok(sqlx::query_with(sql, args)
                     .execute(&mut **tx)
                     .await?
                     .rows_affected())

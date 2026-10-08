@@ -28,24 +28,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [features]
-default = [
-  "all-games",
-  "bethesda-archives",
-  "postgres",
-  "linux-integrations",
-  "macos-integrations",
-]
-all-games = [
-  "bethesda",
-  "gamebryo",
-  "cyberpunk",
-  "ue4",
-  "bg3",
-  "stardew",
-  "bannerlord",
-  "witcher3",
-  "oblivion-remastered",
-]
+default = ["all-games", "bethesda-archives", "postgres", "linux-integrations", "macos-integrations"]
+all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
 bethesda = ["modde-games/bethesda", "bethesda-archives"]
 gamebryo = ["modde-games/gamebryo", "bethesda-archives"]
 cyberpunk = ["modde-games/cyberpunk"]
@@ -58,18 +42,9 @@ oblivion-remastered = ["modde-games/oblivion-remastered", "bethesda-archives"]
 bethesda-archives = ["modde-core/bethesda-archives", "dep:lz4_flex"]
 postgres = ["modde-core/postgres"]
 rar = ["dep:unrar"]
-linux-integrations = [
-  "modde-core/linux-integrations",
-  "modde-games/linux-integrations",
-]
-macos-integrations = [
-  "modde-core/macos-integrations",
-  "modde-games/macos-integrations",
-]
-windows-integrations = [
-  "modde-core/windows-integrations",
-  "modde-games/windows-integrations",
-]
+linux-integrations = ["modde-core/linux-integrations", "modde-games/linux-integrations"]
+macos-integrations = ["modde-core/macos-integrations", "modde-games/macos-integrations"]
+windows-integrations = ["modde-core/windows-integrations", "modde-games/windows-integrations"]
 
 [dependencies]
 modde-core = { workspace = true }
@@ -99,9 +74,9 @@ parking_lot = { workspace = true }
 sevenz-rust2 = { workspace = true }
 zstd = { workspace = true }
 resolvo = { workspace = true }
-httpdate = "1"
+httpdate = "1.0.3"
 unrar = { package = "unrar-ng", version = "0.7.7", optional = true }
-memory-admission = { version = "0.1.6", git = "https://github.com/caniko/rs-memory-admission.git", rev = "43c603e848ccc00af222a4ad2996b37a793385e2", default-features = false, features = [
+memory-admission = { version = "0.1.7", git = "https://github.com/caniko/rs-memory-admission.git", rev = "fce8d16ee5a2bbd93aafedc9d06ff71004e35d76", default-features = false, features = [
   "async",
 ] }
 

@@ -245,12 +245,18 @@ pub use identity::{InstallationIdentity, normalized_path};
 /// Hash the exact byte representation, avoiding lossy path collisions and path
 /// separators in persisted identifiers. Relocation intentionally needs rebinding.
 pub fn installation_id(entitlement: &str, path: &Path) -> String {
+    use std::fmt::Write as _;
     let normalized = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let mut hash = Sha256::new();
     hash.update(entitlement.as_bytes());
     hash.update([0]);
     hash.update(normalized.as_os_str().as_encoded_bytes());
-    format!("install-{:x}", hash.finalize())
+    let mut id = String::with_capacity(72);
+    id.push_str("install-");
+    for byte in hash.finalize() {
+        write!(&mut id, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    id
 }
 
 /// Advisory resource lock. Never unlink a lock file: that would permit two

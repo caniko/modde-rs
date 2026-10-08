@@ -15,9 +15,9 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-semver = "1"
+semver.workspace = true
 tracing-subscriber.workspace = true
-harbor-xtask = { git = "https://github.com/caniko/harbor-rs.git", rev = "7b6bee8bc1ff7503b9f147ca0ff723d4e4a37e23" }
+harbor-xtask = { git = "https://github.com/caniko/harbor-rs.git", rev = "c4ffa5d9b9232eae1f6693dfbcbcdd2548f31592" }
 
 [lints]
 workspace = true

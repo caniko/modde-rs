@@ -143,6 +143,7 @@ fn project() -> ProjectConfig {
         workspace_root: root.clone(),
         cargo_workspace: CargoWorkspace {
             packages: Vec::new(),
+            excludes: Vec::new(),
             all_features: false,
         },
         spec_file: Some(root.join("dist/rpm/modde.spec")),
