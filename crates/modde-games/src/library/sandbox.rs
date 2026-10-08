@@ -469,12 +469,15 @@ mod tests {
 
     #[test]
     fn desktop_discovery_is_preserved_without_granting_desktop_directories() {
-        let dir = tempfile::tempdir().unwrap();
+        // Command construction writes runtime trees. Keep the process-wide
+        // data override alive for parallel tests, including in Nix's sandbox.
+        let dir = tempfile::tempdir().unwrap().keep();
+        modde_core::paths::set_data_dir(dir.join("data"));
         let game = LibraryGame::new(
             super::super::Store::Local,
             "test".into(),
             "Test".into(),
-            Some(dir.path().into()),
+            Some(dir),
         );
         let command = command(&game, &LaunchSettings::default(), Path::new("true")).unwrap();
         let args: Vec<_> = command.get_args().collect();
