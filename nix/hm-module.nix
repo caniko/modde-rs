@@ -126,8 +126,8 @@ flake: {
             key: spec:
               lib.mkOption {
                 type = lib.types.nullOr (nixBaseTypeFromSpec spec);
-                default = spec.default;
-                description = spec.description;
+                inherit (spec) default;
+                inherit (spec) description;
                 apply = validateTypedSetting toolId key spec;
               }
           ) (toolSchema.${toolId} or {});
@@ -223,11 +223,7 @@ flake: {
       };
     };
   };
-  profileType = lib.types.submodule ({
-    name,
-    config,
-    ...
-  }: {
+  profileType = lib.types.submodule ({config, ...}: {
     options = {
       game = lib.mkOption {
         type = lib.types.str;
@@ -342,7 +338,7 @@ flake: {
               toolSubmodule = lib.types.submoduleWith {
                 modules = [(toolType toolId)];
                 specialArgs = {
-                  game = config.game;
+                  inherit (config) game;
                 };
               };
             in
@@ -613,7 +609,7 @@ flake: {
       renderSettingValue =
         if lib.elem toolId typedToolIds
         then key: value: renderTypedToolSettingValue toolId key value
-        else _key: value: renderToolSettingValue value;
+        else _key: renderToolSettingValue;
       filteredSettings =
         lib.filterAttrs (key: value: key != "_game_id" && key != "optiscaler_profile" && value != null) toolCfg.settings
         // lib.optionalAttrs (toolId == "optiscaler" && toolCfg.profile != null) {
