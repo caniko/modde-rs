@@ -169,3 +169,107 @@ fn legacy_alias_records_do_not_follow_a_new_target() {
     assert!(prefs.bind_installation(&[alias], &[], &[]).is_err());
     assert_ne!(prefs.bind_installation(&[b], &[], &[]).unwrap(), "old");
 }
+
+#[test]
+fn a_detached_legacy_id_is_not_reused_as_the_fallback_for_another_copy() {
+    let root = tempfile::tempdir().unwrap();
+    let a = root.path().join("a");
+    let b = root.path().join("b");
+    std::fs::create_dir(&a).unwrap();
+    std::fs::create_dir(&b).unwrap();
+    let mut prefs = LibraryPreferences::default();
+    let old = prefs
+        .bind_installation(&[a.clone()], &["old".into()], &[])
+        .unwrap();
+    prefs
+        .launches
+        .insert(old.clone(), LaunchSettings::default());
+    let new = prefs.bind_installation(&[b], &[old.clone()], &[]).unwrap();
+    assert_ne!(new, old);
+    assert_eq!(prefs.installations[&old].resolved_paths[&a], a);
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_alias_rebinding_keeps_old_state_and_checks_the_expected_target() {
+    let root = tempfile::tempdir().unwrap();
+    let a = root.path().join("a");
+    let b = root.path().join("b");
+    let alias = root.path().join("current");
+    std::fs::create_dir(&a).unwrap();
+    std::fs::create_dir(&b).unwrap();
+    std::os::unix::fs::symlink(&a, &alias).unwrap();
+    let mut prefs = LibraryPreferences::default();
+    let old = installation_id("local:example", &alias);
+    assert_eq!(
+        prefs
+            .bind_installation(&[alias.clone()], &[old.clone()], &["local:example".into()])
+            .unwrap(),
+        old
+    );
+    prefs.launches.insert(
+        old.clone(),
+        LaunchSettings {
+            profile: Some("original".into()),
+            ..Default::default()
+        },
+    );
+    prefs.legacy_save_bindings.insert(
+        "example".into(),
+        LegacySaveBinding {
+            installation: old.clone(),
+            save_directory: Some(a.join("saves")),
+        },
+    );
+    prefs.needs_deploy.insert(old.clone());
+    std::fs::remove_file(&alias).unwrap();
+    std::os::unix::fs::symlink(&b, &alias).unwrap();
+    let before = prefs.clone();
+    assert!(prefs.rebind_installation_alias(&old, &alias, &a).is_err());
+    assert_eq!(prefs, before);
+    prefs.launches.get_mut(&old).unwrap().save_directory = Some(alias.join("saves"));
+    let alias_settings = prefs.clone();
+    assert!(prefs.rebind_installation_alias(&old, &alias, &b).is_err());
+    assert_eq!(prefs, alias_settings);
+    prefs = before.clone();
+    prefs.launches.get_mut(&old).unwrap().wrappers =
+        vec![vec![alias.join("wrapper").to_string_lossy().into_owned()]];
+    let alias_arguments = prefs.clone();
+    assert!(prefs.rebind_installation_alias(&old, &alias, &b).is_err());
+    assert_eq!(prefs, alias_arguments);
+    prefs = before.clone();
+    prefs
+        .legacy_save_bindings
+        .get_mut("example")
+        .unwrap()
+        .save_directory = Some(alias.join("legacy-saves"));
+    let alias_binding = prefs.clone();
+    assert!(prefs.rebind_installation_alias(&old, &alias, &b).is_err());
+    assert_eq!(prefs, alias_binding);
+    prefs = before.clone();
+    let new = prefs.rebind_installation_alias(&old, &alias, &b).unwrap();
+    assert_ne!(new, old);
+    assert_eq!(prefs.launches[&old], before.launches[&old]);
+    assert_eq!(prefs.launch_for(&new), LaunchSettings::default());
+    assert_eq!(prefs.legacy_save_bindings, before.legacy_save_bindings);
+    assert_eq!(prefs.needs_deploy, before.needs_deploy);
+    assert_eq!(
+        prefs
+            .bind_installation(&[alias.clone()], &[old.clone()], &["local:example".into()])
+            .unwrap(),
+        new
+    );
+    assert_eq!(
+        prefs.bind_installation(&[a], &[old.clone()], &[]).unwrap(),
+        old
+    );
+    // Rebinding back joins the existing physical copy rather than moving vaults.
+    std::fs::remove_file(&alias).unwrap();
+    std::os::unix::fs::symlink(root.path().join("a"), &alias).unwrap();
+    assert_eq!(
+        prefs
+            .rebind_installation_alias(&new, &alias, &root.path().join("a"))
+            .unwrap(),
+        old
+    );
+}

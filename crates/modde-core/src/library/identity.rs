@@ -40,6 +40,94 @@ pub fn normalized_path(path: &Path) -> PathBuf {
 }
 
 impl LibraryPreferences {
+    /// Rebind a changed path alias to its explicitly expected physical copy.
+    /// The old copy keeps its settings, profiles and vaults; only discovery's
+    /// alias moves. Work on a clone so a conflicting binding changes nothing.
+    pub fn rebind_installation_alias(
+        &mut self,
+        id: &str,
+        alias: &Path,
+        expected_target: &Path,
+    ) -> Result<String> {
+        if !alias.is_absolute()
+            || !expected_target.is_absolute()
+            || !alias.is_dir()
+            || !expected_target.is_dir()
+        {
+            bail!("alias and expected target must be existing absolute directories");
+        }
+        let target = alias.canonicalize()?;
+        if target != expected_target.canonicalize()? {
+            bail!(
+                "installation alias {} does not resolve to expected target {}",
+                alias.display(),
+                expected_target.display()
+            );
+        }
+        let identity = self
+            .installations
+            .get(id)
+            .context("installation identity is not recorded")?;
+        if !identity.paths.contains(alias)
+            || identity.resolved_paths.get(alias) == Some(&target)
+            || (identity.resolved_paths.is_empty() && identity.paths.contains(&target))
+        {
+            bail!("path is not a changed alias of installation {id}");
+        }
+        if let Some(settings) = self.launches.get(id) {
+            let uses_alias = [
+                settings.executable.as_ref(),
+                settings.runner.as_ref(),
+                settings.prefix.as_ref(),
+                settings.working_directory.as_ref(),
+                settings.save_directory.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .chain(&settings.sandbox.read_only)
+            .chain(&settings.sandbox.writable)
+            .any(|path| path.starts_with(alias));
+            // ponytail: argv/environment are opaque, so substring checks can
+            // reject unrelated text. Typed path arguments would remove that
+            // ceiling; never rewrite a user command to guess its meaning.
+            let uses_alias_argument = alias.to_str().is_some_and(|alias| {
+                settings
+                    .arguments
+                    .iter()
+                    .chain(settings.wrappers.iter().flatten())
+                    .chain(settings.environment.values())
+                    .any(|value| value.contains(alias))
+            });
+            if uses_alias || uses_alias_argument {
+                bail!(
+                    "replace the old installation's alias-based launch paths with its original physical paths before rebinding"
+                );
+            }
+        }
+        if self.legacy_save_bindings.values().any(|binding| {
+            binding.installation == id
+                && binding
+                    .save_directory
+                    .as_ref()
+                    .is_some_and(|path| path.starts_with(alias))
+        }) {
+            bail!(
+                "the old installation's legacy save binding still uses this alias; restore the original link before changing its save binding"
+            );
+        }
+        let entitlements: Vec<_> = identity.entitlements.iter().cloned().collect();
+        let mut updated = self.clone();
+        let old = updated
+            .installations
+            .get_mut(id)
+            .context("installation identity is not recorded")?;
+        old.paths.remove(alias);
+        old.resolved_paths.remove(alias);
+        let new = updated.bind_installation(&[target, alias.to_path_buf()], &[], &entitlements)?;
+        *self = updated;
+        Ok(new)
+    }
+
     /// Reconcile a physical installation under the preferences lock. Preserve
     /// old keys rather than moving vaults, active slots, or sandbox directories.
     /// Multiple used keys cannot be merged safely without inspecting their DBs.
@@ -87,6 +175,11 @@ impl LibraryPreferences {
             .map(|(id, _)| id.clone())
             .collect();
         for id in old_ids {
+            // A path-derived legacy ID may still name a detached alias. Its
+            // pinned physical copy must not contribute state to the new target.
+            if self.installations.contains_key(id) && !candidates.contains(id) {
+                continue;
+            }
             if self.launches.contains_key(id)
                 || self.needs_deploy.contains(id)
                 || self
@@ -107,7 +200,12 @@ impl LibraryPreferences {
         let id = candidates
             .into_iter()
             .next()
-            .or_else(|| old_ids.first().cloned())
+            .or_else(|| {
+                old_ids
+                    .iter()
+                    .find(|id| !self.installations.contains_key(*id))
+                    .cloned()
+            })
             .unwrap_or_else(|| installation_id("installation", &normalized_path(first)));
         let identity = self.installations.entry(id.clone()).or_default();
         identity.paths.extend(aliases);

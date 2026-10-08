@@ -8,6 +8,87 @@ use modde_core::settings::AppSettings;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
+fn a_retargeted_alias_can_be_rebound_without_transferring_launch_settings() {
+    let fixture = Fixture::new();
+    let a = fixture.root().join("a");
+    let b = fixture.root().join("b");
+    let alias = fixture.root().join("current");
+    for path in [&a, &b] {
+        std::fs::create_dir(path).unwrap();
+    }
+    std::os::unix::fs::symlink(&a, &alias).unwrap();
+    let config = fixture.home().join(".config/modde");
+    std::fs::create_dir_all(&config).unwrap();
+    let mut app = AppSettings::default();
+    app.set_game_path(&modde_core::GameId::from("cyberpunk2077"), alias.clone());
+    std::fs::write(config.join("settings.toml"), toml::to_string(&app).unwrap()).unwrap();
+    let output = fixture
+        .cmd()
+        .args(["library", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let catalogue: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let old = catalogue["games"][0]["id"].as_str().unwrap();
+    let preferences_path = fixture.data_dir().join("library.json");
+    let mut preferences =
+        modde_core::library::LibraryPreferences::load_at(&preferences_path).unwrap();
+    preferences.launches.insert(
+        old.into(),
+        LaunchSettings {
+            profile: Some("original".into()),
+            ..Default::default()
+        },
+    );
+    modde_core::library::atomic_json(&preferences_path, &preferences).unwrap();
+    std::fs::remove_file(&alias).unwrap();
+    std::os::unix::fs::symlink(&b, &alias).unwrap();
+    fixture
+        .cmd()
+        .args(["library", "list", "--json"])
+        .assert()
+        .failure();
+    let before = std::fs::read(&preferences_path).unwrap();
+    fixture
+        .cmd()
+        .args(["library", "rebind", old, "--alias"])
+        .arg(&alias)
+        .arg("--target")
+        .arg(&a)
+        .assert()
+        .failure();
+    assert_eq!(std::fs::read(&preferences_path).unwrap(), before);
+    fixture
+        .cmd()
+        .args(["library", "rebind", old, "--alias"])
+        .arg(&alias)
+        .arg("--target")
+        .arg(&b)
+        .assert()
+        .success();
+    let output = fixture
+        .cmd()
+        .args(["library", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let catalogue: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let new = catalogue["games"][0]["id"].as_str().unwrap();
+    assert_ne!(new, old);
+    let preferences = modde_core::library::LibraryPreferences::load_at(&preferences_path).unwrap();
+    assert_eq!(
+        preferences.launch_for(old).profile.as_deref(),
+        Some("original")
+    );
+    assert_eq!(preferences.launch_for(new), LaunchSettings::default());
+    assert_eq!(catalogue["games"][0]["install_path"], b.to_str().unwrap());
+}
+
+#[test]
 fn a_disappeared_wrapper_does_not_switch_live_saves_or_the_active_profile() {
     let fixture = Fixture::new();
     let install = fixture.root().join("game");

@@ -188,6 +188,15 @@ pub(crate) async fn handle(action: LibraryAction) -> Result<()> {
             command,
         } => manager_launch(id, root, prefix, inherit_env, command).await?,
         LibraryAction::Recover => recover().await?,
+        LibraryAction::Rebind { id, alias, target } => {
+            let new =
+                LibraryPreferences::try_update_at(&LibraryPreferences::path(), |preferences| {
+                    preferences.rebind_installation_alias(&id, &alias, &target)
+                })?;
+            println!(
+                "Alias rebound to installation {new}. Refresh Library and configure the target copy before launching."
+            );
+        }
         LibraryAction::Install { id } => {
             launch::install(&find(&id)?)?;
             println!("Installation requested in the store. Refresh Library when it completes.");

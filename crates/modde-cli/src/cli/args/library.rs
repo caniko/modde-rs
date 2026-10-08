@@ -54,6 +54,14 @@ pub(crate) enum LibraryAction {
     },
     /// Recover interrupted preparation before a game process was started
     Recover,
+    /// Rebind a retargeted installation alias, preserving the old copy's state
+    Rebind {
+        id: String,
+        #[arg(long)]
+        alias: PathBuf,
+        #[arg(long)]
+        target: PathBuf,
+    },
     /// Hand off installation to Steam or Heroic
     Install { id: String },
     /// Read or replace launch settings with a JSON file (see the playing guide)
