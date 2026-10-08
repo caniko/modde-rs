@@ -131,18 +131,18 @@ the archive at the repository root. Compare `git status --short` with the source
 
 ## Code map
 
-| Area | Repository paths |
-| --- | --- |
-| Shared lifecycle, receipts, hooks, observation | `crates/modde-cli/src/commands/library.rs`, `commands/library/{hooks,process}.rs` |
-| CLI dispatch/leases/helper arguments | `crates/modde-cli/src/cli/{args/library.rs,runtime.rs,dispatch/,mutation/}` |
-| Catalogue, installation/save contexts, prefixes, sandbox | `crates/modde-games/src/library/{providers,context,launch,runtime,sandbox,operations}.rs` |
-| Preferences, identities, journals, save transitions | `crates/modde-core/src/library.rs`, `library/{identity,session,save_transition}.rs`, `paths.rs` |
-| Capture/ingestion/benchmarks/bisects | `crates/modde-core/src/performance.rs`, `crates/modde-cli/src/commands/perf.rs`, `commands/bisect/` |
-| GUI handlers/settings/race guards | `crates/modde-ui/src/app/{update.rs,update_parts/library.rs,update_parts/navigation.rs,tests/library.rs}`, `src/views/library.rs`, `src/views/library/settings.rs` |
-| Manager bridge and durable markers | `crates/modde-manager/src/{main,wiring}.rs` (`.modde-library-session.json`) |
-| Fingerprints/dependencies | `crates/modde-games/src/save_fingerprint.rs`, `crates/modde-cli/Cargo.toml` (production `tempfile`) |
-| Regression source | `crates/modde-cli/tests/cli_library_{preparation,supervision}.rs`, `crates/modde-games/tests/{installation_context_tests,installation_prefix_tests,store_context_tests,library_sandbox_commands}.rs`, `crates/modde-core/tests/{installation_state_tests,save_transition_tests}.rs` |
-| Detailed behavior/status | `docs/src/guides/playing.md`, `docs/src/reference/parity.md`, `docs/capability-matrix.toml` |
+| Area                                                     | Repository paths                                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared lifecycle, receipts, hooks, observation           | `crates/modde-cli/src/commands/library.rs`, `commands/library/{hooks,process}.rs`                                                                                                                                                                                                   |
+| CLI dispatch/leases/helper arguments                     | `crates/modde-cli/src/cli/{args/library.rs,runtime.rs,dispatch/,mutation/}`                                                                                                                                                                                                         |
+| Catalogue, installation/save contexts, prefixes, sandbox | `crates/modde-games/src/library/{providers,context,launch,runtime,sandbox,operations}.rs`                                                                                                                                                                                           |
+| Preferences, identities, journals, save transitions      | `crates/modde-core/src/library.rs`, `library/{identity,session,save_transition}.rs`, `paths.rs`                                                                                                                                                                                     |
+| Capture/ingestion/benchmarks/bisects                     | `crates/modde-core/src/performance.rs`, `crates/modde-cli/src/commands/perf.rs`, `commands/bisect/`                                                                                                                                                                                 |
+| GUI handlers/settings/race guards                        | `crates/modde-ui/src/app/{update.rs,update_parts/library.rs,update_parts/navigation.rs,tests/library.rs}`, `src/views/library.rs`, `src/views/library/settings.rs`                                                                                                                  |
+| Manager bridge and durable markers                       | `crates/modde-manager/src/{main,wiring}.rs` (`.modde-library-session.json`)                                                                                                                                                                                                         |
+| Fingerprints/dependencies                                | `crates/modde-games/src/save_fingerprint.rs`, `crates/modde-cli/Cargo.toml` (production `tempfile`)                                                                                                                                                                                 |
+| Regression source                                        | `crates/modde-cli/tests/cli_library_{preparation,supervision}.rs`, `crates/modde-games/tests/{installation_context_tests,installation_prefix_tests,store_context_tests,library_sandbox_commands}.rs`, `crates/modde-core/tests/{installation_state_tests,save_transition_tests}.rs` |
+| Detailed behavior/status                                 | `docs/src/guides/playing.md`, `docs/src/reference/parity.md`, `docs/capability-matrix.toml`                                                                                                                                                                                         |
 
 ## Next work, in order
 

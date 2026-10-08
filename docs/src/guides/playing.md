@@ -30,13 +30,13 @@ Ownership and installation are separate. An owned, uninstalled game has
 is handed to Steam or Heroic. Library rescans while idle, or use **Refresh** after
 installation completes.
 
-| Provider | Ownership source | Local installation source |
-| --- | --- | --- |
-| Steam | Explicit `GetOwnedGames` sync, cached for offline use | All local app manifests, including games outside modde's plugin registry |
-| GOG | Heroic `store_cache/gog_library.json` | Heroic GOG installed catalogue |
-| Epic | Heroic `store_cache/legendary_library.json` | Legendary installed catalogue, plus older Heroic installed catalogue |
-| Heroic sideload | Locally registered applications | Heroic sideload installed catalogue |
-| Local | User-configured games | Configured paths |
+| Provider        | Ownership source                                      | Local installation source                                                |
+| --------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| Steam           | Explicit `GetOwnedGames` sync, cached for offline use | All local app manifests, including games outside modde's plugin registry |
+| GOG             | Heroic `store_cache/gog_library.json`                 | Heroic GOG installed catalogue                                           |
+| Epic            | Heroic `store_cache/legendary_library.json`           | Legendary installed catalogue, plus older Heroic installed catalogue     |
+| Heroic sideload | Locally registered applications                       | Heroic sideload installed catalogue                                      |
+| Local           | User-configured games                                 | Configured paths                                                         |
 
 For Steam, set `MODDE_STEAM_API_KEY` in the environment used to start modde, enter
 your 17-digit SteamID64 in Library, and choose **Sync owned games**. The CLI is:
@@ -100,7 +100,7 @@ Example `launch.json` (replace paths with existing files/directories):
   "prefix": "/games/prefixes/example",
   "arguments": [],
   "wrappers": [],
-  "environment": {"WINEESYNC": "1"},
+  "environment": { "WINEESYNC": "1" },
   "working_directory": "/games/example",
   "profile": "my-profile",
   "use_active_profile": true,
@@ -228,11 +228,11 @@ workflow instead of picking the first installation. With no profile argument,
 the saved profile selection is used; without a selected profile, existing game
 files and saves are left in place.
 
-| Flag on `modde play` | Effect |
-| --- | --- |
-| `--no-switch` | Require the chosen profile to already be active for this installation |
-| `--no-deploy` | Skip rebuilding/deploying mods |
-| `--no-capture` | Skip post-session save capture |
+| Flag on `modde play` | Effect                                                                |
+| -------------------- | --------------------------------------------------------------------- |
+| `--no-switch`        | Require the chosen profile to already be active for this installation |
+| `--no-deploy`        | Skip rebuilding/deploying mods                                        |
+| `--no-capture`       | Skip post-session save capture                                        |
 
 ## Steam and Heroic command hooks
 

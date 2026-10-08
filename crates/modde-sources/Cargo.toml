@@ -28,8 +28,24 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [features]
-default = ["all-games", "bethesda-archives", "postgres", "linux-integrations", "macos-integrations"]
-all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
+default = [
+  "all-games",
+  "bethesda-archives",
+  "postgres",
+  "linux-integrations",
+  "macos-integrations",
+]
+all-games = [
+  "bethesda",
+  "gamebryo",
+  "cyberpunk",
+  "ue4",
+  "bg3",
+  "stardew",
+  "bannerlord",
+  "witcher3",
+  "oblivion-remastered",
+]
 bethesda = ["modde-games/bethesda", "bethesda-archives"]
 gamebryo = ["modde-games/gamebryo", "bethesda-archives"]
 cyberpunk = ["modde-games/cyberpunk"]
@@ -42,9 +58,18 @@ oblivion-remastered = ["modde-games/oblivion-remastered", "bethesda-archives"]
 bethesda-archives = ["modde-core/bethesda-archives", "dep:lz4_flex"]
 postgres = ["modde-core/postgres"]
 rar = ["dep:unrar"]
-linux-integrations = ["modde-core/linux-integrations", "modde-games/linux-integrations"]
-macos-integrations = ["modde-core/macos-integrations", "modde-games/macos-integrations"]
-windows-integrations = ["modde-core/windows-integrations", "modde-games/windows-integrations"]
+linux-integrations = [
+  "modde-core/linux-integrations",
+  "modde-games/linux-integrations",
+]
+macos-integrations = [
+  "modde-core/macos-integrations",
+  "modde-games/macos-integrations",
+]
+windows-integrations = [
+  "modde-core/windows-integrations",
+  "modde-games/windows-integrations",
+]
 
 [dependencies]
 modde-core = { workspace = true }

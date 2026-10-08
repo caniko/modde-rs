@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   showed `VanillaFixes.exe` is an 88 KiB MinGW launcher (`CreateProcessW`,
   plus dynamic `LoadLibrary`/`GetProcAddress`, no update/help strings in
   a static ASCII scan, identical hash on both hosts) — running it is
-  only known to *launch* the client, never to update it. No supported
+  only known to _launch_ the client, never to update it. No supported
   update procedure has been established: the static scan cannot rule
   out updater behavior elsewhere (companion `VfPatcher.dll` role
   unestablished, dynamic resolution present), so the readiness-bypass
@@ -135,7 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overrides, offline validate, registration/readiness split).
 - **Manager**: Add `onboard gate`: the Lutris game entry's synthesized
   `system.prefix_command` (`modde-manager onboard gate --instance <name>
-  --`, composed behind any declared wrapper). It enforces the same game
+--`, composed behind any declared wrapper). It enforces the same game
   launch readiness a native launch enforces, then execs the appended
   command unchanged. A missing `--config` re-execs at most once through
   the PATH `modde-manager` (marker-bounded, self-skipping) so the bare
@@ -166,7 +166,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **CLI**: New discovery commands: `tool doctor`, `tool settings`, `tool
-  profiles`, `tool sources` — all read-only, all with `--json`.
+profiles`, `tool sources` — all read-only, all with `--json`.
 - **CLI**: `tool doctor --fix` automatically applies the first recommended
   fix command when issues are detected.
 - **CLI**: `tool setup` for guided OptiScaler configuration without the GUI.

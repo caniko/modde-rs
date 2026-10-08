@@ -55,7 +55,12 @@ pub async fn handle_start(
         anyhow::bail!("bisect requires at least two enabled mods");
     }
 
-    let context = modde_games::library::context::for_game(&modde_core::settings::AppSettings::load(), &game, pm.db()).await?;
+    let context = modde_games::library::context::for_game(
+        &modde_core::settings::AppSettings::load(),
+        &game,
+        pm.db(),
+    )
+    .await?;
     let oracle = match oracle {
         BisectOracleArg::Manual => BisectOracle::Manual,
         BisectOracleArg::Crash => {
@@ -84,7 +89,10 @@ pub async fn handle_start(
                     baseline.game_id
                 );
             }
-            anyhow::ensure!(baseline.exit_status == Some(0), "baseline must have a successful observed game exit");
+            anyhow::ensure!(
+                baseline.exit_status == Some(0),
+                "baseline must have a successful observed game exit"
+            );
             super::perf::require_baseline_profile(&baseline, &profile)?;
             crate::commands::perf::require_baseline_configuration(&baseline_run, &context)?;
             BisectOracle::Perf {
@@ -98,9 +106,13 @@ pub async fn handle_start(
     };
 
     let session_id = format!("b{}", time_id());
-    modde_core::library::atomic_json(&super::candidate::pin_path(&session_id), &super::candidate::InstallationPin {
-        installation: context.game.id, save_scope: context.saves.scope,
-    })?;
+    modde_core::library::atomic_json(
+        &super::candidate::pin_path(&session_id),
+        &super::candidate::InstallationPin {
+            installation: context.game.id,
+            save_scope: context.saves.scope,
+        },
+    )?;
     pm.db()
         .create_bisect_session(&NewBisectSession {
             session_id: session_id.clone(),
@@ -159,64 +171,66 @@ pub(super) async fn bisect_dependency_map(
 
     #[cfg(feature = "bethesda")]
     {
-    let Some(profile_id) = source.id else {
-        return Ok(dependencies);
-    };
-    let installed_files = _pm.db().installed_files_for_profile(profile_id).await?;
-    let mut plugin_owner_by_lower: HashMap<String, String> = HashMap::new();
-    let mut plugin_path_by_lower: HashMap<String, PathBuf> = HashMap::new();
-    for (mod_id, file) in installed_files {
-        let rel_path = Path::new(&file.rel_path);
-        let Some(file_name) = rel_path.file_name().and_then(|name| name.to_str()) else {
-            continue;
+        let Some(profile_id) = source.id else {
+            return Ok(dependencies);
         };
-        if is_bethesda_plugin_name(file_name) {
-            let lower = file_name.to_ascii_lowercase();
-            plugin_owner_by_lower.insert(lower.clone(), mod_id);
-            plugin_path_by_lower.insert(lower, PathBuf::from(file.rel_path));
-        }
-    }
-    for enabled_mod in source.mods.iter().filter(|m| m.enabled) {
-        if let Some(plugin_name) = enabled_mod.mod_id.strip_prefix("plugin/")
-            && is_bethesda_plugin_name(plugin_name)
-        {
-            plugin_owner_by_lower
-                .entry(plugin_name.to_ascii_lowercase())
-                .or_insert_with(|| enabled_mod.mod_id.clone());
-            plugin_path_by_lower
-                .entry(plugin_name.to_ascii_lowercase())
-                .or_insert_with(|| PathBuf::from(plugin_name));
-        }
-    }
-
-    let staging = ProfileManager::staging_dir(&source.name);
-    for (plugin_lower, mod_id) in plugin_owner_by_lower.clone() {
-        let Some(rel_path) = plugin_path_by_lower.get(&plugin_lower) else {
-            continue;
-        };
-        let plugin_path = staging.join(rel_path);
-        let header = modde_games::bethesda::plugin_header::parse_plugin_header(&plugin_path)
-            .with_context(|| format!("failed to parse plugin header {}", plugin_path.display()));
-        let Ok(header) = header else {
-            continue;
-        };
-        for master in header.masters {
-            if let Some(master_owner) = plugin_owner_by_lower.get(&master.to_ascii_lowercase())
-                && master_owner != &mod_id
-            {
-                dependencies
-                    .entry(mod_id.clone())
-                    .or_default()
-                    .push(master_owner.clone());
+        let installed_files = _pm.db().installed_files_for_profile(profile_id).await?;
+        let mut plugin_owner_by_lower: HashMap<String, String> = HashMap::new();
+        let mut plugin_path_by_lower: HashMap<String, PathBuf> = HashMap::new();
+        for (mod_id, file) in installed_files {
+            let rel_path = Path::new(&file.rel_path);
+            let Some(file_name) = rel_path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if is_bethesda_plugin_name(file_name) {
+                let lower = file_name.to_ascii_lowercase();
+                plugin_owner_by_lower.insert(lower.clone(), mod_id);
+                plugin_path_by_lower.insert(lower, PathBuf::from(file.rel_path));
             }
         }
-    }
+        for enabled_mod in source.mods.iter().filter(|m| m.enabled) {
+            if let Some(plugin_name) = enabled_mod.mod_id.strip_prefix("plugin/")
+                && is_bethesda_plugin_name(plugin_name)
+            {
+                plugin_owner_by_lower
+                    .entry(plugin_name.to_ascii_lowercase())
+                    .or_insert_with(|| enabled_mod.mod_id.clone());
+                plugin_path_by_lower
+                    .entry(plugin_name.to_ascii_lowercase())
+                    .or_insert_with(|| PathBuf::from(plugin_name));
+            }
+        }
 
-    for deps in dependencies.values_mut() {
-        deps.sort();
-        deps.dedup();
-    }
-    Ok(dependencies)
+        let staging = ProfileManager::staging_dir(&source.name);
+        for (plugin_lower, mod_id) in plugin_owner_by_lower.clone() {
+            let Some(rel_path) = plugin_path_by_lower.get(&plugin_lower) else {
+                continue;
+            };
+            let plugin_path = staging.join(rel_path);
+            let header = modde_games::bethesda::plugin_header::parse_plugin_header(&plugin_path)
+                .with_context(|| {
+                    format!("failed to parse plugin header {}", plugin_path.display())
+                });
+            let Ok(header) = header else {
+                continue;
+            };
+            for master in header.masters {
+                if let Some(master_owner) = plugin_owner_by_lower.get(&master.to_ascii_lowercase())
+                    && master_owner != &mod_id
+                {
+                    dependencies
+                        .entry(mod_id.clone())
+                        .or_default()
+                        .push(master_owner.clone());
+                }
+            }
+        }
+
+        for deps in dependencies.values_mut() {
+            deps.sort();
+            deps.dedup();
+        }
+        Ok(dependencies)
     }
 }
 

@@ -29,7 +29,17 @@ workspace = true
 
 [features]
 default = ["all-games", "postgres", "linux-integrations", "macos-integrations"]
-all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
+all-games = [
+  "bethesda",
+  "gamebryo",
+  "cyberpunk",
+  "ue4",
+  "bg3",
+  "stardew",
+  "bannerlord",
+  "witcher3",
+  "oblivion-remastered",
+]
 bethesda = ["modde-core/bethesda-archives", "dep:lz4_flex", "dep:serde_yaml_ng"]
 gamebryo = ["modde-core/bethesda-archives"]
 cyberpunk = ["dep:which"]

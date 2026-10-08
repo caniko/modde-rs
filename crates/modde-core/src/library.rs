@@ -37,7 +37,15 @@ pub struct LegacySaveBinding {
 
 impl Default for LibraryPreferences {
     fn default() -> Self {
-        Self { version: 1, favorites: BTreeSet::new(), launches: BTreeMap::new(), installations: BTreeMap::new(), needs_deploy: BTreeSet::new(), legacy_save_bindings: BTreeMap::new(), steam_id: None }
+        Self {
+            version: 1,
+            favorites: BTreeSet::new(),
+            launches: BTreeMap::new(),
+            installations: BTreeMap::new(),
+            needs_deploy: BTreeSet::new(),
+            legacy_save_bindings: BTreeMap::new(),
+            steam_id: None,
+        }
     }
 }
 
@@ -70,9 +78,16 @@ pub struct LaunchSettings {
 impl Default for LaunchSettings {
     fn default() -> Self {
         Self {
-            executable: None, runner: None, prefix: None, arguments: Vec::new(),
-            wrappers: Vec::new(), environment: BTreeMap::new(), working_directory: None,
-            profile: None, use_active_profile: true, save_directory: None,
+            executable: None,
+            runner: None,
+            prefix: None,
+            arguments: Vec::new(),
+            wrappers: Vec::new(),
+            environment: BTreeMap::new(),
+            working_directory: None,
+            profile: None,
+            use_active_profile: true,
+            save_directory: None,
             sandbox: SandboxSettings::default(),
             store_hook: false,
         }
@@ -90,7 +105,11 @@ pub struct SaveContext {
 
 impl SaveContext {
     pub fn legacy(game_id: &crate::GameId, directory: Option<&Path>) -> Self {
-        Self { game_id: game_id.clone(), scope: game_id.clone(), directory: directory.map(Path::to_path_buf) }
+        Self {
+            game_id: game_id.clone(),
+            scope: game_id.clone(),
+            directory: directory.map(Path::to_path_buf),
+        }
     }
 }
 
@@ -156,7 +175,12 @@ pub struct SandboxSettings {
 
 impl Default for SandboxSettings {
     fn default() -> Self {
-        Self { enabled: false, network: true, read_only: Vec::new(), writable: Vec::new() }
+        Self {
+            enabled: false,
+            network: true,
+            read_only: Vec::new(),
+            writable: Vec::new(),
+        }
     }
 }
 
@@ -172,12 +196,18 @@ impl LibraryPreferences {
     pub fn load_at(path: &Path) -> Result<Self> {
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self::default());
+            }
             Err(error) => return Err(error).context("reading library preferences"),
         };
-        let settings: Self = serde_json::from_slice(&bytes).context("invalid library preferences")?;
+        let settings: Self =
+            serde_json::from_slice(&bytes).context("invalid library preferences")?;
         if settings.version != 1 {
-            bail!("unsupported library preferences version {}", settings.version);
+            bail!(
+                "unsupported library preferences version {}",
+                settings.version
+            );
         }
         Ok(settings)
     }
@@ -191,7 +221,10 @@ impl LibraryPreferences {
     }
 
     pub fn update_at(path: &Path, edit: impl FnOnce(&mut Self)) -> Result<()> {
-        Self::try_update_at(path, |settings| { edit(settings); Ok(()) })
+        Self::try_update_at(path, |settings| {
+            edit(settings);
+            Ok(())
+        })
     }
 
     pub fn try_update_at<T>(path: &Path, edit: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
@@ -199,7 +232,9 @@ impl LibraryPreferences {
         let mut settings = Self::load_at(path)?;
         let before = settings.clone();
         let result = edit(&mut settings)?;
-        if settings != before { atomic_json(path, &settings)?; }
+        if settings != before {
+            atomic_json(path, &settings)?;
+        }
         Ok(result)
     }
 }
@@ -224,8 +259,14 @@ pub fn lock_file(path: &Path) -> Result<File> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
-    file.try_lock().map_err(|_| anyhow::anyhow!("resource is busy: {}", path.display()))?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    file.try_lock()
+        .map_err(|_| anyhow::anyhow!("resource is busy: {}", path.display()))?;
     Ok(file)
 }
 
