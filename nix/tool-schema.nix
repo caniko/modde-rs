@@ -239,7 +239,7 @@
       default = null;
       description = "MangoHud FPS limiter mode.";
       advanced = false;
-      values = [ "late" "early" ];
+      values = ["late" "early"];
     };
     "fps_metrics" = {
       type = "text";
@@ -288,7 +288,7 @@
       default = null;
       description = "OpenGL VSync setting.";
       advanced = false;
-      values = [ "-1" "0" "1" "n" ];
+      values = ["-1" "0" "1" "n"];
     };
     "gpu_color" = {
       type = "text";
@@ -520,7 +520,7 @@
       default = null;
       description = "Screen corner used for the MangoHud overlay.";
       advanced = false;
-      values = [ "top-left" "top-center" "top-right" "middle-left" "middle-right" "bottom-left" "bottom-center" "bottom-right" ];
+      values = ["top-left" "top-center" "top-right" "middle-left" "middle-right" "bottom-left" "bottom-center" "bottom-right"];
     };
     "present_mode" = {
       type = "bool";
@@ -745,21 +745,21 @@
       default = null;
       description = "Auto lets modde choose GPU-specific FSR4 settings; Manual preserves your selected FSR4 settings.";
       advanced = false;
-      values = [ "auto" "manual" ];
+      values = ["auto" "manual"];
     };
     "ini_overrides.FSR.FGIndex" = {
       type = "enum";
       default = null;
       description = "OptiScaler [FSR] FGIndex override.";
       advanced = false;
-      values = [ "auto" "0" "1" ];
+      values = ["auto" "0" "1"];
     };
     "ini_overrides.FSR.UpscalerIndex" = {
       type = "enum";
       default = null;
       description = "OptiScaler [FSR] UpscalerIndex override.";
       advanced = false;
-      values = [ "auto" "0" "1" "2" ];
+      values = ["auto" "0" "1" "2"];
     };
     "ini_overrides.Menu.Scale" = {
       type = "float";
@@ -775,7 +775,7 @@
       default = null;
       description = "OptiScaler [Menu] ShortcutKey override.";
       advanced = false;
-      values = [ "auto" "INSERT" "HOME" "END" "DELETE" "BACKQUOTE" "F1" "F2" "F3" "F4" "F5" "F6" "F7" "F8" "F9" "F10" "F11" "F12" ];
+      values = ["auto" "INSERT" "HOME" "END" "DELETE" "BACKQUOTE" "F1" "F2" "F3" "F4" "F5" "F6" "F7" "F8" "F9" "F10" "F11" "F12"];
     };
     "ini_overrides.NvApi.OverrideNvapiDll" = {
       type = "tri_state_bool";
@@ -800,28 +800,28 @@
       default = null;
       description = "fakenvapi force_reflex override.";
       advanced = false;
-      values = [ "0" "1" "2" ];
+      values = ["0" "1" "2"];
     };
     "ini_overrides.fakenvapi.latencyflex_mode" = {
       type = "enum";
       default = null;
       description = "fakenvapi latencyflex_mode override.";
       advanced = false;
-      values = [ "0" "1" "2" ];
+      values = ["0" "1" "2"];
     };
     "proxy_dll" = {
       type = "enum";
       default = null;
       description = "DLL name used to load OptiScaler for this game.";
       advanced = false;
-      values = [ "dxgi.dll" "version.dll" "dbghelp.dll" "d3d12.dll" "wininet.dll" "winhttp.dll" "winmm.dll" "nvngx.dll" "OptiScaler.asi" ];
+      values = ["dxgi.dll" "version.dll" "dbghelp.dll" "d3d12.dll" "wininet.dll" "winhttp.dll" "winmm.dll" "nvngx.dll" "OptiScaler.asi"];
     };
     "source_mode" = {
       type = "enum";
       default = null;
       description = "Where modde should get OptiScaler files from.";
       advanced = false;
-      values = [ "github_release" "goverlay_builds" "goverlay_fgmod" "local_dir" ];
+      values = ["github_release" "goverlay_builds" "goverlay_fgmod" "local_dir"];
     };
     "spoof_dlss" = {
       type = "bool";
@@ -836,7 +836,7 @@
       default = null;
       description = "How Proton should contribute forced DLL overrides.";
       advanced = false;
-      values = [ "auto" "forced" "off" ];
+      values = ["auto" "forced" "off"];
     };
     "enable_hdr_wsi" = {
       type = "bool";
@@ -873,7 +873,7 @@
       default = null;
       description = "Target application passed to protonup-rs.";
       advanced = false;
-      values = [ "steam" ];
+      values = ["steam"];
     };
     "mesa_loader_zink" = {
       type = "bool";
@@ -994,7 +994,7 @@
       default = null;
       description = "Installed or requested GEProton version.";
       advanced = false;
-      values = [ "latest" ];
+      values = ["latest"];
     };
     "staging_shared_memory" = {
       type = "bool";
@@ -1013,14 +1013,14 @@
       default = null;
       description = "How modde should choose the Proton runner for this game.";
       advanced = false;
-      values = [ "launcher_default" "installed_version" "install_with_protonup_rs" ];
+      values = ["launcher_default" "installed_version" "install_with_protonup_rs"];
     };
     "wrapper_order" = {
       type = "enum";
       default = null;
       description = "Where Proton-specific wrapper integration should appear in the launch chain.";
       advanced = false;
-      values = [ "after-modde" "before-tools" ];
+      values = ["after-modde" "before-tools"];
     };
   };
   "reshade" = {
@@ -1029,7 +1029,7 @@
       default = null;
       description = "DLL name copied into the executable directory.";
       advanced = false;
-      values = [ "dxgi.dll" "d3d11.dll" "dinput8.dll" ];
+      values = ["dxgi.dll" "d3d11.dll" "dinput8.dll"];
     };
     "source_dir" = {
       type = "path";

@@ -127,7 +127,7 @@ fn render_schema() -> String {
                     .map(|value| render_string(value))
                     .collect::<Vec<_>>()
                     .join(" ");
-                let _ = writeln!(out, "      values = [ {joined} ];");
+                let _ = writeln!(out, "      values = [{joined}];");
             }
             if let Some(min) = spec.min {
                 let _ = writeln!(out, "      min = {};", render_number(min));
