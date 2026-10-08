@@ -39,16 +39,16 @@ fi
 
 tool_output="$(timeout 60 wine "$exe" tool status --game cyberpunk2077 2>&1)"
 printf '%s\n' "$tool_output"
-grep -F "ReShade" <<< "$tool_output" > /dev/null || die "Windows tool registry did not expose ReShade"
-grep -F "OptiScaler" <<< "$tool_output" > /dev/null || die "Windows tool registry did not expose OptiScaler"
-if grep -E "MangoHud|vkBasalt|GameMode|Proton" <<< "$tool_output" > /dev/null; then
+grep -F "ReShade" <<<"$tool_output" >/dev/null || die "Windows tool registry did not expose ReShade"
+grep -F "OptiScaler" <<<"$tool_output" >/dev/null || die "Windows tool registry did not expose OptiScaler"
+if grep -E "MangoHud|vkBasalt|GameMode|Proton" <<<"$tool_output" >/dev/null; then
   die "Windows tool registry exposed Linux-only tools"
 fi
 
 handler_output="$(timeout 60 wine "$exe" nxm install-handler 2>&1)"
 printf '%s\n' "$handler_output"
-grep -F "Registered nxm:// protocol handler in Windows registry." <<< "$handler_output" > /dev/null \
-  || die "Windows NXM protocol handler was not registered"
+grep -F "Registered nxm:// protocol handler in Windows registry." <<<"$handler_output" >/dev/null ||
+  die "Windows NXM protocol handler was not registered"
 
 touch "$RELEASE_DIR/windows-integrations.ok"
 echo "Windows integration smoke marker: $RELEASE_DIR/windows-integrations.ok"

@@ -29,11 +29,11 @@ check_darwin_tarball() {
   local file_output
   file_output="$(file "$outdir/modde")"
   printf '%s\n' "$file_output"
-  grep -F "Mach-O" <<< "$file_output" > /dev/null || die "${tarball} modde is not a Mach-O binary"
-  grep -F "$expected_file_token" <<< "$file_output" > /dev/null || die "${tarball} modde is not ${expected_file_token}"
+  grep -F "Mach-O" <<<"$file_output" >/dev/null || die "${tarball} modde is not a Mach-O binary"
+  grep -F "$expected_file_token" <<<"$file_output" >/dev/null || die "${tarball} modde is not ${expected_file_token}"
 
-  if grep -F "universal binary" <<< "$file_output" > /dev/null; then
-    if command -v lipo > /dev/null 2>&1; then
+  if grep -F "universal binary" <<<"$file_output" >/dev/null; then
+    if command -v lipo >/dev/null 2>&1; then
       lipo -info "$outdir/modde"
     else
       warn "lipo is unavailable; universal Mach-O slice list could not be printed"

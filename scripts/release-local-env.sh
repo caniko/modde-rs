@@ -118,7 +118,7 @@ collect_codeberg_metadata() {
 metadata_has_name() {
   local names=" $1 "
   local name="$2"
-  [[ "$names" == *" $name "* ]]
+  [[ $names == *" $name "* ]]
 }
 
 need_env_or_repo_secret() {
@@ -168,8 +168,8 @@ need_chocolatey_tool() {
     return
   fi
 
-  if command -v nix >/dev/null 2>&1 \
-    && nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit -c command -v choco >/dev/null 2>&1; then
+  if command -v nix >/dev/null 2>&1 &&
+    nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey git+https://github.com/caniko/simit -c command -v choco >/dev/null 2>&1; then
     ok "tool choco via configured nix_tool"
     return
   fi
@@ -202,7 +202,7 @@ release_manifest_init() {
   mkdir -p "$release_dir"
   jq -n --arg version "$version" --arg generator "$generator" \
     '{version: $version, artifacts: [], skipped: [], generated_by: $generator}' \
-    > "$release_dir/artifacts.json.tmp"
+    >"$release_dir/artifacts.json.tmp"
   mv "$release_dir/artifacts.json.tmp" "$release_dir/artifacts.json"
 }
 
@@ -215,7 +215,7 @@ release_manifest_add_file() {
   sha256="$(sha256sum "$path" | awk '{print $1}')"
   jq --arg path "$path" --arg sha256 "$sha256" --arg producer "$producer" \
     '.artifacts = (((.artifacts // []) | map(select(.path != $path))) + [{path: $path, sha256: $sha256, producer: $producer}])' \
-    "$release_dir/artifacts.json" > "$release_dir/artifacts.json.tmp"
+    "$release_dir/artifacts.json" >"$release_dir/artifacts.json.tmp"
   mv "$release_dir/artifacts.json.tmp" "$release_dir/artifacts.json"
 }
 
@@ -225,7 +225,7 @@ release_manifest_skip() {
   local release_dir="${RELEASE_DIR:-release}"
   jq --arg name "$name" --arg reason "$reason" \
     '.skipped = (((.skipped // []) | map(select(.name != $name))) + [{name: $name, reason: $reason}])' \
-    "$release_dir/artifacts.json" > "$release_dir/artifacts.json.tmp"
+    "$release_dir/artifacts.json" >"$release_dir/artifacts.json.tmp"
   mv "$release_dir/artifacts.json.tmp" "$release_dir/artifacts.json"
 }
 
@@ -237,7 +237,7 @@ release_manifest_collect_release_files() {
   for file in "$release_dir"/*; do
     [ -f "$file" ] || continue
     case "$file" in
-      "$release_dir/artifacts.json" | "$release_dir/artifacts.json.tmp") continue ;;
+    "$release_dir/artifacts.json" | "$release_dir/artifacts.json.tmp") continue ;;
     esac
     release_manifest_add_file "$file" "$producer"
   done

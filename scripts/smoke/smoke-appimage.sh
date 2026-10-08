@@ -22,7 +22,7 @@ if output="$(timeout 30 "$appimage" --version 2>&1)"; then
 else
   status=$?
   printf '%s\n' "$output"
-  if grep -E "No such file or directory|FUSE|AppImage" <<< "$output" > /dev/null; then
+  if grep -E "No such file or directory|FUSE|AppImage" <<<"$output" >/dev/null; then
     warn "AppImage exists but this runner cannot execute it; skipping AppImage runtime smoke"
     exit 0
   fi

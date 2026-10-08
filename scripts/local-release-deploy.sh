@@ -62,11 +62,11 @@ run_publisher() {
 }
 
 is_prerelease() {
-  [[ "$version" =~ - ]]
+  [[ $version =~ - ]]
 }
 
 write_release_env() {
-  cat > "$release_env_file" <<EOF
+  cat >"$release_env_file" <<EOF
 VERSION='$version'
 IS_PRERELEASE='$(if is_prerelease; then printf true; else printf false; fi)'
 EOF
@@ -123,14 +123,14 @@ build_release_artifacts() {
     tmp_vendor="$(mktemp -d "$work_dir/vendor.XXXXXX")"
     trap 'rm -rf "$tmp_vendor"' RETURN
     tar xf "$source_tarball" -C "$tmp_vendor"
-    (cd "$tmp_vendor/modde-rs" && cargo vendor vendor > "$work_dir/cargo-vendor-config.toml")
+    (cd "$tmp_vendor/modde-rs" && cargo vendor vendor >"$work_dir/cargo-vendor-config.toml")
     tar czf "$work_dir/vendor.tar.gz" -C "$tmp_vendor/modde-rs" vendor
     local spec_dir spec
     spec_dir="$(mktemp -d "$work_dir/spec.XXXXXX")"
     spec="${spec_dir}/dist/rpm/modde.spec"
     trap 'rm -rf "$spec_dir"; rm -rf "$tmp_vendor"' RETURN
     mkdir -p "$(dirname "$spec")"
-    sed "0,/^Version:.*$/s//Version:        ${version}/" dist/rpm/modde.spec > "$spec"
+    sed "0,/^Version:.*$/s//Version:        ${version}/" dist/rpm/modde.spec >"$spec"
     rpmbuild -bs "$spec" --define "_sourcedir $work_dir" --define "_srcrpmdir $srpm_dir"
   else
     printf 'already-current: SRPM artifact exists\n'
@@ -140,10 +140,10 @@ build_release_artifacts() {
     cargo about generate --config dist/licenses/about.toml --output-file "$release_dir/THIRD_PARTY_LICENSES.html" dist/licenses/about-template.hbs
   fi
   if ! have_artifact "$release_dir/modde-${version}.cdx.json"; then
-    cargo sbom --output-format cyclone_dx_json_1_5 > "$release_dir/modde-${version}.cdx.json"
+    cargo sbom --output-format cyclone_dx_json_1_5 >"$release_dir/modde-${version}.cdx.json"
   fi
   if ! have_artifact "$release_dir/modde-${version}.spdx.json"; then
-    cargo sbom --output-format spdx_json_2_3 > "$release_dir/modde-${version}.spdx.json"
+    cargo sbom --output-format spdx_json_2_3 >"$release_dir/modde-${version}.spdx.json"
   fi
 
   copy_nix_binary() {
@@ -229,8 +229,8 @@ build_release_artifacts() {
     pfx_file="$(mktemp "$work_dir/windows-signing-pfx.XXXXXX")"
     pass_file="$(mktemp "$work_dir/windows-signing-pass.XXXXXX")"
     trap 'rm -f "$pfx_file" "$pass_file"' RETURN
-    printf '%s' "$WINDOWS_SIGNING_PFX" | base64 --decode > "$pfx_file"
-    printf '%s' "$WINDOWS_SIGNING_PASS" > "$pass_file"
+    printf '%s' "$WINDOWS_SIGNING_PFX" | base64 --decode >"$pfx_file"
+    printf '%s' "$WINDOWS_SIGNING_PASS" >"$pass_file"
     for exe in "$release_dir/windows-x86_64/modde.exe" "$release_dir/windows-x86_64/modde-ui.exe"; do
       osslsigncode sign -pkcs12 "$pfx_file" -readpass "$pass_file" -h sha256 \
         -n 'modde' -i 'https://modde.tartanoglu.com' -ts 'http://timestamp.digicert.com' \
@@ -261,10 +261,10 @@ build_release_artifacts() {
   (
     cd "$release_dir"
     shopt -s nullglob
-    : > SHA256SUMS.txt
+    : >SHA256SUMS.txt
     for file in *.tar.gz *.zip *.AppImage *.deb *.src.rpm *.cdx.json *.spdx.json; do
       [ "$file" != SHA256SUMS.txt ] || continue
-      sha256sum "$file" >> SHA256SUMS.txt
+      sha256sum "$file" >>SHA256SUMS.txt
     done
     test -s SHA256SUMS.txt
   )
@@ -275,14 +275,14 @@ build_release_artifacts() {
   umask 077
   minisign_key="$(mktemp "$work_dir/minisign.XXXXXX")"
   trap 'rm -f "$minisign_key"' RETURN
-  printf '%s' "$MINISIGN_SECRET_KEY" > "$minisign_key"
+  printf '%s' "$MINISIGN_SECRET_KEY" >"$minisign_key"
   printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$minisign_key" -m "$release_dir/SHA256SUMS.txt" -x "$release_dir/SHA256SUMS.txt.minisig"
   minisign -V -m "$release_dir/SHA256SUMS.txt" -x "$release_dir/SHA256SUMS.txt.minisig" -p keys/minisign.pub
 
   if [ -n "${COSIGN_PRIVATE_KEY:-}" ]; then
     cosign_key="$(mktemp "$work_dir/cosign.XXXXXX")"
     trap 'rm -f "$cosign_key"' RETURN
-    printf '%s' "$COSIGN_PRIVATE_KEY" > "$cosign_key"
+    printf '%s' "$COSIGN_PRIVATE_KEY" >"$cosign_key"
     shopt -s nullglob
     for file in "$release_dir"/*.tar.gz "$release_dir"/*.zip "$release_dir"/*.AppImage "$release_dir"/*.deb "$release_dir"/*.src.rpm "$release_dir"/*.exe; do
       cosign sign-blob --yes --key "$cosign_key" --bundle "${file}.cosign.bundle" "$file"
@@ -303,10 +303,10 @@ run_release_smoke() {
   local smoke_failed=0
   for script in scripts/smoke/smoke-*.sh; do
     case "$(basename "$script")" in
-      smoke-srpm.sh)
-        record_skipped "SRPM local Fedora rebuild skipped during deploy; COPR remote build validates the SRPM"
-        continue
-        ;;
+    smoke-srpm.sh)
+      record_skipped "SRPM local Fedora rebuild skipped during deploy; COPR remote build validates the SRPM"
+      continue
+      ;;
     esac
     bash "$script" "$version" "$release_dir" || smoke_failed=1
   done
@@ -321,7 +321,7 @@ extract_release_notes() {
     found && /^\[[^]]+\]: / { exit }
     found { print }
     END { if (!found) exit 1 }
-  ' CHANGELOG.md > "$notes_file" || {
+  ' CHANGELOG.md >"$notes_file" || {
     echo "CHANGELOG.md missing section for $version" >&2
     return 1
   }
@@ -340,7 +340,7 @@ publish_codeberg_release() {
   payload="$(jq -n --arg tag "$version" --arg name "$version" --arg branch "trunk" --argjson prerelease "$(if is_prerelease; then printf true; else printf false; fi)" --rawfile body "$release_notes_file" '{tag_name: $tag, target_commitish: $branch, name: $name, body: $body, draft: false, prerelease: $prerelease}')"
   status="$(curl -sS -o "$release_json_file" -w '%{http_code}' -H "Authorization: token ${CODEBERG_TOKEN}" -H 'Content-Type: application/json' -d "$payload" "${api}/repos/${codeberg_repo}/releases")"
   if [ "$status" = "409" ]; then
-    curl -sS --fail -H "Authorization: token ${CODEBERG_TOKEN}" "${api}/repos/${codeberg_repo}/releases/tags/${version}" > "$release_json_file"
+    curl -sS --fail -H "Authorization: token ${CODEBERG_TOKEN}" "${api}/repos/${codeberg_repo}/releases/tags/${version}" >"$release_json_file"
   elif [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
     cat "$release_json_file"
     return 1
@@ -355,12 +355,15 @@ publish_codeberg_release() {
     if [ -n "$asset_id" ]; then
       curl -sS --fail -X DELETE -H "Authorization: token ${CODEBERG_TOKEN}" "${api}/repos/${codeberg_repo}/releases/${release_id}/assets/${asset_id}"
     fi
-    curl -sS --fail -H "Authorization: token ${CODEBERG_TOKEN}" -H 'Content-Type: application/octet-stream' --data-binary "@${file}" "${api}/repos/${codeberg_repo}/releases/${release_id}/assets?name=${name}" > /dev/null
+    curl -sS --fail -H "Authorization: token ${CODEBERG_TOKEN}" -H 'Content-Type: application/octet-stream' --data-binary "@${file}" "${api}/repos/${codeberg_repo}/releases/${release_id}/assets?name=${name}" >/dev/null
   done < <(printf '%s\n' "$release_dir"/* | LC_ALL=C sort -u)
 }
 
 publish_homebrew() {
-  is_prerelease && { record_skipped "Homebrew prerelease"; return 0; }
+  is_prerelease && {
+    record_skipped "Homebrew prerelease"
+    return 0
+  }
   require_local_secret_for_publish "Homebrew" HOMEBREW_TAP_TOKEN \
     'export HOMEBREW_TAP_TOKEN for codeberg.org/caniko/homebrew-modde or add a canix runtime secret for it' \
     'git -c credential.helper='\''!f() { echo username=x-access-token; echo "password=$HOMEBREW_TAP_TOKEN"; }; f'\'' ls-remote https://codeberg.org/caniko/homebrew-modde.git HEAD' || return 0
@@ -416,7 +419,10 @@ publish_homebrew() {
 }
 
 publish_apt() {
-  is_prerelease && { record_skipped "APT prerelease"; return 0; }
+  is_prerelease && {
+    record_skipped "APT prerelease"
+    return 0
+  }
   require_local_secret_for_publish "APT" APT_REPO_GPG_KEY \
     "$canix_root/age/secrets/root/modules/repos/apt/modde_apt_repo_gpg_key.age" \
     'export APT_REPO_GPG_KEY=...; gpg --show-keys --with-fingerprint <(printf %s "$APT_REPO_GPG_KEY")' || return 0
@@ -426,12 +432,18 @@ publish_apt() {
   shopt -s nullglob
   local debs=("$release_dir"/*.deb)
   shopt -u nullglob
-  [ "${#debs[@]}" -gt 0 ] || { record_skipped "APT missing .deb artifacts"; return 0; }
+  [ "${#debs[@]}" -gt 0 ] || {
+    record_skipped "APT missing .deb artifacts"
+    return 0
+  }
   VERSION="$version" RELEASE_DIR="$release_dir" APT_REPO_BRANCH="${APT_REPO_BRANCH:-pages}" ./scripts/publish-apt.sh
 }
 
 publish_aur() {
-  is_prerelease && { record_skipped "AUR prerelease"; return 0; }
+  is_prerelease && {
+    record_skipped "AUR prerelease"
+    return 0
+  }
   require_local_secret_for_publish "AUR" AUR_SSH_KEY \
     'canix runtime secret can_aur_ssh_key or exported AUR_SSH_KEY' \
     'ssh -i <(printf %s "$AUR_SSH_KEY") -T aur@aur.archlinux.org' || return 0
@@ -444,9 +456,9 @@ publish_aur() {
   test -n "$bin_sha"
   install -d -m 700 "$HOME/.ssh"
   local aur_key="$HOME/.ssh/aur"
-  printf '%s\n' "$AUR_SSH_KEY" > "$aur_key"
+  printf '%s\n' "$AUR_SSH_KEY" >"$aur_key"
   chmod 600 "$aur_key"
-  ssh-keyscan aur.archlinux.org >> "$HOME/.ssh/known_hosts" 2>/dev/null
+  ssh-keyscan aur.archlinux.org >>"$HOME/.ssh/known_hosts" 2>/dev/null
   chmod 600 "$HOME/.ssh/known_hosts"
   export GIT_SSH_COMMAND="ssh -i $aur_key -o IdentitiesOnly=yes"
   publish_pkg() {
@@ -461,19 +473,19 @@ publish_aur() {
     git -C "$aur_checkout" checkout -B master
     cp "dist/aur/${pkg}/PKGBUILD" "$aur_checkout/PKGBUILD"
     case "$pkg" in
-      modde)
-        sed -i -e "s/^pkgver=.*/pkgver=${version}/" -e 's/^pkgrel=.*/pkgrel=1/' "$aur_checkout/PKGBUILD"
-        awk -v sha="$source_sha" '/^sha256sums=/{print "sha256sums=(\047" sha "\047)"; next} {print}' "$aur_checkout/PKGBUILD" > "$aur_checkout/PKGBUILD.new"
-        mv "$aur_checkout/PKGBUILD.new" "$aur_checkout/PKGBUILD"
-        ;;
-      modde-bin)
-        sed -i -e "s/^pkgver=.*/pkgver=${version}/" -e 's/^pkgrel=.*/pkgrel=1/' "$aur_checkout/PKGBUILD"
-        awk -v b="$bin_sha" -v s="$source_sha" '/^sha256sums=/{print "sha256sums=(\047" b "\047"; print "            \047" s "\047)"; skip=1; next} skip && /^[[:space:]]*\047/{next} {skip=0; print}' "$aur_checkout/PKGBUILD" > "$aur_checkout/PKGBUILD.new"
-        mv "$aur_checkout/PKGBUILD.new" "$aur_checkout/PKGBUILD"
-        ;;
-      modde-git) ;;
+    modde)
+      sed -i -e "s/^pkgver=.*/pkgver=${version}/" -e 's/^pkgrel=.*/pkgrel=1/' "$aur_checkout/PKGBUILD"
+      awk -v sha="$source_sha" '/^sha256sums=/{print "sha256sums=(\047" sha "\047)"; next} {print}' "$aur_checkout/PKGBUILD" >"$aur_checkout/PKGBUILD.new"
+      mv "$aur_checkout/PKGBUILD.new" "$aur_checkout/PKGBUILD"
+      ;;
+    modde-bin)
+      sed -i -e "s/^pkgver=.*/pkgver=${version}/" -e 's/^pkgrel=.*/pkgrel=1/' "$aur_checkout/PKGBUILD"
+      awk -v b="$bin_sha" -v s="$source_sha" '/^sha256sums=/{print "sha256sums=(\047" b "\047"; print "            \047" s "\047)"; skip=1; next} skip && /^[[:space:]]*\047/{next} {skip=0; print}' "$aur_checkout/PKGBUILD" >"$aur_checkout/PKGBUILD.new"
+      mv "$aur_checkout/PKGBUILD.new" "$aur_checkout/PKGBUILD"
+      ;;
+    modde-git) ;;
     esac
-    (cd "$aur_checkout" && makepkg --config "$makepkg_conf" --printsrcinfo > .SRCINFO)
+    (cd "$aur_checkout" && makepkg --config "$makepkg_conf" --printsrcinfo >.SRCINFO)
     git -C "$aur_checkout" add PKGBUILD .SRCINFO
     if git -C "$aur_checkout" diff --cached --quiet; then
       printf 'already-current: AUR %s\n' "$pkg"
@@ -492,10 +504,13 @@ publish_copr() {
   shopt -s nullglob
   local srpms=("$srpm_dir"/*.src.rpm)
   shopt -u nullglob
-  [ "${#srpms[@]}" -gt 0 ] || { record_skipped "COPR missing SRPM"; return 0; }
+  [ "${#srpms[@]}" -gt 0 ] || {
+    record_skipped "COPR missing SRPM"
+    return 0
+  }
   local copr_config copr_name project chroot_args=()
   copr_config="$(mktemp -d "$work_dir/copr-config.XXXXXX")"
-  cat > "$copr_config/copr" <<EOF
+  cat >"$copr_config/copr" <<EOF
 [copr-cli]
 login = ${COPR_LOGIN}
 username = ${COPR_USERNAME}
@@ -523,9 +538,15 @@ EOF
 }
 
 publish_windows_packagers() {
-  is_prerelease && { record_skipped "Windows packagers prerelease"; return 0; }
+  is_prerelease && {
+    record_skipped "Windows packagers prerelease"
+    return 0
+  }
   local zip_name="modde-${version}-x86_64-windows.zip"
-  test -s "$release_dir/${zip_name}" || { record_skipped "Windows packagers missing Windows zip"; return 0; }
+  test -s "$release_dir/${zip_name}" || {
+    record_skipped "Windows packagers missing Windows zip"
+    return 0
+  }
 
   local simit_bin
   simit_bin="${SIMIT_BIN:-simit}"
@@ -569,10 +590,19 @@ publish_windows_packagers() {
 }
 
 publish_flathub() {
-  is_prerelease && { record_skipped "Flathub prerelease"; return 0; }
+  is_prerelease && {
+    record_skipped "Flathub prerelease"
+    return 0
+  }
   require_local_secret_for_publish "Flathub" FLATHUB_TOKEN 'export FLATHUB_TOKEN for github.com/flathub/com.tartanoglu.modde' 'test -n "$FLATHUB_TOKEN"' || return 0
-  test -s "$release_dir/com.tartanoglu.modde.json" || { record_skipped "Flathub missing manifest"; return 0; }
-  test -s "$release_dir/cargo-sources.json" || { record_skipped "Flathub missing cargo sources"; return 0; }
+  test -s "$release_dir/com.tartanoglu.modde.json" || {
+    record_skipped "Flathub missing manifest"
+    return 0
+  }
+  test -s "$release_dir/cargo-sources.json" || {
+    record_skipped "Flathub missing cargo sources"
+    return 0
+  }
   local credential_helper='!f() { echo username=x-access-token; echo "password=$FLATHUB_TOKEN"; }; f'
   local flathub_repo="$work_dir/flathub-repo"
   rm -rf "$flathub_repo"

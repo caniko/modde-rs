@@ -10,7 +10,7 @@ warn() {
 }
 
 need() {
-  command -v "$1" > /dev/null 2>&1 || die "missing required command: $1"
+  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
 require_args() {
@@ -75,7 +75,7 @@ collect_glob() {
   local globbed=()
   shopt -s nullglob
   # shellcheck disable=SC2206
-  globbed=( $pattern )
+  globbed=($pattern)
   shopt -u nullglob
   local existing=()
   local candidate
@@ -100,7 +100,7 @@ assert_version_output() {
   local output="$2"
   local label="$3"
 
-  if ! grep -F -- "$expected" <<< "$output" > /dev/null; then
+  if ! grep -F -- "$expected" <<<"$output" >/dev/null; then
     printf '%s\n' "$output" >&2
     die "${label} did not report expected version ${expected}"
   fi
@@ -124,7 +124,7 @@ run_version_check() {
 root_run() {
   if [ "$(id -u)" -eq 0 ]; then
     "$@"
-  elif command -v sudo > /dev/null 2>&1; then
+  elif command -v sudo >/dev/null 2>&1; then
     sudo "$@"
   else
     die "this check needs root privileges for: $*; run on the atlas runner with sudo or provide a root-capable container workflow"

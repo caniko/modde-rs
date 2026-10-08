@@ -44,7 +44,7 @@ for script in "${scripts[@]}"; do
   step_log="$(mktemp)"
   log "== ${name} =="
 
-  if "$script" "$VERSION" "$RELEASE_DIR" > "$step_log" 2>&1; then
+  if "$script" "$VERSION" "$RELEASE_DIR" >"$step_log" 2>&1; then
     sed 's/^/  /' "$step_log" | tee -a "$TMP_REPORT"
     log "[PASS] ${name}"
     pass=$((pass + 1))
