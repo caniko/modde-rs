@@ -26,6 +26,8 @@ pub(super) async fn run_perf_candidate(
             .await?;
         require_baseline_profile(&baseline, &source)?;
         crate::commands::perf::require_baseline_configuration(baseline_run, &context)?;
+        crate::commands::perf::measured_run_samples(pm.db(), &baseline, DEFAULT_WARMUP_SECONDS)
+            .await?;
     }
     let (run, complete) = crate::commands::perf::run_installation(
         pm,

@@ -95,6 +95,12 @@ pub async fn handle_start(
             );
             super::perf::require_baseline_profile(&baseline, &profile)?;
             crate::commands::perf::require_baseline_configuration(&baseline_run, &context)?;
+            crate::commands::perf::measured_run_samples(
+                pm.db(),
+                &baseline,
+                modde_core::performance::DEFAULT_WARMUP_SECONDS,
+            )
+            .await?;
             BisectOracle::Perf {
                 baseline_run,
                 p99_frame_time_percent: perf_p99_frame_time_percent,

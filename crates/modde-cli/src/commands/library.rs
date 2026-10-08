@@ -900,6 +900,13 @@ async fn complete_session(
     process::remove_request(&session)?;
     PendingSession::clear()?;
     if skip_analysis {
+        // Preserve exit evidence when available, without making an explicit skip
+        // depend on readable evidence or writable analysis output.
+        if let Err(error) = record_performance_session(&session) {
+            eprintln!(
+                "Performance exit evidence could not be retained for manual ingestion: {error}"
+            );
+        }
         println!(
             "Session finalized. Performance ingestion and bisect results remain available for manual handling."
         );
@@ -962,6 +969,49 @@ fn record_performance_session(session: &PendingSession) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+/// Keep observed exit provenance available to manual ingestion after a failed
+/// analysis receipt is released. Never take status from a different capture.
+pub(super) fn recorded_performance_status(
+    directory: &std::path::Path,
+    run_id: &str,
+) -> Result<Option<i64>> {
+    #[derive(serde::Deserialize)]
+    struct Record {
+        session: PendingSession,
+        process: Option<process::Evidence>,
+    }
+    let bytes = match std::fs::read(directory.join("session.json")) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).context("reading recorded performance exit evidence"),
+    };
+    let recorded: Record =
+        serde_json::from_slice(&bytes).context("invalid recorded performance exit evidence")?;
+    recorded.session.require_owner()?;
+    let options: PlayOptions = serde_json::from_value(
+        recorded
+            .session
+            .launch_request
+            .context("recorded session has no capture request")?,
+    )?;
+    let capture = options
+        .performance
+        .context("recorded session has no performance capture")?;
+    anyhow::ensure!(
+        recorded.session.phase == SessionPhase::Captured
+            && capture.run_id == run_id
+            && modde_core::library::normalized_path(&capture.directory)
+                == modde_core::library::normalized_path(directory),
+        "recorded exit evidence belongs to another performance capture"
+    );
+    Ok(recorded
+        .process
+        .filter(|evidence| evidence.completed && evidence.started)
+        .and_then(|evidence| evidence.raw_status)
+        .and_then(|raw| process::from_raw(raw).code())
+        .map(i64::from))
 }
 
 async fn capture_session(session: &PendingSession, pm: &ProfileManager) -> Result<PendingSession> {

@@ -202,8 +202,18 @@ pub(crate) async fn complete_launch(
                     && candidate_run.summary.sample_count >= min_samples,
                 "insufficient completed performance samples; retry or mark this candidate manually"
             );
-            let baseline_samples = pm.db().list_performance_samples(&baseline_run).await?;
-            let candidate_samples = pm.db().list_performance_samples(run_id).await?;
+            let baseline_samples = crate::commands::perf::measured_run_samples(
+                pm.db(),
+                &baseline,
+                modde_core::performance::DEFAULT_WARMUP_SECONDS,
+            )
+            .await?;
+            let candidate_samples = crate::commands::perf::measured_run_samples(
+                pm.db(),
+                &candidate_run,
+                modde_core::performance::DEFAULT_WARMUP_SECONDS,
+            )
+            .await?;
             let verdict = perf_regression_verdict(
                 &baseline.summary,
                 &candidate_run.summary,

@@ -195,6 +195,7 @@ pub(super) async fn complete_capture(
             saved.exit_status == status.code().map(i64::from),
             "ingested performance exit status does not match the observed game"
         );
+        measured_run_samples(pm.db(), &saved, capture.warmup_seconds).await?;
         return Ok(());
     }
     let csv = find_mangohud_csv(&capture.directory, &capture.run_id)
@@ -369,9 +370,17 @@ pub async fn handle_ingest(run_id: String, csv: PathBuf, warmup_seconds: f64) ->
         super::library::observed_status(&session)?
             .and_then(|status| status.code())
             .map(i64::from)
-    } else {
+    } else if run.exit_status.is_some() {
         run.exit_status
+    } else {
+        super::library::recorded_performance_status(
+            configuration
+                .parent()
+                .context("capture directory missing")?,
+            &run_id,
+        )?
     };
+    let csv = std::path::absolute(csv)?;
     db.complete_performance_run(&run_id, &csv, exit_status, &parsed.summary, &parsed.samples)
         .await?;
     println!("Ingested performance run: {run_id}");
@@ -408,6 +417,33 @@ fn parse_capture(path: &Path, warmup: f64) -> Result<modde_core::performance::Ma
     let remaining = capture_samples_after_warmup(&parsed.samples, warmup)?;
     parsed.summary = modde_core::performance::summarize_samples_with_warmup(&remaining, 0.0);
     Ok(parsed)
+}
+
+/// Stored values alone cannot distinguish a measurement from a legacy FPS
+/// estimate. Reparse its retained CSV and require the exact ingested series and
+/// summary before using a run for automatic grading.
+pub(super) async fn measured_run_samples(
+    db: &modde_core::ModdeDb,
+    run: &modde_core::db::PerformanceRunRow,
+    warmup: f64,
+) -> Result<Vec<modde_core::PerformanceSample>> {
+    anyhow::ensure!(
+        run.status == "complete",
+        "performance run {} is not complete",
+        run.run_id
+    );
+    let csv = run
+        .mangohud_csv_path
+        .as_deref()
+        .context("performance run has no retained CSV; record or ingest a new measured trace")?;
+    let parsed = parse_capture(csv, warmup)?;
+    let stored = db.list_performance_samples(&run.run_id).await?;
+    anyhow::ensure!(
+        parsed.summary == run.summary && parsed.samples == stored,
+        "performance run {} differs from its measured CSV; ingest it again with the recorded warmup before grading",
+        run.run_id
+    );
+    Ok(parsed.samples)
 }
 
 /// Capture summaries, paired benchmarks and bisects must use the same strict
@@ -843,6 +879,69 @@ mod tests {
         std::fs::remove_file(&configuration).unwrap();
         // Legacy manual runs without capture provenance keep explicit warmup.
         assert!(require_ingest_warmup(&configuration, 0.0).is_ok());
+    }
+
+    #[tokio::test]
+    async fn grading_rechecks_measured_csv_provenance_and_stored_samples() {
+        let db = modde_core::ModdeDb::open_memory().await.unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let csv = root.path().join("capture.csv");
+        db.create_performance_run(&modde_core::db::NewPerformanceRun {
+            run_id: "baseline".into(),
+            game_id: "example".into(),
+            profile_id: None,
+            profile_name: "fixture".into(),
+            mod_snapshot: Vec::new(),
+            experiment_depth: 0,
+            label: None,
+        })
+        .await
+        .unwrap();
+        let legacy = "time,fps\n0,60\n31,60\n32,60\n";
+        std::fs::write(&csv, legacy).unwrap();
+        let estimated = modde_core::performance::parse_mangohud_csv(legacy).unwrap();
+        db.complete_performance_run(
+            "baseline",
+            &csv,
+            Some(0),
+            &estimated.summary,
+            &estimated.samples,
+        )
+        .await
+        .unwrap();
+        let row = db.load_performance_run("baseline").await.unwrap();
+        assert!(measured_run_samples(&db, &row, 30.0).await.is_err());
+
+        std::fs::write(
+            &csv,
+            "time,fps,frametime\n0,60,16.67\n31,60,16.67\n32,60,16.67\n",
+        )
+        .unwrap();
+        let measured = parse_capture(&csv, 30.0).unwrap();
+        db.complete_performance_run(
+            "baseline",
+            &csv,
+            Some(0),
+            &measured.summary,
+            &measured.samples,
+        )
+        .await
+        .unwrap();
+        let row = db.load_performance_run("baseline").await.unwrap();
+        assert_eq!(
+            measured_run_samples(&db, &row, 30.0).await.unwrap(),
+            measured.samples
+        );
+        // Same summaries do not suffice: a changed warmup row must be detected.
+        std::fs::write(
+            &csv,
+            "time,fps,frametime\n0,10,100\n31,60,16.67\n32,60,16.67\n",
+        )
+        .unwrap();
+        assert_eq!(parse_capture(&csv, 30.0).unwrap().summary, row.summary);
+        assert!(measured_run_samples(&db, &row, 30.0).await.is_err());
+        std::fs::remove_file(&csv).unwrap();
+        assert!(measured_run_samples(&db, &row, 30.0).await.is_err());
     }
 
     #[test]

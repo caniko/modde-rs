@@ -431,6 +431,84 @@ fn manager_bridge_refuses_an_existing_marker_from_another_config_directory() {
 }
 
 #[tokio::test]
+async fn manual_ingestion_keeps_recorded_exit_after_analysis_is_skipped() {
+    for (code, failed_analysis) in [(0, true), (23, true), (0, false), (23, false)] {
+        let fixture = Fixture::new();
+        let db = modde_core::ModdeDb::open_at(&fixture.data_dir().join("modde.db"))
+            .await
+            .unwrap();
+        let run_id = "skipped-analysis";
+        db.create_performance_run(&modde_core::db::NewPerformanceRun {
+            run_id: run_id.into(),
+            game_id: "example".into(),
+            profile_id: None,
+            profile_name: "fixture".into(),
+            mod_snapshot: Vec::new(),
+            experiment_depth: 0,
+            label: None,
+        })
+        .await
+        .unwrap();
+        let (path, _) = request(&fixture, &format!("exit {code}"));
+        fixture
+            .cmd()
+            .args(["library", "supervise"])
+            .arg(&path)
+            .assert()
+            .success();
+        let directory = fixture.data_dir().join("performance/example").join(run_id);
+        modde_core::library::atomic_json(
+            &directory.join("configuration.json"),
+            &serde_json::json!({"warmup_seconds": 0.0}),
+        )
+        .unwrap();
+        let sessions = path.parent().unwrap().parent().unwrap();
+        let journal = sessions.join("pending-session.json");
+        let mut session: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&journal).unwrap()).unwrap();
+        session["launch_request"] = serde_json::json!({"performance": {
+            "run_id": run_id, "directory": directory, "warmup_seconds": 0.0
+        }});
+        modde_core::library::atomic_json(&journal, &session).unwrap();
+
+        // Missing CSV leaves analysis pending, but the observed exit is durable.
+        if failed_analysis {
+            fixture.cmd().args(["library", "finish"]).assert().failure();
+        }
+        assert_eq!(
+            db.load_performance_run(run_id).await.unwrap().exit_status,
+            None
+        );
+        fixture
+            .cmd()
+            .args(["library", "finish", "--skip-analysis"])
+            .assert()
+            .success();
+        assert!(!sessions.join("pending-completion.json").exists());
+        assert!(directory.join("session.json").is_file());
+        let csv = directory.join(format!("{run_id}.csv"));
+        std::fs::write(
+            &csv,
+            "fps,frametime,elapsed\n60,16.67,0\n60,16.67,1000000000\n",
+        )
+        .unwrap();
+
+        fixture
+            .cmd()
+            .args(["perf", "ingest", "--run", run_id, "--csv"])
+            .arg(&csv)
+            .args(["--warmup-seconds", "0"])
+            .assert()
+            .success();
+
+        assert_eq!(
+            db.load_performance_run(run_id).await.unwrap().exit_status,
+            Some(code)
+        );
+    }
+}
+
+#[tokio::test]
 async fn manual_reingestion_preserves_success_failure_and_unknown_exit_status() {
     let fixture = Fixture::new();
     let db = modde_core::ModdeDb::open_at(&fixture.data_dir().join("modde.db"))
@@ -483,13 +561,14 @@ async fn manual_reingestion_preserves_success_failure_and_unknown_exit_status() 
 
         fixture
             .cmd()
-            .args(["perf", "ingest", "--run", run_id, "--csv"])
-            .arg(&csv)
+            .current_dir(fixture.root())
+            .args(["perf", "ingest", "--run", run_id, "--csv", "capture.csv"])
             .args(["--warmup-seconds", "0"])
             .assert()
             .success();
 
         let updated = db.load_performance_run(run_id).await.unwrap();
+        assert_eq!(updated.mangohud_csv_path, Some(csv.clone()));
         assert_eq!(updated.exit_status, exit_status);
         assert_eq!(updated.summary.median_fps, Some(45.0));
     }
