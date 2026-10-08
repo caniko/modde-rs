@@ -287,7 +287,7 @@ mod tests {
             .snapshot(&GameId::from("test-game"), src.path())
             .await
             .unwrap();
-        assert!(!snap.hash.is_empty());
+        assert_ne!(snap.hash, "");
 
         let ok = mgr.verify(&GameId::from("test-game")).await.unwrap();
         assert!(ok);

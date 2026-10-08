@@ -26,7 +26,12 @@ pub(super) fn install(game: &LibraryGame) -> Result<String> {
     let directory = data.join("launch-hooks");
     std::fs::create_dir_all(&directory)?;
     let wrapper = directory.join(format!("{}.sh", game.id));
-    let binary = super::cli_binary()?;
+    // Preserve the package/Home Manager entry point: the raw current_exe can
+    // bypass its database, GPU and library defaults when invoked by a store.
+    let binary = match std::env::var_os("MODDE_BIN") {
+        Some(binary) => launch_binary(std::path::PathBuf::from(binary))?,
+        None => super::cli_binary()?,
+    };
     let script = format!(
         "#!/bin/sh\n# Generated exact-install command boundary; argv is never re-parsed.\nexec {} --config-dir {} --data-dir {} library wrap {} -- \"$@\"\n",
         quote(binary.to_str().context("non-UTF8 executable path")?),
@@ -50,52 +55,50 @@ pub(super) fn install(game: &LibraryGame) -> Result<String> {
             "Paste into this game's Steam Launch Options: {} %command%",
             quote(wrapper.to_str().context("non-UTF8 wrapper path")?)
         )
-    } else {
-        if let Some(config_path) = modde_games::library::heroic_config(game)? {
-            let game_id = &game.app_id;
-            let bytes = std::fs::read(&config_path)?;
-            let mut value: serde_json::Value = serde_json::from_slice(&bytes)?;
-            let game_config = value
-                .get_mut(game_id)
-                .and_then(serde_json::Value::as_object_mut)
-                .context("Heroic game config missing")?;
-            let wrappers = game_config
-                .entry("wrapperOptions")
-                .or_insert_with(|| serde_json::json!([]))
-                .as_array_mut()
-                .context("invalid Heroic wrapperOptions")?;
-            let path = wrapper.to_str().context("non-UTF8 wrapper path")?;
-            // fgmod is a preparation step; run after its DLL edits, before the
-            // runner and game. Library restores the deployed proxy DLLs here.
-            let legacy = data.join("bin/modde-launch-wrapper.sh");
-            wrappers.retain(|entry| {
+    } else if let Some(config_path) = modde_games::library::heroic_config(game)? {
+        let game_id = &game.app_id;
+        let bytes = std::fs::read(&config_path)?;
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes)?;
+        let game_config = value
+            .get_mut(game_id)
+            .and_then(serde_json::Value::as_object_mut)
+            .context("Heroic game config missing")?;
+        let wrappers = game_config
+            .entry("wrapperOptions")
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut()
+            .context("invalid Heroic wrapperOptions")?;
+        let path = wrapper.to_str().context("non-UTF8 wrapper path")?;
+        // fgmod is a preparation step; run after its DLL edits, before the
+        // runner and game. Library restores the deployed proxy DLLs here.
+        let legacy = data.join("bin/modde-launch-wrapper.sh");
+        wrappers.retain(|entry| {
+            entry
+                .get("exe")
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(|exe| exe != path && Path::new(exe) != legacy)
+        });
+        let after_fgmod = wrappers
+            .iter()
+            .rposition(|entry| {
                 entry
                     .get("exe")
                     .and_then(serde_json::Value::as_str)
-                    .is_none_or(|exe| exe != path && Path::new(exe) != legacy)
-            });
-            let after_fgmod = wrappers
-                .iter()
-                .rposition(|entry| {
-                    entry
-                        .get("exe")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|exe| exe.contains("fgmod"))
-                })
-                .map_or(0, |index| index + 1);
-            wrappers.insert(after_fgmod, serde_json::json!({"exe": path, "args": ""}));
-            let backup = config_path.with_extension("json.modde-before-hook");
-            if !backup.exists() {
-                std::fs::copy(&config_path, &backup)?;
-            }
-            modde_core::library::atomic_json(&config_path, &value)?;
-            "Heroic wrapper installed. Disable automatic cloud-save sync for profile-managed saves, then restart Heroic to reload its saved configuration.".into()
-        } else {
-            format!(
-                "Add a Heroic wrapper after fgmod (outermost if fgmod is absent): executable={}, arguments empty. Restart Heroic after saving.",
-                wrapper.display()
-            )
+                    .is_some_and(|exe| exe.contains("fgmod"))
+            })
+            .map_or(0, |index| index + 1);
+        wrappers.insert(after_fgmod, serde_json::json!({"exe": path, "args": ""}));
+        let backup = config_path.with_extension("json.modde-before-hook");
+        if !backup.exists() {
+            std::fs::copy(&config_path, &backup)?;
         }
+        modde_core::library::atomic_json(&config_path, &value)?;
+        "Heroic wrapper installed. Disable automatic cloud-save sync for profile-managed saves, then restart Heroic to reload its saved configuration.".into()
+    } else {
+        format!(
+            "Add a Heroic wrapper after fgmod (outermost if fgmod is absent): executable={}, arguments empty. Restart Heroic after saving.",
+            wrapper.display()
+        )
     };
     LibraryPreferences::update(|preferences| {
         preferences
@@ -107,10 +110,36 @@ pub(super) fn install(game: &LibraryGame) -> Result<String> {
     Ok(note)
 }
 
+fn launch_binary(binary: PathBuf) -> Result<PathBuf> {
+    if binary.is_absolute() {
+        ensure!(
+            binary.is_file(),
+            "MODDE_BIN is unavailable: {}",
+            binary.display()
+        );
+        Ok(binary)
+    } else {
+        modde_games::library::launch::resolve_program(
+            binary.as_os_str(),
+            &LaunchSettings::default(),
+        )
+    }
+}
+
 /// Heroic downloads before entering our wrapper and uploads after it returns.
 /// Both happen outside the selected profile's save transition (including bisect
 /// source restoration), so the provider must relinquish automatic save writes.
-pub(super) fn require_profile_save_boundary(game: &LibraryGame) -> Result<()> {
+pub(super) fn require_profile_save_boundary(
+    game: &LibraryGame,
+    settings: &LaunchSettings,
+) -> Result<()> {
+    if game.store == Store::Steam {
+        ensure!(
+            settings.steam_cloud_disabled,
+            "disable Steam Cloud for this game in Steam Properties, restart Steam, then save steam_cloud_disabled=true in this installation's launch settings before using profile-managed saves"
+        );
+        return Ok(());
+    }
     if !matches!(game.store, Store::Gog | Store::Epic | Store::Sideload) {
         return Ok(());
     }
@@ -601,4 +630,12 @@ mod tests {
         assert!(unrelated.is_ok());
         assert!(require_idle_prefix(Some(&prefix)).is_ok());
     }
+}
+#[test]
+fn steam_profile_saves_require_an_explicit_cloud_disabled_setting() {
+    let game = LibraryGame::new(Store::Steam, "1".into(), "Steam game".into(), None);
+    let mut settings = LaunchSettings::default();
+    assert!(require_profile_save_boundary(&game, &settings).is_err());
+    settings.steam_cloud_disabled = true;
+    require_profile_save_boundary(&game, &settings).unwrap();
 }

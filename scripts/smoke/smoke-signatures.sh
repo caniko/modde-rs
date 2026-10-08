@@ -32,7 +32,7 @@ trap cleanup EXIT
 
 if [ -n "${COSIGN_PUBLIC_KEY:-}" ]; then
   cosign_key_file="$(mktemp)"
-  printf '%s' "$COSIGN_PUBLIC_KEY" > "$cosign_key_file"
+  printf '%s' "$COSIGN_PUBLIC_KEY" >"$cosign_key_file"
   cosign_identity_args=(--key "$cosign_key_file")
 elif [ -s keys/cosign.pub ]; then
   cosign_identity_args=(--key keys/cosign.pub)

@@ -9,6 +9,61 @@ use modde_core::library::LaunchSettings;
 
 use super::LibraryGame;
 
+#[cfg(target_os = "linux")]
+pub(super) const SYSTEM_READ_ONLY: &[&str] = &[
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/nix/store",
+    "/sys",
+    "/app",
+    "/overrides",
+    "/.flatpak-info",
+    "/run/current-system/sw",
+    "/run/opengl-driver",
+    "/run/opengl-driver-32",
+    "/etc/ld.so.cache",
+    "/etc/ld.so.conf",
+    "/etc/ld.so.conf.d",
+    "/etc/fonts",
+    "/etc/ssl/certs",
+    "/etc/resolv.conf",
+    "/etc/hosts",
+    "/etc/nsswitch.conf",
+    "/etc/passwd",
+    "/etc/group",
+    "/etc/localtime",
+    "/etc/vulkan",
+    "/etc/glvnd",
+];
+
+/// Existing directory grants preserve their symlinks. Mounting a file over such
+/// a symlink is rejected by bubblewrap; aliases hidden by private HOME need a
+/// file-only mount instead. The resolved target is always granted separately.
+pub(super) fn program_alias_is_visible(
+    game: &LibraryGame,
+    settings: &LaunchSettings,
+    path: &Path,
+) -> bool {
+    #[cfg(target_os = "linux")]
+    if SYSTEM_READ_ONLY
+        .iter()
+        .map(Path::new)
+        .any(|root| root.is_dir() && path.starts_with(root))
+    {
+        return true;
+    }
+    game.install_path
+        .iter()
+        .chain(settings.prefix.iter())
+        .chain(settings.save_directory.iter())
+        .chain(settings.sandbox.read_only.iter())
+        .chain(settings.sandbox.writable.iter())
+        .any(|root| root != path && root.is_dir() && path.starts_with(root))
+}
+
 pub(super) fn validate(settings: &LaunchSettings) -> Result<()> {
     if !cfg!(target_os = "linux") {
         bail!("bubblewrap sandboxing is available on Linux only");
@@ -69,6 +124,12 @@ pub(super) fn command(
     .into_iter()
     .flatten()
     {
+        if !path.is_dir() {
+            bail!(
+                "initialize sandbox prefix/save directories before launching; missing directory: {}",
+                path.display()
+            );
+        }
         if path.canonicalize()?.parent().is_none() {
             bail!("sandbox cannot expose the host root");
         }
@@ -93,40 +154,12 @@ pub(super) fn command(
     command.args([
         "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/dev/shm", "--tmpfs", "/tmp",
     ]);
-    for path in [
-        "/usr",
-        "/bin",
-        "/sbin",
-        "/lib",
-        "/lib64",
-        "/nix/store",
-        "/sys",
-        "/app",
-        "/overrides",
-        "/.flatpak-info",
-        "/run/current-system/sw",
-        "/run/opengl-driver",
-        "/run/opengl-driver-32",
-        "/etc/ld.so.cache",
-        "/etc/ld.so.conf",
-        "/etc/ld.so.conf.d",
-        "/etc/fonts",
-        "/etc/ssl/certs",
-        "/etc/resolv.conf",
-        "/etc/hosts",
-        "/etc/nsswitch.conf",
-        "/etc/passwd",
-        "/etc/group",
-        "/etc/localtime",
-        "/etc/vulkan",
-        "/etc/glvnd",
-    ] {
+    for path in SYSTEM_READ_ONLY {
         bind_if_exists(&mut command, "--ro-bind", Path::new(path));
     }
     for path in [
         "/dev/dri",
         "/dev/snd",
-        "/dev/input",
         "/dev/nvidia0",
         "/dev/nvidia1",
         "/dev/nvidiactl",
@@ -135,6 +168,30 @@ pub(super) fn command(
         "/dev/nvidia-uvm-tools",
     ] {
         bind_if_exists(&mut command, "--dev-bind", Path::new(path));
+    }
+    // Raw keyboard/mouse events bypass the display server. Share gamepad nodes
+    // only, using udev's device classification (legacy js nodes are gamepads).
+    if let Ok(nodes) = std::fs::read_dir("/dev/input") {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        for node in nodes.flatten() {
+            let path = node.path();
+            let Ok(metadata) = path.symlink_metadata() else {
+                continue;
+            };
+            if !metadata.file_type().is_char_device() {
+                continue;
+            }
+            let device = metadata.rdev();
+            let properties = std::fs::read_to_string(format!(
+                "/run/udev/data/c{}:{}",
+                libc::major(device),
+                libc::minor(device)
+            ))
+            .unwrap_or_default();
+            if controller_node(node.file_name().to_str().unwrap_or_default(), &properties) {
+                bind(&mut command, "--dev-bind", &path);
+            }
+        }
     }
     // Preserve the logical HOME so native save paths and Wine's shell-folder
     // symlinks still resolve. Its contents are private; individual granted
@@ -210,20 +267,16 @@ pub(super) fn command(
     for path in &settings.sandbox.read_only {
         bind(&mut command, "--ro-bind", path);
     }
-    if let Some(proton) = settings.environment.get("PROTONPATH").map(Path::new) {
-        if proton.is_absolute() && proton.is_dir() {
-            if proton.canonicalize()?.parent().is_none() {
-                bail!("Proton runtime cannot expose the host root");
-            }
-            bind(&mut command, "--ro-bind", proton);
+    if let Some(proton) = settings.environment.get("PROTONPATH").map(Path::new)
+        && proton.is_absolute()
+        && proton.is_dir()
+    {
+        if proton.canonicalize()?.parent().is_none() {
+            bail!("Proton runtime cannot expose the host root");
         }
+        bind(&mut command, "--ro-bind", proton);
     }
     bind(&mut command, "--bind", install);
-    if let Some(executable) = &settings.executable {
-        if !executable.starts_with(install) {
-            bind(&mut command, "--ro-bind", executable);
-        }
-    }
     // Proton/UMU write metadata next to pfx as well as saves inside it. The
     // validated compat root still targets this installation's physical prefix.
     super::launch::wine_environment_prefix(settings)?;
@@ -278,7 +331,16 @@ pub(super) fn command(
         "__GLX_VENDOR_LIBRARY_NAME",
         "__NV_PRIME_RENDER_OFFLOAD",
         "DRI_PRIME",
+        "MESA_VK_DEVICE_SELECT",
+        "MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE",
+        "__NV_PRIME_RENDER_OFFLOAD_PROVIDER",
+        "__VK_LAYER_NV_optimus",
+        "LIBGL_ALWAYS_SOFTWARE",
+        "MESA_LOADER_DRIVER_OVERRIDE",
     ] {
+        if settings.gpu_render_node.is_some() && super::gpu::SELECTION_KEYS.contains(&key) {
+            continue;
+        }
         if let Some(value) = std::env::var_os(key) {
             command.args(["--setenv", key]).arg(value);
         }
@@ -338,9 +400,36 @@ fn bind_if_exists(command: &mut Command, mode: &str, path: &Path) {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn controller_node(name: &str, properties: &str) -> bool {
+    let numbered = |prefix| {
+        name.strip_prefix(prefix)
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    };
+    numbered("js")
+        || (numbered("event")
+            && properties.lines().any(|l| l == "E:ID_INPUT_JOYSTICK=1")
+            && !properties
+                .lines()
+                .any(|l| matches!(l, "E:ID_INPUT_KEYBOARD=1" | "E:ID_INPUT_MOUSE=1")))
+}
+
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn controller_grants_exclude_raw_keyboard_mouse_and_unclassified_events() {
+        assert!(controller_node("js0", ""));
+        assert!(controller_node("event12", "E:ID_INPUT_JOYSTICK=1\n"));
+        assert!(!controller_node("event0", "E:ID_INPUT_KEYBOARD=1\n"));
+        assert!(!controller_node(
+            "event1",
+            "E:ID_INPUT_JOYSTICK=1\nE:ID_INPUT_MOUSE=1\n"
+        ));
+        assert!(!controller_node("event2", ""));
+        assert!(!controller_node("by-id", "E:ID_INPUT_JOYSTICK=1\n"));
+    }
 
     #[test]
     fn a_symlink_cannot_turn_an_extra_mount_into_the_host_root() {

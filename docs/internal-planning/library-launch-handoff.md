@@ -1,14 +1,153 @@
 # Library launch and sandbox handoff
 
-Commit-pass update (2026-09-30): the implementation below is now committed
-locally in `f3ae6aa`, `7bdaf80`, `9b78a06`, `33f17fc` and `4c35e97`.
-Nothing has been pushed. The checkout/patch-transfer instructions below describe
-the pre-commit snapshot; transfer the committed history for a current handoff.
-Formatting, compilation and focused regression checks are authorized. The user's
-2026-10-08 instruction to complete the work also authorizes isolated live probes;
-publication, provider configuration changes and host deployment remain separate.
+## Source integration, 2026-10-08
 
-Source-review continuation (2026-09-30 → 2026-10-08, from `9649bef`, uncommitted):
+The local continuation is preserved in six grouped commits: `946f086`
+(formatting), `2417670` (dependencies), `89117d1` (alias rebinding), `8b11a08`
+(sandbox fixes), `81abf57` (capture provenance) and `2d74a60` (documentation).
+It is reconciled with remote `trunk` at
+`4e5fea179e2a2d1ac16dc91b5dcc9adb72cb306c` without rewriting either history.
+The combined source retains the newer `library reap` observer, private
+startup/exit evidence, diagnostics and GPU support; it does not retain the
+superseded local `wait-tree` implementation.
+
+All qualification records below describe their named historical sources or
+fixtures, not this reconciled source. Publication is authorized by the current
+commit-and-push request; host deployment and runtime admission remain separate.
+
+Focused integration checks passed 454 tests with zero failures and one existing
+ignored test: core units and installation/save transitions, game Library units
+and four selected integrations, and CLI units plus preparation/supervision tests.
+CLI checks used `--no-default-features --features cyberpunk,linux-integrations,postgres`;
+all Cargo tests used `--locked --offline -j 2` and cached Rust
+`1.99.0-nightly-2026-07-18`. Locked Linux metadata, focused treefmt and syntax
+checks also passed. The first test attempt lacked a C compiler; rerunning in the
+cached project environment passed. Logs and exact commands are retained in
+`/home/can/.cache/opencode/scratch/opencode/modde-grouped-20261008/merged-retry-1-checks.json`.
+This is not full-workspace, MSRV, packaged-client or real-game qualification.
+
+## Current handoff, 2026-10-06
+
+[Modde PR #3](https://github.com/caniko/modde-rs/pull/3) merged into `trunk` as
+`db5b249feba133587a9289b66ed6da5191d3517d`. All five default CI jobs and four Nix
+builds passed; independent verification matched the retained artifacts to that
+exact executed revision. PR #2 closed with its isolated member checks and release
+capabilities preserved. Pages failed in Plinth's compiler-cache wrapper before
+deployment. See [Library and sandbox qualification](../src/reference/library-qualification.md)
+for exact sources, artifacts and receipts.
+
+Canix still selects `0d3ce666e2362555b90d4d37b084cc8d86450eb9`. Its producer and
+native package CI passed, with 2,092 passed tests, zero failures and two ignored
+tests. The historical consumer passed actual-wrapper, real-bubblewrap lifecycle
+and diagnostic fixtures. A replacement runtime pin requires coordinator selection
+and final consumer qualification.
+
+Native Linux is the required target. Flatpak is follow-up work. Performance is
+report-only: retain measurements, paired deltas and variability. No real-game
+performance or save-continuity qualification has occurred in this worker's scope.
+The producer follow-up backports Cryoglyph's upstream `lru 0.18.2` dependency
+change into the checksummed published release, retaining Iced 0.14's WGPU 27 API.
+Native all-feature tests passed 2,095 cases with zero failures and two ignored;
+minimal UI tests passed 201, and the audit found zero vulnerabilities. Changed
+packages and the exact hosted candidate require their own qualification.
+
+The coordinator selected Canix
+`3b29bb33d125381f9d34b4f18657755cbe4a0379` for scoped non-activating qualification.
+The Modde worker completed its single corrected online VM retry and delivered
+the measured package/wrapper and remote-policy transfer. The coordinator
+independently accepted that transfer and the combined binding/post-checks.
+The user explicitly reassigned the sole changed-hook Nomad VM to the coordinator
+after the ETL worker became unavailable; that gate also passed. Production ETL
+writer authority is still unassigned/unconfirmed.
+The coordinator owns the
+combined profile-aware binding, final composition, packaged CLI/full local
+registry qualification, recovery/adoption, activation and writer release.
+Canix Actions remain **skipped-by-operator**. A moving checkout HEAD does not
+authorize rebinding, and source equality alone cannot transfer execution evidence.
+
+The corrected online VM passed with one JUnit test, zero failures/errors/skips
+and all 13 rendered lifecycle assertions preserved. Worker post-terminal
+verification retains the full 1,207-line log, exact private publication and
+physical managed output/binding roots:
+`/data/scratch/tmp/opencode/modde-3b29-online-terminal-verification-20261004T223136116229Z/receipt-v2.json`
+(SHA-256 `d08e7ea2ff6a53f3ec4a240bd400476286a7054dff0f249161e545eb3529333f`).
+This is the sole actual corrected retry, using normal admission, one job/two cores
+and no additional flake evaluation. Earlier failures/nonexecution remain retained.
+
+Independent verification accepted both online and changed-hook Nomad gates:
+`/data/scratch/tmp/opencode/durability-3b29-vm-terminal-independent-v3-20261004T224505764092Z/receipt.json`
+(SHA-256 `9d7c8a498c7109dacf0f49399d15c298d435d8d50874fa9ae00ab1691b4bd823`).
+Nomad's single selected realization also has one JUnit test with no failures,
+errors or skips, exact private publication/root, the unchanged 41 production SQL
+checks plus one fixture check, equal source/local/off-host records, and export v2
+with exactly 2,000 files/35 directories and all sizes/hashes/no extras.
+Scoped local qualification is green; physical production restore, the last
+acknowledged-row boundary, writer window and final cohort remain unadmitted.
+
+Modde's measured storage cohort is final-service PostgreSQL `rnyi…`, distinct
+from the configured `3hc…` package. Preserve both bindings. Raven's full-stage
+Canix lease-launcher artifacts also differ from historical acceptance; complete
+stage/runtime/CLI qualification remains a separate coordinator gate.
+The six selected units' literal `User`, `PGUSER` and source revision are now
+proven for exact `3b29…` through their bound derivation text:
+`/data/scratch/tmp/opencode/durability-3b29-six-stage-literal-provenance-20261004T225802091632Z/receipt.json`
+(SHA-256 `d73f0b6fa9a96e91a62345c2fb5af55f97cd0bacb05129b89294e6482d59ecc4`).
+That recovered provenance does not qualify execution through the changed launcher.
+
+PR closeout and CI/release capability preservation are complete. Optional Greptile
+review was unavailable and is not counted as a pass; repository protection imposed
+no mandatory provider review. Credentialed release-channel delivery and the next
+producer candidate still require their own acceptance. Preserve active/history roots,
+generated docs and failed/cancelled receipts while their gates remain pending;
+cleanup requires exact-owned inactive regenerated artifacts and preservation
+through Doty.
+
+### Onward execution gates
+
+Producer publication prerequisites can progress independently of final consumer
+qualification. If the producer follow-up changes a pin, refresh final selection
+and the affected qualification. Runtime execution awaits the coordinator's exact
+final-source selection and admission.
+
+| Gate                                    | Owner                                         | Exit evidence                                                                                                                                          |
+| --------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Producer follow-up                      | Repository/CI owners                          | Exact Plinth consumption, fixed Cryoglyph dependency path, generated CI/release convergence and exact-candidate package/hosted acceptance.             |
+| Final composition                       | Coordinator                                   | Committed 40-character Canix source, approved pins and an enumerated production recovery contract.                                                     |
+| Final qualification                     | Coordinator                                   | Final binding/private publication/roots, packaged CLI and changed-launcher qualification, with artifact-by-artifact transfer dispositions.             |
+| Storage readiness                       | Coordinator/storage owner                     | Accepted fresh verification of the actual unresolved Atlas Btrfs corruption; historical quiet journals and cumulative counters do not prove clearance. |
+| Production recovery admission           | Coordinator and confirmed writer owners       | Exact artifacts/workloads, UTC start/end/deadline, acknowledgement boundary, physical restore acceptance and failure/deadline recovery disposition.    |
+| Adoption/activation and verification    | Coordinator                                   | Required post-activation checks pass, followed by explicit writer release.                                                                             |
+| Real games and report-only measurements | Modde worker after explicit runtime admission | Rendering, launch/recovery/save continuity receipts and eight alternating off/on pairs.                                                                |
+| Final closeout                          | Respective owners                             | Receipt-backed documentation and eligible preserved exact-owned inactive regenerated artifacts cleaned through Doty.                                   |
+
+For each final artifact, record identical-and-transferable, changed-and-requiring-
+qualification, or pending. Transfer needs measured derivation/output, NAR,
+defaults/inputs and relevant execution-context equality. Changed hooks or SQL
+contracts require qualification of the changed scope; a possible 49-record final
+contract is not covered by the accepted 41 production checks plus one VM fixture.
+New final-source attempts need coordinator admission and do not reopen either
+closed `3b29…` VM attempt. Canix Actions remain skipped-by-operator.
+
+Storage evidence remains unresolved in
+`/data/scratch/tmp/opencode/durability-atlas-btrfs-persistence-20261005T053121748122Z/receipt.json`
+(SHA-256 `6b27f32a8eb2b7f33a02dac173dba02c7d2b0062098f21d4dc14de7863f6aab8`).
+Production admission requires the coordinator/storage owner's fresh verification.
+
+At admitted runtime entry,
+reconfirm Modde inactivity and the actual foreground marker/pause policy.
+Live direct/store/manager launches, Proton/UMU, interruption/save continuity and
+observed game-renderer evidence remain required. Budget about 80 minutes of
+gameplay plus setup for eight alternating five-minute off/on measurement pairs.
+Capability status remains Partial until end-to-end evidence supports changing it.
+
+## Historical pre-qualification snapshot
+
+The material below records the 2026-09-30 handoff. Its edits-only authorization,
+checkout/patch-transfer recipe and original execution checklist are historical;
+use the current exact-source selection and published history for new work.
+
+Historical local source-review continuation (2026-09-30 → 2026-10-08, from
+`9649bef`; now preserved in the grouped commits above):
 
 - Reviewed parser callers, GUI fixtures/mutation guards, prefix/save contexts and
   deployment re-resolution. Re-traced the pinned Heroic initialization, UMU
@@ -59,9 +198,9 @@ it with saved settings, plus optional Linux sandboxing and measured overhead.
 - Original checkout: `/data/nvme0/can/canix/projects/repos/owned/modde-rs`.
 - The original pre-commit snapshot contained tracked and untracked implementation,
   including pre-existing user feature-gating changes and Library UI files. Those
-  changes are now committed in the history listed above. Transfer that history
-  plus any current working-tree changes; the source-review continuation is still
-  uncommitted. Preserve user changes rather than treating every diff as agent-owned.
+  changes and the source-review continuation are now committed. Transfer the
+  reconciled history rather than replaying the historical snapshot patch recipe.
+  Preserve user changes rather than treating every diff as agent-owned.
 - Origin is GitHub; `legacy-codeberg` points to `caniko/rs-modde` with push disabled.
 - The combined tree's Rust MSRV is `1.94`, edition 2024. Checks used cached Rust
   `1.99.0-nightly-2026-07-18`, not an MSRV qualification. `.envrc` uses the project flake and a sibling
@@ -79,12 +218,12 @@ git ls-files --others --exclude-standard -z | tar --null -T - -czf /path/to/tran
 In a clean destination checkout at the base HEAD, apply the patch and extract
 the archive at the repository root. Compare `git status --short` with the source.
 
-## Authorization and qualification
+## Historical authorization and qualification (2026-09-30)
 
 - The user authorized `treefmt`, minimal/full-feature Cargo checks and focused
   regressions on 2026-09-30, then continued implementation and requested completion
   on 2026-10-08. Keep live save/config probes isolated from the user's real state.
-- Current-tree verification (2026-10-08): 227 core unit tests passed (one existing
+- Pre-integration local verification (2026-10-08): 227 core unit tests passed (one existing
   ignored test was not run), all five installation/save-transition tests passed,
   137 CLI unit tests and all 19 Library preparation/supervision tests passed,
   27 game Library units plus all four selected game integrations passed, and all
@@ -235,26 +374,29 @@ python3 scripts/smoke/library-containment.py --modde /path/to/modde --bwrap /pat
 | Regression source                                        | `crates/modde-cli/tests/cli_library_{preparation,supervision}.rs`, `crates/modde-games/tests/{installation_context_tests,installation_prefix_tests,store_context_tests,library_sandbox_commands}.rs`, `crates/modde-core/tests/{installation_state_tests,save_transition_tests}.rs` |
 | Detailed behavior/status                                 | `docs/src/guides/playing.md`, `docs/src/reference/parity.md`, `docs/capability-matrix.toml`                                                                                                                                                                                         |
 
-## Remaining qualification
+## Historical next-work checklist (2026-09-30)
 
-1. Qualify the native packaged client and GUI against committed source/pinned
-   inputs through PR CI, then real provider wrappers and nested runtimes. Native
-   wrapper wiring includes bwrap/coreutils/systemd; generated hooks now pin the
-   public wrapper rather than the hidden Nix executable. No PR is published without
-   explicit push authorization. Flatpak still requires a separately qualified
-   host-launch bridge and packaging; native support is not Flatpak support.
-2. Run representative Steam/Heroic game and cloud-save qualification. Heroic
-   automatic cloud sync must be disabled and its runner initialized before save
-   adoption. Steam Cloud and other existing-service launches remain outside the
-   observed descendant boundary. Do not infer safety from successful fixture exits.
-3. Repair/qualify the live graphics environment, then collect repeated alternating
-   sandbox-off/on measurements of the same real game
-   scene. Any graphics-demo result applies to that demo only, not game overhead.
-   Retain measured CSVs, warmup/quality gates and successful exit evidence.
-4. Review capability upgrades only after the remaining end-to-end evidence exists.
-   Existing production CLI/GUI save operations use PendingSession transitions;
-   legacy low-level ProfileManager scoped methods remain non-journalled APIs and
-   are not a replacement for that guarded lifecycle.
+1. Finish source-level signature/type/feature consistency review, especially new
+   parser APIs, GUI fixtures, prefix helper and fake-bwrap deployment-refresh test.
+   Latest fixes cover deployment re-resolution, re-ingestion exit retention,
+   measured frame times, timestamp conversion and custom-symlink UMU grants.
+2. Finish Heroic first-run UMU/raw-Proton/fallback-runner tracing across native
+   launches, inherited environments, transient overrides and explicit prefixes.
+   Heroic `verifyWinePrefix` uses UMU `createprefix` or `wineboot --init`, with Proton
+   registry checks under `pfx`; UMU can alias absent `pfx` to the configured root.
+3. Audit provider/external-service lifetimes, Wine idleness, Steam/Proton/Flatpak,
+   cloud-save boundaries and mount coverage. Flatpak still lacks packaged
+   bubblewrap and a host-launch bridge; native flake wiring exists. Alias
+   retargeting is guarded without a demonstrated explicit rebinding workflow;
+   low-level `ProfileManager::*_scoped` methods remain unjournalled.
+4. Finish interruption/retry audit: receipts, nested bisect restoration, late
+   workers, skip-analysis, manager-marker cleanup, manual ingestion, GUI races and
+   measured-frame-time provenance in bisect baselines. Update docs for any fixes.
+5. Once execution is authorized: treefmt, focused compilation/tests with minimal
+   and full feature sets, then live provider/save-continuity/containment/nested-runtime
+   qualification and repeated paired overhead measurements. The fake-bwrap test
+   checks executable selection, not containment. Keep capability status Partial
+   until end-to-end qualification supports upgrading it.
 
 Reviewed upstream pins (see playing guide for links):
 

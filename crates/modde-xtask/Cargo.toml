@@ -16,6 +16,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 semver.workspace = true
+serde_json.workspace = true
 tracing-subscriber.workspace = true
 harbor-xtask = { git = "https://github.com/caniko/harbor-rs.git", rev = "c4ffa5d9b9232eae1f6693dfbcbcdd2548f31592" }
 

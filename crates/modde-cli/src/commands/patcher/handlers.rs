@@ -289,7 +289,14 @@ pub async fn handle_run(profile_name: Option<String>, game_id: Option<String>) -
     let context = crate::commands::installation_context(profile.game_id.as_str(), &pm).await?;
     let install_dir = context.game.install_path.context("installation missing")?;
 
-    let ran = run_enabled_pipeline(&pm, &profile, game_plugin, &install_dir, context.prefix.as_deref()).await?;
+    let ran = run_enabled_pipeline(
+        &pm,
+        &profile,
+        game_plugin,
+        &install_dir,
+        context.prefix.as_deref(),
+    )
+    .await?;
     println!("Ran {ran} patcher stage(s) for {}", profile.name);
     Ok(())
 }

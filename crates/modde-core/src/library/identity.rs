@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    BTreeMap, BTreeSet, Context, Deserialize, LibraryPreferences, Path, PathBuf, Result, Serialize,
+    bail, installation_id,
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InstallationIdentity {
@@ -32,10 +35,10 @@ pub fn normalized_path(path: &Path) -> PathBuf {
             _ => result.push(component),
         }
     }
-    if result != path {
-        normalized_path(&result)
-    } else {
+    if result == path {
         result
+    } else {
+        normalized_path(&result)
     }
 }
 

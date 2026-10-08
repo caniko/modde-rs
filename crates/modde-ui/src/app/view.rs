@@ -375,7 +375,8 @@ impl Modde {
     pub(super) fn subscription(&self) -> iced::Subscription<Message> {
         iced::Subscription::batch([
             iced::Subscription::run(external_refresh_stream),
-            iced::time::every(std::time::Duration::from_secs(2)).map(|_| Message::LibrarySessionTick),
+            iced::time::every(std::time::Duration::from_secs(2))
+                .map(|_| Message::LibrarySessionTick),
         ])
     }
 }

@@ -277,7 +277,10 @@ fn test_conflict_map_many_files_no_conflicts() {
     }
 
     let conflicts = cm.conflicts();
-    assert!(conflicts.is_empty());
+    assert_eq!(
+        conflicts,
+        [] as [(&str, &std::collections::HashSet<modde_core::ModId>); 0]
+    );
 }
 
 #[test]
@@ -628,7 +631,7 @@ fn test_resolve_all_disabled() {
     };
 
     let result = resolve(&profile).unwrap();
-    assert!(result.order.is_empty());
+    assert_eq!(result.order, [] as [modde_core::ModId; 0]);
 }
 
 // ── Profile serialization edge cases ───────────────────────────────
@@ -778,7 +781,7 @@ async fn test_stock_concurrent_snapshot_and_verify() {
         .snapshot(&GameId::from("test-game"), src.path())
         .await
         .unwrap();
-    assert!(!snap.hash.is_empty());
+    assert_ne!(snap.hash, "");
 
     // Verify should pass
     assert!(mgr.verify(&GameId::from("test-game")).await.unwrap());

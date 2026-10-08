@@ -29,8 +29,24 @@ rustdoc-args = ["--cfg", "docsrs"]
 workspace = true
 
 [features]
-default = ["all-games", "bethesda-archives", "postgres", "linux-integrations", "macos-integrations"]
-all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
+default = [
+  "all-games",
+  "bethesda-archives",
+  "postgres",
+  "linux-integrations",
+  "macos-integrations",
+]
+all-games = [
+  "bethesda",
+  "gamebryo",
+  "cyberpunk",
+  "ue4",
+  "bg3",
+  "stardew",
+  "bannerlord",
+  "witcher3",
+  "oblivion-remastered",
+]
 bethesda = ["modde-games/bethesda", "modde-sources/bethesda"]
 gamebryo = ["modde-games/gamebryo", "modde-sources/gamebryo"]
 cyberpunk = ["modde-games/cyberpunk", "modde-sources/cyberpunk"]
@@ -39,16 +55,28 @@ bg3 = ["modde-games/bg3", "modde-sources/bg3"]
 stardew = ["modde-games/stardew", "modde-sources/stardew"]
 bannerlord = ["modde-games/bannerlord", "modde-sources/bannerlord"]
 witcher3 = ["modde-games/witcher3", "modde-sources/witcher3"]
-oblivion-remastered = ["modde-games/oblivion-remastered", "modde-sources/oblivion-remastered"]
+oblivion-remastered = [
+  "modde-games/oblivion-remastered",
+  "modde-sources/oblivion-remastered",
+]
 bethesda-archives = ["modde-sources/bethesda-archives"]
 postgres = ["modde-core/postgres"]
 # Headless offscreen screenshot CLI support. Non-default so release binaries
 # carry zero extra weight. Pulls iced_test (the dual-backend tiny-skia renderer)
 # in as a normal dependency only when enabled.
 screenshot = ["dep:iced_test"]
-linux-integrations = ["modde-core/linux-integrations", "modde-games/linux-integrations"]
-macos-integrations = ["modde-core/macos-integrations", "modde-games/macos-integrations"]
-windows-integrations = ["modde-core/windows-integrations", "modde-games/windows-integrations"]
+linux-integrations = [
+  "modde-core/linux-integrations",
+  "modde-games/linux-integrations",
+]
+macos-integrations = [
+  "modde-core/macos-integrations",
+  "modde-games/macos-integrations",
+]
+windows-integrations = [
+  "modde-core/windows-integrations",
+  "modde-games/windows-integrations",
+]
 
 [dependencies]
 modde-core = { workspace = true }

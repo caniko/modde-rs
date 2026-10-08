@@ -121,6 +121,7 @@ fn manifest_with_nexus_download(hash: u64) -> WabbajackManifest {
     }
 }
 
+mod admission;
 mod game_files;
 mod helpers;
 mod pipeline;

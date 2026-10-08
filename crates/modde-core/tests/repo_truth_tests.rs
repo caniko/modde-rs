@@ -87,6 +87,17 @@ fn capability_matrix_captures_the_expected_baseline() {
         .get("hot_deploy")
         .expect("Hot-deploy entry should exist");
     assert_eq!(hot_deploy.status, "Partial");
+
+    for feature_id in ["owned_game_library", "sandboxed_launch"] {
+        let feature = matrix
+            .features
+            .get(feature_id)
+            .expect("launch capability entry should exist");
+        assert_eq!(
+            feature.status, "Partial",
+            "{feature_id} still requires live qualification"
+        );
+    }
 }
 
 #[test]
@@ -142,6 +153,8 @@ fn public_docs_match_capability_matrix_for_critical_statuses() {
         "bain",
         "generic_game_support",
         "starfield_save_tracking",
+        "owned_game_library",
+        "sandboxed_launch",
     ] {
         let feature = matrix
             .features

@@ -69,5 +69,5 @@ fn parse_real_wabbajack_file() {
     // Verify first archive hash is nonzero (base64 decoded correctly)
     let first = &manifest.archives[0];
     assert_ne!(first.hash, 0, "hash should be nonzero after base64 decode");
-    assert!(!first.name.is_empty());
+    assert_ne!(first.name, "");
 }

@@ -92,6 +92,23 @@ pub(super) fn require_baseline_configuration(
         settings == context.launch,
         "launch settings differ from the baseline; restore them or record a new baseline"
     );
+    require_gpu_configuration(
+        &recorded["gpu"],
+        &modde_games::library::gpu::snapshot(&context.launch)?,
+    )?;
+    Ok(())
+}
+
+fn require_gpu_configuration(
+    recorded: &serde_json::Value,
+    current: &modde_games::library::gpu::Snapshot,
+) -> Result<()> {
+    let recorded: modde_games::library::gpu::Snapshot = serde_json::from_value(recorded.clone())
+        .context("capture has no GPU provenance; record a new baseline")?;
+    anyhow::ensure!(
+        recorded == *current,
+        "GPU routing, driver or inventory changed; record a new baseline"
+    );
     Ok(())
 }
 
@@ -111,6 +128,7 @@ pub(super) async fn run_installation(
         "duration must be positive and longer than the finite, nonnegative warmup"
     );
     let game = &context.saves.game_id;
+    let gpu = modde_games::library::gpu::snapshot(&context.launch)?;
     let profile = pm.load(target, Some(game)).await?;
     let run_id = new_run_id(game.as_str());
     pm.db()
@@ -147,6 +165,7 @@ pub(super) async fn run_installation(
             "platform": std::env::consts::OS, "architecture": std::env::consts::ARCH,
             "kernel": std::fs::read_to_string("/proc/sys/kernel/osrelease").ok(),
             "nvidia_driver": std::fs::read_to_string("/proc/driver/nvidia/version").ok(),
+            "gpu": gpu,
         }),
     )?;
     println!("Performance run: {run_id}");
@@ -240,6 +259,7 @@ pub async fn sandbox_pairs(
         .join("performance")
         .join(format!("sandbox-{}.json", new_run_id(id)));
     let mut results = Vec::new();
+    let expected_gpu = modde_games::library::gpu::snapshot(&context.launch)?;
     let mut deltas = Vec::new();
     let mut startup_deltas = Vec::new();
     for pair in 0..pairs {
@@ -251,6 +271,10 @@ pub async fn sandbox_pairs(
         } else {
             [true, false]
         } {
+            anyhow::ensure!(
+                modde_games::library::gpu::snapshot(&context.launch)? == expected_gpu,
+                "GPU routing, driver or inventory changed during paired measurements"
+            );
             println!(
                 "Pair {}/{pairs}: sandbox {}. Replay the same workload and exit the game.",
                 pair + 1,
@@ -290,6 +314,7 @@ pub async fn sandbox_pairs(
                     .join("session.json"),
             )?)?;
             let first_sample = recorded["process"]["first_sample_ms"].as_f64();
+            require_gpu_configuration(&recorded["process"]["gpu"], &expected_gpu)?;
             startup[usize::from(enabled)] = first_sample;
             results.push(
                 serde_json::json!({"pair": pair + 1, "sandbox": enabled, "run": run,
@@ -321,6 +346,7 @@ pub async fn sandbox_pairs(
         &report_path,
         &serde_json::json!({
             "complete": true, "installation": id, "pairs": pairs, "runs": results,
+            "gpu": expected_gpu,
             "paired_p99_percent_changes": deltas, "mean_percent_change": mean, "sample_stddev_percent_points": sd,
             "paired_first_sample_latency_changes_ms": startup_deltas,
             "startup_measure": "Launch to first parseable CSV sample, 100ms polling; not first displayed frame. Missing samples remain unavailable.",
@@ -363,7 +389,7 @@ pub async fn handle_ingest(run_id: String, csv: PathBuf, warmup_seconds: f64) ->
             "finish the current game session before ingesting another run"
         );
         anyhow::ensure!(
-            capture.warmup_seconds == warmup_seconds,
+            capture.warmup_seconds.partial_cmp(&warmup_seconds) == Some(std::cmp::Ordering::Equal),
             "use the recorded warmup ({}) for this session's analysis",
             capture.warmup_seconds
         );
@@ -403,7 +429,7 @@ fn require_ingest_warmup(configuration: &Path, warmup: f64) -> Result<()> {
         .filter(|value| value.is_finite() && *value >= 0.0)
         .context("performance capture configuration has no valid recorded warmup")?;
     anyhow::ensure!(
-        warmup == expected,
+        warmup.partial_cmp(&expected) == Some(std::cmp::Ordering::Equal),
         "use the recorded warmup ({expected}) when ingesting this captured run"
     );
     Ok(())
@@ -756,6 +782,28 @@ fn new_run_id(game_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn baseline_gpu_provenance_rejects_changed_routing_and_driver() {
+        let current = modde_games::library::gpu::Snapshot {
+            requested_node: None,
+            selected: None,
+            available: Vec::new(),
+            environment: BTreeMap::new(),
+            kernel: Some("fixture-kernel".into()),
+            graphics_driver_root: Some("/nix/store/fixture-mesa".into()),
+            graphics_driver_32_root: None,
+        };
+        let recorded = serde_json::to_value(&current).unwrap();
+        assert!(require_gpu_configuration(&recorded, &current).is_ok());
+        let mut changed = current.clone();
+        changed.environment.insert("DRI_PRIME".into(), "1".into());
+        assert!(require_gpu_configuration(&recorded, &changed).is_err());
+        changed = current.clone();
+        changed.graphics_driver_root = Some("/nix/store/different-mesa".into());
+        assert!(require_gpu_configuration(&recorded, &changed).is_err());
+        assert!(require_gpu_configuration(&serde_json::Value::Null, &current).is_err());
+    }
 
     #[test]
     fn capture_does_not_turn_an_all_warmup_trace_into_a_measurement() {

@@ -5,7 +5,7 @@ fn scanner_reports_absent_install() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let state = scan_optiscaler_install_in_dir(tmp.path(), &BTreeSet::new()).expect("scan");
     assert_eq!(state.status, OptiScalerInstallStatus::Absent);
-    assert!(state.recognized_files.is_empty());
+    assert_eq!(state.recognized_files.len(), 0);
 }
 
 #[test]

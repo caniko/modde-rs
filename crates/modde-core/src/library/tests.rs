@@ -14,6 +14,27 @@ fn old_preferences_default_to_unsandboxed() {
     assert!(!settings.launch_for("missing").sandbox.enabled);
     assert!(settings.launch_for("missing").sandbox.network);
     assert!(settings.launch_for("missing").use_active_profile);
+    assert!(settings.launch_for("missing").gpu_render_node.is_none());
+}
+
+#[test]
+fn gpu_choice_is_persisted_per_installation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.json");
+    let node = PathBuf::from("/dev/dri/by-path/pci-0000:03:00.0-render");
+    LibraryPreferences::update_at(&path, |prefs| {
+        prefs.launches.insert(
+            "install-a".into(),
+            LaunchSettings {
+                gpu_render_node: Some(node.clone()),
+                ..Default::default()
+            },
+        );
+    })
+    .unwrap();
+    let prefs = LibraryPreferences::load_at(&path).unwrap();
+    assert_eq!(prefs.launch_for("install-a").gpu_render_node, Some(node));
+    assert!(prefs.launch_for("install-b").gpu_render_node.is_none());
 }
 
 #[test]
@@ -136,7 +157,9 @@ fn retargeted_alias_cannot_transfer_an_installation_identity() {
     std::fs::create_dir(&b).unwrap();
     std::os::unix::fs::symlink(&a, &alias).unwrap();
     let mut prefs = LibraryPreferences::default();
-    let id = prefs.bind_installation(&[alias.clone()], &[], &[]).unwrap();
+    let id = prefs
+        .bind_installation(std::slice::from_ref(&alias), &[], &[])
+        .unwrap();
     let before = prefs.clone();
     std::fs::remove_file(&alias).unwrap();
     std::os::unix::fs::symlink(&b, &alias).unwrap();

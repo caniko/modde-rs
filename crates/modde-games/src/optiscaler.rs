@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn unsupported_optiscaler_profiles_resolve_empty() {
         let _ = shared_data_dir();
-        assert!(resolve_optiscaler_profiles("skyrim-se").is_empty());
+        assert_eq!(resolve_optiscaler_profiles("skyrim-se"), []);
         assert!(default_optiscaler_profile("skyrim-se").is_none());
     }
 

@@ -126,7 +126,7 @@ fn test_patch_section_case_sensitive() {
 fn test_patch_result_is_nonempty() {
     let content = "[General]\nkey=value\n";
     let result = patch_ini_content(content, "General", "key", "new");
-    assert!(!result.is_empty());
+    assert_ne!(result, "");
     assert!(result.contains("key=new"));
 }
 

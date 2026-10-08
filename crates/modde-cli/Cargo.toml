@@ -27,6 +27,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 [lints]
 workspace = true
 
+[[test]]
+name = "cli_patcher_exec"
+required-features = ["bethesda"]
+
 [package.metadata.release]
 pre-release-replacements = [
   { file = "../../dist/rpm/modde.spec", search = "^Version:\\s+.*$", replace = "Version:        {{version}}", exactly = 1 },

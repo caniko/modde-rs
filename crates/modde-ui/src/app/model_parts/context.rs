@@ -14,7 +14,11 @@ pub(crate) async fn load_profile_context(
     let pm = ProfileManager::with_db(db.clone());
     let selected_game_id = request.selected_game.as_deref().map(GameId::from);
     let installation = match selected_game_id.as_ref() {
-        Some(game_id) => modde_games::library::context::for_game(&request.settings, game_id.as_str(), pm.db()).await.ok(),
+        Some(game_id) => {
+            modde_games::library::context::for_game(&request.settings, game_id.as_str(), pm.db())
+                .await
+                .ok()
+        }
         None => None,
     };
 
@@ -46,7 +50,12 @@ pub(crate) async fn load_profile_context(
         Some(name) => match pm.load(name, selected_game_id.as_ref()).await {
             Ok(profile) => {
                 let experiment_depth = match installation.as_ref() {
-                    Some(context) => pm.active(&context.saves.scope).await.ok().flatten().map_or(0, |info| info.experiment_depth),
+                    Some(context) => pm
+                        .active(&context.saves.scope)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map_or(0, |info| info.experiment_depth),
                     None => 0,
                 };
                 let current_fingerprint = compute_save_fingerprint(&profile);

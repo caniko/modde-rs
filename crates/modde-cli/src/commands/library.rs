@@ -1,6 +1,7 @@
 //! The GUI invokes this CLI entry point too: one profile/deploy/session pipeline.
 
 use anyhow::{Context, Result, bail};
+use modde_core::library::diagnostics;
 use modde_core::library::{LaunchSettings, LibraryPreferences, PendingSession, SessionPhase};
 use modde_core::profile::ProfileManager;
 use modde_core::resolver::GameId;
@@ -43,10 +44,6 @@ fn cli_binary_at(current: &std::path::Path) -> Result<std::path::PathBuf> {
 
 pub(crate) fn supervise(request: &std::path::Path) -> Result<()> {
     process::supervise(request)
-}
-
-pub(crate) fn wait_tree(command: &[std::ffi::OsString]) -> Result<()> {
-    process::wait_tree(command)
 }
 
 /// A sibling of the observer, so waiting for the mutation lease cannot keep
@@ -182,35 +179,34 @@ pub(crate) async fn handle(action: LibraryAction) -> Result<()> {
             println!(
                 "{}",
                 serde_json::to_string_pretty(
-                    &serde_json::json!({"session": session, "process": evidence})
+                    &serde_json::json!({"session": session, "process": evidence, "recent": diagnostics::recent(10)?})
                 )?
             );
+        }
+        LibraryAction::Diagnostics { run } => {
+            let directory = diagnostics::resolve(run.as_deref())?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&diagnostics::export(&directory)?)?
+            );
+        }
+        LibraryAction::Logs { run, kind } => {
+            let directory = diagnostics::resolve(run.as_deref())?;
+            let name = if kind == "events" {
+                "events.jsonl".into()
+            } else {
+                format!("{kind}.log")
+            };
+            print!("{}", diagnostics::tail(&directory.join(name), 8192)?);
         }
         LibraryAction::Hook { id } => println!("{}", hooks::install(&find(&id)?)?),
         LibraryAction::Wrap { id, command } => {
-            anyhow::ensure!(
-                PendingSession::load_completion()?.is_none(),
-                "complete the previous session with `modde library finish` before launching"
-            );
-            let mut options: PlayOptions = if let Some(session) = PendingSession::load()? {
-                session.require_owner()?;
-                anyhow::ensure!(
-                    session.installation == id && session.phase == SessionPhase::AwaitingStore,
-                    "another session is pending; refusing this store command"
-                );
-                serde_json::from_value(
-                    session
-                        .launch_request
-                        .context("store request is missing options")?,
-                )?
-            } else {
-                PlayOptions::default()
-            };
-            options.store_uri = None;
-            check_outcome(play_inner(&id, options, Some(command)).await?)?;
+            check_outcome(play_inner(&id, PlayOptions::default(), Some(command)).await?)?;
         }
         LibraryAction::Supervise { request } => process::supervise(&request)?,
-        LibraryAction::WaitTree { command } => process::wait_tree(&command)?,
+        LibraryAction::Reap { .. } => {
+            bail!("sandbox observer must run before runtime initialization")
+        }
         LibraryAction::CompleteObserved { observation } => complete_observed(&observation)?,
         LibraryAction::ManagerWrap {
             id,
@@ -284,8 +280,8 @@ fn find(id: &str) -> Result<LibraryGame> {
 pub(super) struct PlayOptions {
     pub profile: Option<String>,
     pub no_deploy: bool,
-    pub no_switch: bool,
-    pub no_capture: bool,
+    #[serde(flatten)]
+    pub saves: SavePolicy,
     pub environment: std::collections::BTreeMap<String, String>,
     pub writable: Vec<std::path::PathBuf>,
     pub sandbox: Option<bool>,
@@ -296,6 +292,13 @@ pub(super) struct PlayOptions {
     pub expected_scope: Option<GameId>,
     /// Deferred until the command's mutation lease has been released.
     pub store_uri: Option<String>,
+}
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub(super) struct SavePolicy {
+    pub no_switch: bool,
+    pub no_capture: bool,
 }
 
 pub(super) async fn play(id: &str, options: PlayOptions) -> Result<launch::LaunchOutcome> {
@@ -311,9 +314,81 @@ pub(super) fn check_outcome(outcome: launch::LaunchOutcome) -> Result<()> {
 
 async fn play_inner(
     id: &str,
-    mut options: PlayOptions,
+    options: PlayOptions,
     boundary: Option<Vec<std::ffi::OsString>>,
 ) -> Result<launch::LaunchOutcome> {
+    let pending = PendingSession::load_blocking()?;
+    let directory = pending
+        .as_ref()
+        .filter(|s| {
+            boundary.is_some() && s.installation == id && s.phase == SessionPhase::AwaitingStore
+        })
+        .and_then(|s| s.diagnostics.clone())
+        .map_or_else(
+            || {
+                diagnostics::begin(
+                    id,
+                    if boundary.is_some() {
+                        "store_hook"
+                    } else {
+                        "play"
+                    },
+                )
+            },
+            Ok,
+        )?;
+    println!("Launch diagnostics: {}", directory.display());
+    if options.performance.is_some() || options.bisect.is_some() {
+        diagnostics::log_file(&directory.join("retained"))?;
+    }
+    let result = play_prepared(id, options, boundary, &directory).await;
+    if let Err(error) = &result {
+        diagnostics::event(
+            &directory,
+            "failed",
+            &serde_json::json!({"error": format!("{error:#}")}),
+        )?;
+        diagnostics::finish(&directory, "failed")?;
+    }
+    let keep = std::env::var("MODDE_LOG_KEEP_LAUNCHES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(50);
+    if let Err(error) = diagnostics::prune(keep) {
+        eprintln!("diagnostic retention: {error}");
+    }
+    result
+}
+
+async fn play_prepared(
+    id: &str,
+    mut options: PlayOptions,
+    boundary: Option<Vec<std::ffi::OsString>>,
+    diagnostics_directory: &std::path::Path,
+) -> Result<launch::LaunchOutcome> {
+    if boundary.is_some() {
+        anyhow::ensure!(
+            PendingSession::load_completion()?.is_none(),
+            "complete the previous session with `modde library finish` before launching"
+        );
+        if let Some(session) = PendingSession::load()? {
+            session.require_owner()?;
+            anyhow::ensure!(
+                session.installation == id && session.phase == SessionPhase::AwaitingStore,
+                "another session is pending; refusing this store command"
+            );
+            options = serde_json::from_value(
+                session
+                    .launch_request
+                    .context("store request is missing options")?,
+            )?;
+        }
+        options.store_uri = None;
+        if options.performance.is_some() || options.bisect.is_some() {
+            diagnostics::log_file(&diagnostics_directory.join("retained"))?;
+        }
+    }
     if boundary.is_none()
         && let Some(session) = PendingSession::load_blocking()?
     {
@@ -363,6 +438,12 @@ async fn play_inner(
         "provider launch resolved a different save destination; save its prefix/HOME configuration before starting this experiment"
     );
     let mut settings = context.launch;
+    diagnostics::settings(diagnostics_directory, &settings)?;
+    diagnostics::event(
+        diagnostics_directory,
+        "resolved",
+        &serde_json::json!({"scope": scope, "prefix": context.prefix}),
+    )?;
     if settings.executable.is_some() && settings.runner.is_some() {
         settings.prefix = context.prefix.clone();
     }
@@ -372,17 +453,24 @@ async fn play_inner(
         options.profile.as_deref(),
         current.as_ref().map(|(_, name)| name.as_str()),
     );
-    if settings.executable.is_none()
-        && settings.store_hook
-        && profile_name.is_some()
+    if profile_name.is_some()
+        && let Some(prefix) = &context.prefix
+    {
+        anyhow::ensure!(
+            prefix.join("drive_c").is_dir(),
+            "initialize this Wine/Proton/UMU prefix in its store before managing profiles, then configure its physical Wine root (resolve any pfx alias): {}",
+            prefix.display()
+        );
+    }
+    if profile_name.is_some()
         && game
             .game_id
             .as_deref()
             .and_then(modde_games::resolve_game_plugin)
-            .is_some_and(|plugin| plugin.supports_save_profiles())
+            .is_some_and(modde_games::GamePlugin::supports_save_profiles)
     {
         // Check before dispatch, as well as at a directly invoked store hook.
-        hooks::require_profile_save_boundary(game)?;
+        hooks::require_profile_save_boundary(game, &settings)?;
     }
     if boundary.is_none() && settings.executable.is_none() && settings.store_hook {
         launch::validate(game, &settings, &games)?;
@@ -400,6 +488,7 @@ async fn play_inner(
         session.install_path.clone_from(&game.install_path);
         session.prefix.clone_from(&context.prefix);
         session.phase = SessionPhase::AwaitingStore;
+        session.diagnostics = Some(diagnostics_directory.into());
         options.store_uri = Some(launch::store_uri(game, false)?);
         session.launch_request = Some(serde_json::to_value(&options)?);
         session.save()?;
@@ -451,7 +540,7 @@ async fn play_inner(
         let switching = current
             .as_ref()
             .is_none_or(|(active_id, _)| *active_id != profile_id);
-        if options.no_switch && switching {
+        if options.saves.no_switch && switching {
             bail!(
                 "--no-switch requires the requested profile to already be active for this installation"
             );
@@ -547,7 +636,7 @@ async fn play_inner(
             .save_directory
             .as_deref()
             .map(modde_core::library::normalized_path),
-        capture: !options.no_capture,
+        capture: !options.saves.no_capture,
         phase: SessionPhase::Preparing,
         previous_profile: current.clone(),
         switched_profile: false,
@@ -559,9 +648,11 @@ async fn play_inner(
         prefix: context.prefix,
         save_transition: None,
         observation: None,
+        diagnostics: Some(diagnostics_directory.into()),
         launch_request: Some(serde_json::to_value(&options)?),
     };
     session.save()?;
+    diagnostics::settings(diagnostics_directory, &settings)?;
     if let Some(capture) = &options.performance {
         modde_core::library::atomic_json(
             &capture.directory.join("effective-settings.json"),
@@ -581,16 +672,9 @@ async fn play_inner(
         // The preparation journal already exists; no save contents are changed.
         std::fs::create_dir_all(directory).context("creating the sandbox save directory")?;
     }
-    let mut prepared = if let Some(command) = &boundary {
-        launch::PreparedLaunch::Direct(launch::prepare_boundary(game, &settings, &games, command)?)
-    } else {
-        launch::prepare(game, &settings, &games)?
-    };
-    if settings.sandbox.enabled
-        && let launch::PreparedLaunch::Direct(command) = &prepared
-    {
-        process::preflight_sandbox(command)?;
-    }
+    let observer = std::env::current_exe().context("locating the sandbox observer")?;
+    let mut prepared =
+        launch::prepare_observed(game, &settings, &games, boundary.as_deref(), &observer)?;
     if let Some(profile) = &profile {
         if !options.no_deploy {
             session.deployment_started = true;
@@ -606,7 +690,7 @@ async fn play_inner(
             .await?;
         }
         let profile_id = profile.id.context("profile has no database ID")?;
-        if !options.no_switch
+        if !options.saves.no_switch
             && current
                 .as_ref()
                 .is_none_or(|(active_id, _)| *active_id != profile_id)
@@ -641,13 +725,8 @@ async fn play_inner(
         // Deployment can retarget executable/wrapper symlinks. Re-resolve the
         // actual command and its sandbox grants after those changes; executing
         // the preflight command could otherwise run the previous mod version.
-        prepared = if let Some(command) = &boundary {
-            launch::PreparedLaunch::Direct(launch::prepare_boundary(
-                game, &settings, &games, command,
-            )?)
-        } else {
-            launch::prepare(game, &settings, &games)?
-        };
+        prepared =
+            launch::prepare_observed(game, &settings, &games, boundary.as_deref(), &observer)?;
     }
     session.advance(SessionPhase::Ready)?;
     if session.deployment_started {
@@ -676,7 +755,7 @@ async fn play_inner(
                 .performance
                 .as_ref()
                 .map(|capture| capture.directory.as_path()),
-            settings.sandbox.enabled,
+            &settings,
         )
         .map(|(status, lease)| {
             _observer_lease = lease;
@@ -718,7 +797,7 @@ fn selected_profile(
 ) -> Option<String> {
     explicit
         .or(settings.profile.as_deref())
-        .or_else(|| {
+        .or({
             if settings.use_active_profile {
                 active
             } else {
@@ -726,102 +805,6 @@ fn selected_profile(
             }
         })
         .map(str::to_string)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use modde_core::library::LegacySaveBinding;
-    use modde_games::library::context::save_scope;
-
-    #[test]
-    fn packaged_helpers_and_hooks_reenter_the_public_cli_wrapper() {
-        let root = tempfile::tempdir().unwrap();
-        let public = root.path().join("modde");
-        std::fs::write(&public, "package wrapper").unwrap();
-        for name in [".modde-wrapped", ".modde-wrapped_"] {
-            assert_eq!(cli_binary_at(&root.path().join(name)).unwrap(), public);
-        }
-        assert_eq!(cli_binary_at(&public).unwrap(), public);
-        let custom = root.path().join("my-modde");
-        assert_eq!(cli_binary_at(&custom).unwrap(), custom);
-        std::fs::remove_file(&public).unwrap();
-        assert!(cli_binary_at(&root.path().join(".modde-wrapped")).is_err());
-    }
-
-    fn game(id: &str) -> LibraryGame {
-        LibraryGame {
-            id: id.into(),
-            entitlement: "local:example".into(),
-            name: "Example".into(),
-            game_id: Some("example".into()),
-            store: modde_games::library::Store::Local,
-            app_id: "example".into(),
-            install_path: Some(format!("/games/{id}").into()),
-        }
-    }
-
-    #[test]
-    fn legacy_vault_belongs_only_to_bound_install_and_save_destination() {
-        let settings = LaunchSettings {
-            save_directory: Some("/saves/a".into()),
-            ..LaunchSettings::default()
-        };
-        let mut preferences = LibraryPreferences::default();
-        preferences.legacy_save_bindings.insert(
-            "example".into(),
-            LegacySaveBinding {
-                installation: "a".into(),
-                save_directory: settings.save_directory.clone(),
-            },
-        );
-        assert_eq!(
-            save_scope(&game("a"), &settings, &preferences).as_str(),
-            "example"
-        );
-        assert_ne!(
-            save_scope(&game("b"), &settings, &preferences).as_str(),
-            "example"
-        );
-        let moved = LaunchSettings {
-            save_directory: Some("/saves/b".into()),
-            ..settings
-        };
-        assert_ne!(
-            save_scope(&game("a"), &moved, &preferences).as_str(),
-            "example"
-        );
-    }
-
-    #[test]
-    fn two_installations_never_share_an_unbound_active_profile_slot() {
-        let preferences = LibraryPreferences::default();
-        let settings = LaunchSettings::default();
-        assert_ne!(
-            save_scope(&game("a"), &settings, &preferences),
-            save_scope(&game("b"), &settings, &preferences)
-        );
-    }
-
-    #[test]
-    fn profile_selection_distinguishes_active_named_and_unmanaged() {
-        let mut settings = LaunchSettings::default();
-        assert_eq!(
-            selected_profile(&settings, None, Some("active")),
-            Some("active".into())
-        );
-        settings.use_active_profile = false;
-        assert_eq!(selected_profile(&settings, None, Some("active")), None);
-        settings.profile = Some("named".into());
-        assert_eq!(
-            selected_profile(&settings, None, Some("active")),
-            Some("named".into())
-        );
-        assert_eq!(
-            selected_profile(&settings, Some("explicit"), Some("active")),
-            Some("explicit".into())
-        );
-    }
 }
 
 pub(super) async fn adopt(id: &str, profile_name: &str) -> Result<()> {
@@ -910,6 +893,7 @@ async fn complete_session(
         println!(
             "Session finalized. Performance ingestion and bisect results remain available for manual handling."
         );
+        record_completion(&session, "analysis_skipped")?;
         return PendingSession::clear_completion();
     }
     // Analysis output must not hold save capture hostage. A failed write keeps
@@ -951,7 +935,24 @@ async fn complete_session(
             }
         }
     }
+    record_completion(&session, "completed")?;
     PendingSession::clear_completion()
+}
+
+fn record_completion(session: &PendingSession, outcome: &str) -> Result<()> {
+    if let Some(directory) = &session.diagnostics {
+        modde_core::library::atomic_json(
+            &directory.join("completion.json"),
+            &serde_json::json!({
+                "installation": session.installation, "save_scope": session.scope,
+                "profile": session.profile, "save_directory": session.save_directory,
+                "capture_requested": session.capture, "phase": session.phase,
+                "outcome": outcome,
+            }),
+        )?;
+        diagnostics::finish(directory, outcome)?;
+    }
+    Ok(())
 }
 
 fn record_performance_session(session: &PendingSession) -> Result<()> {
@@ -1091,6 +1092,28 @@ async fn manager_launch(
     inherit_env: Vec<String>,
     command: Vec<std::ffi::OsString>,
 ) -> Result<()> {
+    let directory = diagnostics::begin(&id, "manager")?;
+    println!("Launch diagnostics: {}", directory.display());
+    let result = manager_launch_prepared(id, root, prefix, inherit_env, command, &directory).await;
+    if let Err(error) = &result {
+        diagnostics::event(
+            &directory,
+            "failed",
+            &serde_json::json!({"error": format!("{error:#}")}),
+        )?;
+        diagnostics::finish(&directory, "failed")?;
+    }
+    result
+}
+
+async fn manager_launch_prepared(
+    id: String,
+    root: std::path::PathBuf,
+    prefix: std::path::PathBuf,
+    inherit_env: Vec<String>,
+    command: Vec<std::ffi::OsString>,
+    diagnostics_directory: &std::path::Path,
+) -> Result<()> {
     anyhow::ensure!(
         id.starts_with("manager:"),
         "invalid manager installation ID"
@@ -1154,6 +1177,8 @@ async fn manager_launch(
     session.name.clone_from(&game.name);
     session.install_path.clone_from(&game.install_path);
     session.prefix = Some(prefix);
+    session.diagnostics = Some(diagnostics_directory.into());
+    diagnostics::settings(diagnostics_directory, &settings)?;
     if let Some(path) = manager_marker(&session) {
         match path.symlink_metadata() {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -1169,12 +1194,17 @@ async fn manager_launch(
     if let Some(path) = manager_marker(&session) {
         modde_core::library::atomic_json(&path, &session)?;
     }
-    let command =
-        launch::prepare_boundary(&game, &settings, std::slice::from_ref(&game), &command)?;
-    if settings.sandbox.enabled {
-        process::preflight_sandbox(&command)?;
-    }
-    let (status, _observer) = process::run(command, &mut session, None, settings.sandbox.enabled)?;
+    let launch::PreparedLaunch::Direct(command) = launch::prepare_observed(
+        &game,
+        &settings,
+        std::slice::from_ref(&game),
+        Some(&command),
+        &std::env::current_exe()?,
+    )?
+    else {
+        bail!("manager launch requires a direct command");
+    };
+    let (status, _observer) = process::run(command, &mut session, None, &settings)?;
     complete_session(&session, &pm, Some(status), false).await?;
     check_outcome(launch::LaunchOutcome::Exited(status))
 }
@@ -1198,6 +1228,9 @@ async fn recover() -> Result<()> {
     clear_manager_marker(&session)?;
     process::remove_request(&session)?;
     PendingSession::clear()?;
+    if let Some(directory) = &session.diagnostics {
+        diagnostics::finish(directory, "recovered")?;
+    }
     if session.deployment_started {
         println!(
             "{}: preparation recovered. Play will redeploy the selected profile before launching.",
@@ -1207,4 +1240,100 @@ async fn recover() -> Result<()> {
         println!("{}: save operation recovery complete.", session.name);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn packaged_helpers_and_hooks_reenter_the_public_cli_wrapper() {
+        let root = tempfile::tempdir().unwrap();
+        let public = root.path().join("modde");
+        std::fs::write(&public, "package wrapper").unwrap();
+        for name in [".modde-wrapped", ".modde-wrapped_"] {
+            assert_eq!(cli_binary_at(&root.path().join(name)).unwrap(), public);
+        }
+        assert_eq!(cli_binary_at(&public).unwrap(), public);
+        let custom = root.path().join("my-modde");
+        assert_eq!(cli_binary_at(&custom).unwrap(), custom);
+        std::fs::remove_file(&public).unwrap();
+        assert!(cli_binary_at(&root.path().join(".modde-wrapped")).is_err());
+    }
+
+    use super::*;
+    use modde_core::library::LegacySaveBinding;
+    use modde_games::library::context::save_scope;
+
+    fn game(id: &str) -> LibraryGame {
+        LibraryGame {
+            id: id.into(),
+            entitlement: "local:example".into(),
+            name: "Example".into(),
+            game_id: Some("example".into()),
+            store: modde_games::library::Store::Local,
+            app_id: "example".into(),
+            install_path: Some(format!("/games/{id}").into()),
+        }
+    }
+
+    #[test]
+    fn legacy_vault_belongs_only_to_bound_install_and_save_destination() {
+        let settings = LaunchSettings {
+            save_directory: Some("/saves/a".into()),
+            ..LaunchSettings::default()
+        };
+        let mut preferences = LibraryPreferences::default();
+        preferences.legacy_save_bindings.insert(
+            "example".into(),
+            LegacySaveBinding {
+                installation: "a".into(),
+                save_directory: settings.save_directory.clone(),
+            },
+        );
+        assert_eq!(
+            save_scope(&game("a"), &settings, &preferences).as_str(),
+            "example"
+        );
+        assert_ne!(
+            save_scope(&game("b"), &settings, &preferences).as_str(),
+            "example"
+        );
+        let moved = LaunchSettings {
+            save_directory: Some("/saves/b".into()),
+            ..settings
+        };
+        assert_ne!(
+            save_scope(&game("a"), &moved, &preferences).as_str(),
+            "example"
+        );
+    }
+
+    #[test]
+    fn two_installations_never_share_an_unbound_active_profile_slot() {
+        let preferences = LibraryPreferences::default();
+        let settings = LaunchSettings::default();
+        assert_ne!(
+            save_scope(&game("a"), &settings, &preferences),
+            save_scope(&game("b"), &settings, &preferences)
+        );
+    }
+
+    #[test]
+    fn profile_selection_distinguishes_active_named_and_unmanaged() {
+        let mut settings = LaunchSettings::default();
+        assert_eq!(
+            selected_profile(&settings, None, Some("active")),
+            Some("active".into())
+        );
+        settings.use_active_profile = false;
+        assert_eq!(selected_profile(&settings, None, Some("active")), None);
+        settings.profile = Some("named".into());
+        assert_eq!(
+            selected_profile(&settings, None, Some("active")),
+            Some("named".into())
+        );
+        assert_eq!(
+            selected_profile(&settings, Some("explicit"), Some("active")),
+            Some("explicit".into())
+        );
+    }
 }

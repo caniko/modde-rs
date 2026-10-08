@@ -120,6 +120,8 @@ pub enum ButtonAction {
     BrowseExecutablePath,
     BrowseExecutableWorkingDir,
     RefreshLibrary,
+    OpenLibraryLogs,
+    ExportLibraryDiagnostics,
     FavoriteLibraryEntry(String),
     InstallLibraryEntry(String),
     SaveLibraryLaunch,

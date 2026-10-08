@@ -20,6 +20,10 @@ name = "modde-manager"
 path = "src/main.rs"
 required-features = ["wow"]
 
+[[test]]
+name = "config_fallback"
+required-features = ["wow"]
+
 [dependencies]
 anyhow = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }

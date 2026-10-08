@@ -9,8 +9,10 @@ pub(super) fn command_mutates_state(cmd: &Commands) -> bool {
             action,
             LibraryAction::List { .. }
                 | LibraryAction::Status
+                | LibraryAction::Diagnostics { .. }
+                | LibraryAction::Logs { .. }
                 | LibraryAction::Supervise { .. }
-                | LibraryAction::WaitTree { .. }
+                | LibraryAction::Reap { .. }
                 | LibraryAction::Configure { file: None, .. }
         ),
         // Pure read paths.

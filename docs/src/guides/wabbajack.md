@@ -373,6 +373,12 @@ Very large lists can appear to hang during archive verification/extraction.
 - If memory is the constraint, set `--archive-retention auto` (or
   `prune-applied`) to free integrated archives, and lower `MODDE_ZSTD_LEVEL` to
   reduce compression CPU.
+- Apply admission keeps a 2 GiB safety reserve by default. A reservation that
+  cannot fit in the memory scope reports an error immediately; other admission
+  waits stop after five minutes, with diagnostics aborts checked during the wait.
+  Use a larger scope or free memory and resume. Operators can explicitly tune
+  `MODDE_APPLY_SAFETY_RESERVE_GIB`; it is not automatically lowered to force an
+  install through admission. Existing oversized-task admission policy is retained.
 - An interrupted run is safe to resume — just re-run the same command. modde
   resumes compatible staging and skips finished archive/BSA sentinels.
 

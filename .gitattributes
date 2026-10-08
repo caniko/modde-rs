@@ -1,0 +1,3 @@
+# Preserve the checksummed upstream text-rendering fixtures byte-for-byte.
+vendor/cryoglyph/samples/arabic.txt whitespace=-blank-at-eol
+vendor/cryoglyph/samples/latin.txt whitespace=-blank-at-eol

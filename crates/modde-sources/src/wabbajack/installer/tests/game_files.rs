@@ -48,6 +48,9 @@ async fn install_reads_game_file_source_from_game_dir() {
     );
     inst.set_game_dir(game_dir);
 
+    // The tiny fixture exercises installation, not the runner's live memory pressure.
+    inst.apply_memory_provider = Some(admission::fixture_provider());
+
     let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
     inst.install(progress_tx).await.unwrap();
 
@@ -209,6 +212,7 @@ async fn install_resolves_game_file_path_case_insensitively() {
         staging_dir.clone(),
     );
     inst.set_game_dir(game_dir);
+    inst.apply_memory_provider = Some(admission::fixture_provider());
 
     let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
     inst.install(progress_tx).await.unwrap();

@@ -146,14 +146,20 @@ fn test_post_deploy_is_noop_for_bethesda() {
 #[test]
 fn test_parse_empty() {
     let result = parse_plugins_txt("");
-    assert!(result.is_empty());
+    assert_eq!(
+        result,
+        [] as [modde_games::bethesda::plugins_txt::PluginEntry; 0]
+    );
 }
 
 #[test]
 fn test_parse_comments_only() {
     let content = "# This is a header\n# Another comment\n";
     let result = parse_plugins_txt(content);
-    assert!(result.is_empty());
+    assert_eq!(
+        result,
+        [] as [modde_games::bethesda::plugins_txt::PluginEntry; 0]
+    );
 }
 
 #[test]

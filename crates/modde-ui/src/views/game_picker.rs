@@ -245,8 +245,18 @@ mod tests {
         let options = wabbajack_game_options(&entries, &CatalogEntrySource::Official);
         let labels: Vec<String> = options.iter().map(ToString::to_string).collect();
 
-        assert!(labels.contains(&"The Elder Scrolls V: Skyrim Special Edition".to_string()));
-        assert!(labels.contains(&"The Elder Scrolls IV: Oblivion Remastered".to_string()));
+        let skyrim_label = if cfg!(feature = "bethesda") {
+            "The Elder Scrolls V: Skyrim Special Edition"
+        } else {
+            "Skyrimspecialedition"
+        };
+        let oblivion_label = if cfg!(feature = "oblivion-remastered") {
+            "The Elder Scrolls IV: Oblivion Remastered"
+        } else {
+            "Oblivion Remastered"
+        };
+        assert!(labels.contains(&skyrim_label.to_string()));
+        assert!(labels.contains(&oblivion_label.to_string()));
         assert!(labels.contains(&"Morrowind".to_string()));
         assert!(!labels.contains(&"Fallout 4".to_string()));
     }
@@ -261,18 +271,28 @@ mod tests {
         ];
 
         let options = wabbajack_game_options(&entries, &CatalogEntrySource::Official);
+        let skyrim_value = if cfg!(feature = "bethesda") {
+            "skyrim-se"
+        } else {
+            "skyrimspecialedition"
+        };
+        let oblivion_value = if cfg!(feature = "oblivion-remastered") {
+            "oblivion-remastered"
+        } else {
+            "oblivionremastered"
+        };
 
         assert_eq!(
             options
                 .iter()
-                .filter(|option| option.value == "skyrim-se")
+                .filter(|option| option.value == skyrim_value)
                 .count(),
             1
         );
         assert_eq!(
             options
                 .iter()
-                .filter(|option| option.value == "oblivion-remastered")
+                .filter(|option| option.value == oblivion_value)
                 .count(),
             1
         );
@@ -304,8 +324,8 @@ mod tests {
         let options = nexus_game_options(games.iter());
         let values: Vec<&str> = options.iter().map(|option| option.value.as_str()).collect();
 
-        assert!(values.contains(&"skyrim-se"));
-        assert!(values.contains(&"fallout4"));
+        assert_eq!(values.contains(&"skyrim-se"), cfg!(feature = "bethesda"));
+        assert_eq!(values.contains(&"fallout4"), cfg!(feature = "bethesda"));
         assert!(!values.contains(&"stellar-blade"));
     }
 }

@@ -740,7 +740,7 @@ fn apply_wabbajack_lock_stamps_wabbajack_lock_reason() {
         }
         other => panic!("expected Wabbajack lock reason, got {other:?}"),
     }
-    assert!(!lock.locked_at.is_empty());
+    assert_ne!(lock.locked_at, "");
 }
 
 #[test]
@@ -1004,7 +1004,7 @@ fn detect_stale_duplicates_flags_directory_overlap_as_leaked() {
 
     let report = detect_stale_duplicates(&profile, &manifest, skyrim_test_footprint);
     assert_eq!(report.leaked, vec!["dir/textures"]);
-    assert!(report.genuine.is_empty());
+    assert_eq!(report.genuine, [] as [std::string::String; 0]);
 }
 
 #[test]
@@ -1063,8 +1063,8 @@ fn detect_stale_duplicates_skips_manifest_authored_rows() {
     );
 
     let report = detect_stale_duplicates(&profile, &manifest, skyrim_test_footprint);
-    assert!(report.leaked.is_empty());
-    assert!(report.genuine.is_empty());
+    assert_eq!(report.leaked, [] as [std::string::String; 0]);
+    assert_eq!(report.genuine, [] as [std::string::String; 0]);
 }
 
 #[test]
@@ -1223,7 +1223,7 @@ fn detect_stale_duplicates_closure_gate_short_circuits_cp_prefixes() {
             "archive/foo".to_string(),
         ])
     );
-    assert!(report.leaked.is_empty());
+    assert_eq!(report.leaked, [] as [std::string::String; 0]);
 }
 
 // ---------------------------------------------------------------------------

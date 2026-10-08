@@ -229,8 +229,14 @@ impl GamePlugin for Ue4Game {
     }
 
     fn save_directory_at(&self, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
-        crate::library::context::steam_user_path(install, prefix, self.steam_app_id,
-            &Path::new("AppData/Local").join(self.project_name).join("Saved/SaveGames"))
+        crate::library::context::steam_user_path(
+            install,
+            prefix,
+            self.steam_app_id,
+            &Path::new("AppData/Local")
+                .join(self.project_name)
+                .join("Saved/SaveGames"),
+        )
     }
 
     fn deploy_targets(&self) -> &'static [DeployTarget] {
@@ -252,11 +258,17 @@ impl GamePlugin for Ue4Game {
         self.resolve_deploy_target_at(id, install, None)
     }
 
-    fn resolve_deploy_target_at(&self, id: &str, install: &Path, prefix: Option<&Path>) -> Option<PathBuf> {
+    fn resolve_deploy_target_at(
+        &self,
+        id: &str,
+        install: &Path,
+        prefix: Option<&Path>,
+    ) -> Option<PathBuf> {
         if id != "ue4-saved-config" {
             return None;
         }
-        let prefix = prefix.map(Path::to_path_buf)
+        let prefix = prefix
+            .map(Path::to_path_buf)
             .or_else(|| crate::library::context::steam_prefix(install, self.steam_app_id))?;
         if !prefix.exists() {
             return None;

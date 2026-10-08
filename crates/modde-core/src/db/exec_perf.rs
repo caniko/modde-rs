@@ -288,6 +288,12 @@ impl ModdeDb {
     /// in the database layer, where table ownership and ordering are explicit.
     #[doc(hidden)]
     pub async fn clear_ui_test_state(&self) -> Result<()> {
+        #[cfg(feature = "postgres")]
+        if matches!(&self.db, Db::Postgres(_)) {
+            return Err(CoreError::Other(
+                "UI test cleanup requires an isolated SQLite database".into(),
+            ));
+        }
         for table in [
             "tool_setting_edges",
             "tool_setting_nodes",

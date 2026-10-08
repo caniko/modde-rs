@@ -29,6 +29,9 @@ fn load_user_games_warns_and_skips_conflicting_or_invalid_specs() {
     let plugin = resolve_game_plugin("skyrim-se");
     assert_eq!(plugin.is_some(), cfg!(feature = "bethesda"));
     if let Some(plugin) = plugin {
-        assert_eq!(plugin.display_name(), "The Elder Scrolls V: Skyrim Special Edition");
+        assert_eq!(
+            plugin.display_name(),
+            "The Elder Scrolls V: Skyrim Special Edition"
+        );
     }
 }

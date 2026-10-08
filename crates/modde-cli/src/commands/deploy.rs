@@ -26,9 +26,18 @@ pub(crate) async fn handle_inner(
     let pm = ProfileManager::open().await?;
     let profile = load_profile_or_default(&pm, profile_name.as_deref(), game_id.as_deref()).await?;
     let context = super::installation_context(profile.game_id.as_str(), &pm).await?;
-    let legacy_launcher = context.saves.scope == profile.game_id && context.launch.executable.is_none() && !context.launch.store_hook;
-    handle_at(Some(profile.name), Some(profile.game_id.to_string()), run_patchers,
-        context.game.install_path.as_deref(), legacy_launcher, context.prefix.as_deref()).await
+    let legacy_launcher = context.saves.scope == profile.game_id
+        && context.launch.executable.is_none()
+        && !context.launch.store_hook;
+    handle_at(
+        Some(profile.name),
+        Some(profile.game_id.to_string()),
+        run_patchers,
+        context.game.install_path.as_deref(),
+        legacy_launcher,
+        context.prefix.as_deref(),
+    )
+    .await
 }
 
 /// Explicit installations reach every deployment and patcher hook.
@@ -58,12 +67,15 @@ pub(crate) async fn handle_at(
             )
         })?;
 
-    let install_dir = install_path.map(std::path::Path::to_path_buf).or_else(|| game_plugin.detect_install()).ok_or_else(|| {
-        anyhow::anyhow!(
-            "could not detect install directory for {}",
-            game_plugin.display_name()
-        )
-    })?;
+    let install_dir = install_path
+        .map(std::path::Path::to_path_buf)
+        .or_else(|| game_plugin.detect_install())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "could not detect install directory for {}",
+                game_plugin.display_name()
+            )
+        })?;
 
     let game_mod_dir = game_plugin
         .mod_root_at(&install_dir, prefix)
@@ -95,15 +107,25 @@ pub(crate) async fn handle_at(
             .context("post-deploy hook failed")?;
 
         if configure_launcher {
-            super::install::configure_wine_overrides(profile.game_id.as_str(), &install_dir, &staging)
-                .await
-                .context("Wine DLL override configuration failed")?;
+            super::install::configure_wine_overrides(
+                profile.game_id.as_str(),
+                &install_dir,
+                &staging,
+            )
+            .await
+            .context("Wine DLL override configuration failed")?;
         }
 
         let patcher_count = if run_patchers {
-            super::patcher::run_enabled_for_deploy_at(&pm, &profile, game_plugin, &install_dir, prefix)
-                .await
-                .context("patcher pipeline failed")?
+            super::patcher::run_enabled_for_deploy_at(
+                &pm,
+                &profile,
+                game_plugin,
+                &install_dir,
+                prefix,
+            )
+            .await
+            .context("patcher pipeline failed")?
         } else {
             0
         };
@@ -247,9 +269,13 @@ pub(crate) async fn handle_at(
     // deploy proxy DLLs (e.g. version.dll for CET, winmm.dll for ASI loaders).
     let staging_dir = paths::staging_dir().join(name);
     if configure_launcher {
-        super::install::configure_wine_overrides(profile.game_id.as_str(), &install_dir, &staging_dir)
-            .await
-            .context("Wine DLL override configuration failed")?;
+        super::install::configure_wine_overrides(
+            profile.game_id.as_str(),
+            &install_dir,
+            &staging_dir,
+        )
+        .await
+        .context("Wine DLL override configuration failed")?;
     }
 
     // Generate per-game tool configs and apply tool environment to launcher
@@ -261,10 +287,11 @@ pub(crate) async fn handle_at(
 
         // Apply tool env vars + wrappers to Heroic launcher config
         let launcher = modde_games::launcher::detect_launcher(&install_dir);
-        if configure_launcher && let modde_games::launcher::Launcher::Heroic {
-            ref config_path,
-            ref game_id,
-        } = launcher
+        if configure_launcher
+            && let modde_games::launcher::Launcher::Heroic {
+                ref config_path,
+                ref game_id,
+            } = launcher
         {
             let env_vars = modde_games::launcher::collect_tool_env_vars(&profile.game_id, &db)
                 .await
@@ -286,7 +313,8 @@ pub(crate) async fn handle_at(
         }
     }
 
-    let alt_routed = deploy_alt_target_mods(&profile, game_plugin, &install_dir, prefix, &store).await?;
+    let alt_routed =
+        deploy_alt_target_mods(&profile, game_plugin, &install_dir, prefix, &store).await?;
     let patcher_count = if run_patchers {
         super::patcher::run_enabled_for_deploy_at(&pm, &profile, game_plugin, &install_dir, prefix)
             .await
@@ -318,29 +346,50 @@ pub(crate) async fn handle_at(
 /// Resolve static deployment failures before any save switch or live deploy.
 /// Runtime patcher/hook and IO failures still retain the preparation journal.
 pub(super) async fn validate_at(
-    pm: &ProfileManager, profile: &modde_core::Profile, install: &std::path::Path,
-    prefix: Option<&std::path::Path>, run_patchers: bool,
+    pm: &ProfileManager,
+    profile: &modde_core::Profile,
+    install: &std::path::Path,
+    prefix: Option<&std::path::Path>,
+    run_patchers: bool,
 ) -> Result<()> {
-    anyhow::ensure!(install.is_absolute() && install.is_dir(), "installation directory is missing");
-    let plugin = modde_games::resolve_game_plugin(profile.game_id.as_str()).context("game plugin unavailable")?;
+    anyhow::ensure!(
+        install.is_absolute() && install.is_dir(),
+        "installation directory is missing"
+    );
+    let plugin = modde_games::resolve_game_plugin(profile.game_id.as_str())
+        .context("game plugin unavailable")?;
     plugin.mod_root_at(install, prefix)?;
     let resolved = resolver::resolve(profile)?;
     if matches!(&profile.source, ProfileSource::Wabbajack { .. }) {
-        anyhow::ensure!(paths::staging_dir().join(&profile.name).join("mods").is_dir(), "Wabbajack staging mods directory is missing");
+        anyhow::ensure!(
+            paths::staging_dir()
+                .join(&profile.name)
+                .join("mods")
+                .is_dir(),
+            "Wabbajack staging mods directory is missing"
+        );
     } else {
         for id in &resolved.order {
             let source = paths::store_dir().join(id.as_str());
-            anyhow::ensure!(source.is_dir(), "enabled mod {id} is missing from the store");
+            anyhow::ensure!(
+                source.is_dir(),
+                "enabled mod {id} is missing from the store"
+            );
             walk_files_relative(&source)?;
         }
     }
     for entry in profile.mods.iter().filter(|entry| entry.enabled) {
         if let Some(InstallMethod::UserConfigOverlay { target_id }) = &entry.install_method {
-            plugin.resolve_deploy_target_at(target_id, install, prefix)
-                .with_context(|| format!("cannot resolve {target_id} for the selected installation/prefix"))?;
+            plugin
+                .resolve_deploy_target_at(target_id, install, prefix)
+                .with_context(|| {
+                    format!("cannot resolve {target_id} for the selected installation/prefix")
+                })?;
         }
     }
-    if run_patchers { super::patcher::validate_for_deploy(pm, profile, plugin).await?; }
+    if run_patchers {
+        super::patcher::validate_for_deploy(pm, profile, plugin).await?;
+    }
     Ok(())
 }
 
@@ -376,8 +425,11 @@ async fn deploy_alt_target_mods(
             _ => continue,
         };
 
-        let target_root = plugin.resolve_deploy_target_at(target_id, install_dir, prefix)
-            .with_context(|| format!("cannot resolve {target_id} for selected installation/prefix"))?;
+        let target_root = plugin
+            .resolve_deploy_target_at(target_id, install_dir, prefix)
+            .with_context(|| {
+                format!("cannot resolve {target_id} for selected installation/prefix")
+            })?;
 
         let mod_dir = store.join(&em.mod_id);
         if !mod_dir.exists() {

@@ -95,6 +95,120 @@ fn confirmation_cannot_override_a_live_observer_lease() {
 }
 
 #[test]
+fn missing_or_malformed_inner_completion_never_truncates_detached_observation() {
+    for message in ["{\"phase\":\"starting\"}", "invalid-json"] {
+        let fixture = Fixture::new();
+        let script = format!(
+            "printf '%s\\n' '{message}' >&3; exec 3>&-; (sleep 0.1; printf done > \"$1\") & exit 0"
+        );
+        let (path, marker) = request(&fixture, &script);
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value["sandboxed"] = true.into();
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        fixture
+            .cmd()
+            .args(["library", "supervise"])
+            .arg(&path)
+            .assert()
+            .failure();
+        assert!(
+            marker.exists(),
+            "bad diagnostics stopped descendant reaping"
+        );
+        let evidence: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(path.parent().unwrap().join("evidence.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(evidence["completed"], false);
+        assert!(evidence["inner_raw_status"].is_null());
+        fixture.cmd().args(["library", "finish"]).assert().failure();
+        fixture
+            .cmd()
+            .args(["library", "finish", "--confirm-exited"])
+            .assert()
+            .success();
+    }
+}
+
+#[test]
+fn gpu_provenance_survives_consumption_of_the_private_launch_request() {
+    let fixture = Fixture::new();
+    let (path, _) = request(&fixture, "exit 0");
+    let mut launch: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let gpu = modde_games::library::gpu::snapshot(&modde_core::library::LaunchSettings::default())
+        .unwrap();
+    launch["gpu"] = serde_json::to_value(&gpu).unwrap();
+    modde_core::library::atomic_json(&path, &launch).unwrap();
+    fixture
+        .cmd()
+        .args(["library", "supervise"])
+        .arg(&path)
+        .assert()
+        .success();
+    assert!(!path.exists());
+    let evidence: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(path.parent().unwrap().join("evidence.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(evidence["gpu"], serde_json::to_value(gpu).unwrap());
+}
+
+#[test]
+fn supervisor_keeps_private_game_output_without_the_launching_client() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let (path, _) = request(&fixture, "printf stdout-message; printf stderr-message >&2");
+    fixture
+        .cmd()
+        .args(["library", "supervise"])
+        .arg(&path)
+        .assert()
+        .success();
+    let log = path.parent().unwrap().join("game.log");
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert!(text.contains("stdout-message"));
+    assert!(text.contains("stderr-message"));
+    assert_eq!(
+        std::fs::metadata(log).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[test]
+fn rejected_launch_has_a_recent_diagnostic_record() {
+    let fixture = Fixture::new();
+    fixture
+        .cmd()
+        .args(["library", "play", "missing-installation"])
+        .assert()
+        .failure();
+    let output = fixture
+        .cmd()
+        .args(["library", "status"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let status: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(status["recent"][0]["installation"], "missing-installation");
+    assert_eq!(status["recent"][0]["outcome"], "failed");
+    let id = status["recent"][0]["id"].as_str().unwrap();
+    fixture
+        .cmd()
+        .args(["library", "diagnostics", "--run", id])
+        .assert()
+        .success();
+    fixture
+        .cmd()
+        .args(["library", "diagnostics", "--run", "../outside"])
+        .assert()
+        .failure();
+}
+
+#[test]
 fn observed_completion_worker_finishes_without_the_launching_client() {
     let fixture = Fixture::new();
     let (path, marker) = request(&fixture, "printf done > \"$1\"");
@@ -186,6 +300,88 @@ fn failed_exec_remains_recoverable_without_capturing_prepared_saves() {
         .success();
     assert!(!marker.exists());
     assert!(!path.exists());
+}
+
+#[test]
+fn sandbox_boundary_failure_without_an_inner_start_remains_preparation() {
+    let fixture = Fixture::new();
+    let (path, marker) = request(&fixture, "printf sandbox-startup-failed >&2; exit 125");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    value["sandboxed"] = true.into();
+    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    fixture
+        .cmd()
+        .args(["library", "supervise"])
+        .arg(&path)
+        .assert()
+        .success();
+    let evidence: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(path.parent().unwrap().join("evidence.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(evidence["started"], false);
+    assert!(evidence["launch_error"].is_string());
+    fixture
+        .cmd()
+        .args(["library", "finish", "--confirm-exited"])
+        .assert()
+        .failure();
+    fixture
+        .cmd()
+        .args(["library", "recover"])
+        .assert()
+        .success();
+    assert!(!marker.exists());
+}
+
+#[test]
+fn inner_observer_acknowledges_exec_waits_for_descendants_and_preserves_signal_status() {
+    for (script, expected) in [
+        (
+            "test ! -e /proc/self/fd/3 || exit 99; (sleep 0.1; exit 7) & exit 0",
+            7 * 256,
+        ),
+        ("kill -TERM $$", 15),
+    ] {
+        let fixture = Fixture::new();
+        let (path, _) = request(&fixture, script);
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value["program"] =
+            serde_json::to_value(OsString::from(env!("CARGO_BIN_EXE_modde"))).unwrap();
+        value["arguments"] = serde_json::to_value(
+            [
+                "library",
+                "reap",
+                "--status-fd",
+                "3",
+                "--",
+                "sh",
+                "-c",
+                script,
+            ]
+            .map(OsString::from),
+        )
+        .unwrap();
+        value["sandboxed"] = true.into();
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        fixture
+            .cmd()
+            .args(["library", "supervise"])
+            .arg(&path)
+            .assert()
+            .success();
+        let evidence: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(path.parent().unwrap().join("evidence.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(evidence["boundary_started"], true);
+        assert_eq!(evidence["started"], true);
+        assert_eq!(evidence["completed"], true);
+        assert_eq!(evidence["inner_raw_status"], expected);
+        assert_eq!(evidence["raw_status"], expected);
+    }
 }
 
 #[test]

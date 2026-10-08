@@ -67,5 +67,6 @@
 - [Architecture](./reference/architecture.md)
 - [Project site design](./reference/project-site.md)
 - [MO2 parity & capability audit](./reference/parity.md)
+- [Library & sandbox qualification](./reference/library-qualification.md)
 - [Glossary](./reference/glossary.md)
 - [FAQ](./faq.md)

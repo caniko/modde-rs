@@ -47,9 +47,14 @@ fn scan_rejects_nonexistent_game_dir() {
         "missing --game-dir path must surface as failure"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let expected = if cfg!(feature = "cyberpunk") {
+        "does not exist"
+    } else {
+        "unsupported game 'cyberpunk2077'"
+    };
     assert!(
-        stderr.contains("does not exist"),
-        "expected 'does not exist' message; got:\n{stderr}"
+        stderr.contains(expected),
+        "expected '{expected}' message; got:\n{stderr}"
     );
 }
 
@@ -105,14 +110,21 @@ fn scan_dry_run_on_empty_dir_succeeds() {
         ])
         .output()
         .expect("spawn modde");
-    assert!(
-        output.status.success(),
-        "empty-dir scan should succeed; stderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Filesystem scan: 0 mods discovered"),
-        "expected zero-mod scan output; got:\n{stdout}"
-    );
+    if cfg!(feature = "cyberpunk") {
+        assert!(
+            output.status.success(),
+            "empty-dir scan should succeed; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("Filesystem scan: 0 mods discovered"),
+            "expected zero-mod scan output; got:\n{stdout}"
+        );
+    } else {
+        assert!(!output.status.success(), "disabled game must fail closed");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("unsupported game 'cyberpunk2077'")
+        );
+    }
 }

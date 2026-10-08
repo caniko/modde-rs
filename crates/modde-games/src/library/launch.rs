@@ -19,6 +19,8 @@ pub enum PreparedLaunch {
     Store(String),
 }
 
+/// Build and preflight a raw command. Lifecycle callers must use
+/// [`prepare_observed`] to retain detached descendants inside a sandbox.
 pub fn prepare(
     game: &LibraryGame,
     settings: &LaunchSettings,
@@ -35,6 +37,37 @@ pub fn prepare(
         preflight(game, settings, games)?;
         Ok(PreparedLaunch::Store(store_uri(game, false)?))
     }
+}
+
+/// Prepare a lifecycle launch with an in-sandbox descendant observer. The
+/// observer executable must implement `library reap -- COMMAND...` in an
+/// isolated process using [`super::observer::reap`]. URI handoffs are unchanged.
+pub fn prepare_observed(
+    game: &LibraryGame,
+    settings: &LaunchSettings,
+    games: &[LibraryGame],
+    supplied: Option<&[std::ffi::OsString]>,
+    observer: &Path,
+) -> Result<PreparedLaunch> {
+    if supplied.is_none() && settings.executable.is_none() {
+        return prepare(game, settings, games);
+    }
+    let direct;
+    let supplied = if let Some(supplied) = supplied {
+        supplied
+    } else {
+        direct = direct_arguments(settings)?;
+        &direct
+    };
+    validate(game, settings, games)?;
+    validate_boundary(supplied, settings)?;
+    Ok(PreparedLaunch::Direct(boundary_command_inner(
+        game,
+        settings,
+        supplied,
+        true,
+        Some(observer),
+    )?))
 }
 
 /// Fail before profile/save mutation. In particular, never wrap a store URI in
@@ -66,6 +99,7 @@ pub fn validate(
         bail!("profile name must not be empty");
     }
     if settings.executable.is_some() || settings.store_hook {
+        super::gpu::resolve(settings)?;
         super::runtime::RuntimePaths::resolve(settings)?;
         if let Some(executable) = &settings.executable {
             require_file(executable, "executable")?;
@@ -74,15 +108,14 @@ pub fn validate(
         if settings.runner.is_some() && settings.prefix.is_none() {
             bail!("configure an explicit Wine/umu prefix before launching");
         }
-        if let Some(prefix) = &settings.prefix {
-            if !prefix.is_absolute()
+        if let Some(prefix) = &settings.prefix
+            && (!prefix.is_absolute()
                 || (prefix.exists() && !prefix.is_dir())
                 || modde_core::library::normalized_path(prefix)
                     .parent()
-                    .is_none()
-            {
-                bail!("Wine prefix must be an absolute directory below the filesystem root");
-            }
+                    .is_none())
+        {
+            bail!("Wine prefix must be an absolute directory below the filesystem root");
         }
         let working = settings.working_directory.as_deref().unwrap_or(install);
         if !working.is_absolute() || !working.is_dir() {
@@ -130,6 +163,7 @@ pub fn validate(
             || !settings.wrappers.is_empty()
             || !settings.environment.is_empty()
             || settings.working_directory.is_some()
+            || settings.gpu_render_node.is_some()
         {
             bail!(
                 "set a direct executable to apply modde launch overrides, or edit launch options in the store"
@@ -236,7 +270,7 @@ fn require_runnable(path: &Path) -> Result<()> {
 /// Save/deployment paths use the physical Wine prefix. Proton and UMU may need
 /// the containing compat directory in WINEPREFIX instead. Accept that spelling
 /// only when the explicit compat environment proves the same save destination.
-/// Source: https://github.com/Open-Wine-Components/umu-launcher/blob/e2b203a1fdd2af9f35166f5713cb3f85d72587e2/umu/umu_run.py#L79-L115
+/// Source: <https://github.com/Open-Wine-Components/umu-launcher/blob/e2b203a1fdd2af9f35166f5713cb3f85d72587e2/umu/umu_run.py#L79-L115>
 pub(super) fn wine_environment_prefix(settings: &LaunchSettings) -> Result<Option<&Path>> {
     use modde_core::library::normalized_path;
     let prefix = settings.prefix.as_deref();
@@ -244,13 +278,12 @@ pub(super) fn wine_environment_prefix(settings: &LaunchSettings) -> Result<Optio
         .environment
         .get("STEAM_COMPAT_DATA_PATH")
         .map(Path::new);
-    if let Some(compat) = compat {
-        if !compat.is_absolute()
+    if let Some(compat) = compat
+        && (!compat.is_absolute()
             || normalized_path(compat).parent().is_none()
-            || prefix.map(normalized_path) != Some(normalized_path(&compat.join("pfx")))
-        {
-            bail!("STEAM_COMPAT_DATA_PATH must contain the configured prefix as its pfx directory");
-        }
+            || prefix.map(normalized_path) != Some(normalized_path(&compat.join("pfx"))))
+    {
+        bail!("STEAM_COMPAT_DATA_PATH must contain the configured prefix as its pfx directory");
     }
     if let Some(wine) = settings.environment.get("WINEPREFIX").map(Path::new) {
         if !wine.is_absolute()
@@ -299,7 +332,7 @@ pub fn prepare_boundary(
 ) -> Result<Command> {
     validate(game, settings, games)?;
     validate_boundary(supplied, settings)?;
-    boundary_command_inner(game, settings, supplied, true)
+    boundary_command_inner(game, settings, supplied, true, None)
 }
 
 /// Store wrappers forward the exact argv from Steam/Heroic; never parse it as
@@ -309,7 +342,7 @@ pub fn boundary_command(
     settings: &LaunchSettings,
     supplied: &[std::ffi::OsString],
 ) -> Result<Command> {
-    boundary_command_inner(game, settings, supplied, false)
+    boundary_command_inner(game, settings, supplied, false, None)
 }
 
 fn boundary_command_inner(
@@ -317,6 +350,7 @@ fn boundary_command_inner(
     settings: &LaunchSettings,
     supplied: &[std::ffi::OsString],
     probe: bool,
+    observer: Option<&Path>,
 ) -> Result<Command> {
     let (program, arguments) = supplied
         .split_first()
@@ -326,10 +360,14 @@ fn boundary_command_inner(
         .as_deref()
         .context("game is not installed")?;
     let mut argv: Vec<std::ffi::OsString> = Vec::new();
+    let mut effective = settings.clone();
+    super::gpu::configure(&mut effective)?;
+    let settings = &effective;
     let mut sandbox_settings = settings.clone();
     for wrapper in &settings.wrappers {
         let program = wrapper.first().context("empty wrapper")?;
         argv.push(sandbox_program(
+            game,
             resolve_wrapper(program, settings)?,
             &mut sandbox_settings,
         )?);
@@ -340,7 +378,7 @@ fn boundary_command_inner(
     } else {
         resolve_wrapper(program.to_str().context("non-UTF8 PATH program")?, settings)?
     };
-    argv.push(sandbox_program(program, &mut sandbox_settings)?);
+    argv.push(sandbox_program(game, program, &mut sandbox_settings)?);
     for argument in arguments {
         let path = Path::new(argument);
         if settings.sandbox.enabled
@@ -351,12 +389,25 @@ fn boundary_command_inner(
                     .canonicalize()
                     .is_ok_and(|resolved| is_wine_runtime(&resolved)))
         {
-            argv.push(sandbox_program(path.to_path_buf(), &mut sandbox_settings)?);
+            argv.push(sandbox_program(
+                game,
+                path.to_path_buf(),
+                &mut sandbox_settings,
+            )?);
         } else {
             argv.push(argument.clone());
         }
     }
     argv.extend(settings.arguments.iter().map(std::ffi::OsString::from));
+    if settings.sandbox.enabled
+        && let Some(observer) = observer
+    {
+        let observer = sandbox_program(game, observer.to_path_buf(), &mut sandbox_settings)?;
+        argv.splice(
+            0..0,
+            [observer, "library".into(), "reap".into(), "--".into()],
+        );
+    }
     let program = Path::new(&argv[0]);
     let mut command = if settings.sandbox.enabled {
         if probe {
@@ -375,6 +426,11 @@ fn boundary_command_inner(
             .env_remove("WINEPREFIX")
             .env_remove("STEAM_COMPAT_DATA_PATH")
             .env_remove("UMU_CONTAINER_NSENTER");
+        if settings.gpu_render_node.is_some() {
+            for key in super::gpu::SELECTION_KEYS {
+                command.env_remove(key);
+            }
+        }
         command.envs(&settings.environment);
         let runtime = super::runtime::RuntimePaths::resolve(settings)?;
         command
@@ -402,17 +458,25 @@ fn is_wine_runtime(path: &Path) -> bool {
         })
 }
 
-fn sandbox_program(path: PathBuf, settings: &mut LaunchSettings) -> Result<std::ffi::OsString> {
+fn sandbox_program(
+    game: &LibraryGame,
+    path: PathBuf,
+    settings: &mut LaunchSettings,
+) -> Result<std::ffi::OsString> {
     if !settings.sandbox.enabled {
         return Ok(path.into_os_string());
     }
-    // PATH programs may be private-HOME symlinks. Grant the resolved file, not
-    // its arbitrary parent: ~/launch.sh must not expose the rest of ~/.
+    // PATH programs may be private-HOME symlinks. Grant only the file and its
+    // target, never its arbitrary parent. Preserve the original basename:
+    // multicall binaries (e.g. Nix coreutils' true) dispatch using argv[0].
     let resolved = path
         .canonicalize()
         .with_context(|| format!("resolving launch program {}", path.display()))?;
     let runtime = is_wine_runtime(&path) || is_wine_runtime(&resolved);
     settings.sandbox.read_only.push(resolved.clone());
+    if path != resolved && !super::sandbox::program_alias_is_visible(game, settings, &path) {
+        settings.sandbox.read_only.push(path.clone());
+    }
     if runtime && let Some(parent) = resolved.parent() {
         let root = if parent.file_name().is_some_and(|name| name == "bin") {
             parent.parent().unwrap_or(parent)
@@ -451,7 +515,6 @@ fn sandbox_program(path: PathBuf, settings: &mut LaunchSettings) -> Result<std::
     {
         resolved
     } else {
-        settings.sandbox.read_only.push(path.clone());
         path
     };
     Ok(program.into_os_string())
@@ -473,11 +536,12 @@ fn probe_sandbox(game: &LibraryGame, settings: &LaunchSettings) -> Result<()> {
     // Resolve independently of a game's custom PATH, and grant the real target
     // so a private-HOME symlink cannot make only the probe fail.
     let mut probe = settings.clone();
-    let program = sandbox_program(
+    let program = PathBuf::from(sandbox_program(
+        game,
         resolve_wrapper("true", &LaunchSettings::default())?,
         &mut probe,
-    )?;
-    let status = super::sandbox::command(game, &probe, Path::new(&program))?
+    )?);
+    let status = super::sandbox::command(game, &probe, &program)?
         .status()
         .context("bubblewrap preflight failed (install bwrap and enable user namespaces)")?;
     if !status.success() {

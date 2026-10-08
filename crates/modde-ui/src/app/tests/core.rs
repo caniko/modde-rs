@@ -263,6 +263,7 @@ fn stale_tools_loaded_result_is_ignored() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
 fn tool_toggle_write_persists_and_reload_reflects_committed_value() {
     let _guard = db_lock();
     reset_isolated_db();
@@ -274,9 +275,13 @@ fn tool_toggle_write_persists_and_reload_reflects_committed_value() {
         enabled: true,
     });
 
-    assert_eq!(task.units(), 1);
+    // The write is followed by a task that releases its mutation lease.
+    assert_eq!(task.units(), 2);
+    assert!(modde_core::library::mutation_lock().is_err());
     assert_eq!(app.tool_state.active_tool_id.as_deref(), Some("mangohud"));
     assert_eq!(app.status_message, "Enabling MangoHud...");
+    drop(task);
+    assert!(modde_core::library::mutation_lock().is_ok());
 
     let result = crate::app::block_on(crate::app::tool_settings::toggle_tool_for_game(
         app.db.clone(),
@@ -292,7 +297,7 @@ fn tool_toggle_write_persists_and_reload_reflects_committed_value() {
 
     assert_eq!(reload_task.units(), 1);
     assert_eq!(app.tool_state.load_generation, 1);
-    let db = crate::app::block_on(modde_core::db::ModdeDb::open()).expect("db opens");
+    let db = test_db();
     let row = crate::app::block_on(db.load_tool_config(&GameId::from("skyrim-se"), "mangohud"))
         .expect("load tool config")
         .expect("tool config exists");

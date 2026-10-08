@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
 use anyhow::{Context, Result, bail, ensure};
+use modde_core::library::diagnostics;
 use modde_core::library::{
     PendingSession, SessionObservation, SessionPhase, atomic_json, lock_file,
 };
@@ -20,12 +21,19 @@ struct Request {
     directory: PathBuf,
     journal: PathBuf,
     sample_directory: Option<PathBuf>,
+    #[serde(default)]
+    gpu: Option<modde_games::library::gpu::Snapshot>,
+    #[serde(default)]
+    sandboxed: bool,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(super) struct Evidence {
     pub supervisor: u32,
     pub started: bool,
+    /// The outer boundary spawned; this alone does not establish game exec.
+    #[serde(default)]
+    pub boundary_started: bool,
     pub completed: bool,
     pub raw_status: Option<i32>,
     #[serde(default)]
@@ -38,6 +46,10 @@ pub(super) struct Evidence {
     /// Launch-to-first-parseable-MangoHud-sample, sampled every 100 ms.
     #[serde(default)]
     pub first_sample_ms: Option<u128>,
+    #[serde(default)]
+    pub gpu: Option<modde_games::library::gpu::Snapshot>,
+    #[serde(default)]
+    pub inner_raw_status: Option<i32>,
 }
 
 pub(super) fn evidence(observation: &SessionObservation) -> Result<Option<Evidence>> {
@@ -76,19 +88,22 @@ pub(super) fn run(
     mut command: Command,
     session: &mut PendingSession,
     sample_directory: Option<&Path>,
-    sandboxed: bool,
+    settings: &modde_core::library::LaunchSettings,
 ) -> Result<(ExitStatus, Option<std::fs::File>)> {
-    if sandboxed {
-        command = sandbox_tree(&command, &super::cli_binary()?.canonicalize()?, false)?;
-    }
-    let directory = tempfile::Builder::new()
-        .prefix("run-")
-        .tempdir_in(
-            PendingSession::path()
-                .parent()
-                .context("session directory missing")?,
-        )?
-        .keep();
+    let gpu = modde_games::library::gpu::snapshot(settings)?;
+    let directory = if let Some(directory) = &session.diagnostics {
+        directory.clone()
+    } else {
+        tempfile::Builder::new()
+            .prefix("run-")
+            .tempdir_in(
+                PendingSession::path()
+                    .parent()
+                    .context("session directory missing")?,
+            )?
+            .keep()
+    };
+    diagnostics::private_directory(&directory)?;
     let mut environment: BTreeMap<_, _> = std::env::vars_os().collect();
     for (key, value) in command.get_envs() {
         if let Some(value) = value {
@@ -98,9 +113,39 @@ pub(super) fn run(
         }
     }
     environment.remove(&OsString::from("MODDE_STEAM_API_KEY"));
+    let mut arguments: Vec<OsString> = command.get_args().map(OsString::from).collect();
+    if settings.sandbox.enabled {
+        let index = arguments
+            .windows(3)
+            .position(|args| args == ["library", "reap", "--"].map(OsString::from))
+            .context("sandbox command has no in-namespace observer")?;
+        arguments.splice(
+            index + 2..index + 2,
+            ["--status-fd", "3"].map(OsString::from),
+        );
+        // Bubblewrap forwards inherited descriptors to the command (its PID-1
+        // helper closes its copy). There is no --preserve-fds option in bwrap.
+    }
+    let mounts: Vec<_> = arguments
+        .windows(3)
+        .filter(|args| {
+            ["--bind", "--ro-bind", "--dev-bind"]
+                .iter()
+                .any(|flag| args[0] == *flag)
+        })
+        .map(|args| serde_json::json!({"mode": args[0], "source": args[1], "destination": args[2]}))
+        .collect();
+    atomic_json(
+        &directory.join("command.json"),
+        &serde_json::json!({
+            "program": command.get_program(), "argument_count": arguments.len(),
+            "directory": command.get_current_dir(), "sandboxed": settings.sandbox.enabled,
+            "mounts": mounts,
+        }),
+    )?;
     let request = Request {
         program: command.get_program().to_owned(),
-        arguments: command.get_args().map(OsString::from).collect(),
+        arguments,
         environment: environment.into_iter().collect(),
         directory: command
             .get_current_dir()
@@ -108,6 +153,8 @@ pub(super) fn run(
             .unwrap_or(std::env::current_dir()?),
         journal: PendingSession::path(),
         sample_directory: sample_directory.map(Path::to_path_buf),
+        gpu: Some(gpu),
+        sandboxed: settings.sandbox.enabled,
     };
     let request_path = directory.join("request.json");
     atomic_json(&request_path, &request)?;
@@ -132,7 +179,7 @@ pub(super) fn run(
     session.advance(SessionPhase::Launching)?;
     let binary = super::cli_binary()?;
     let log_path = directory.join("completion.log");
-    let log = std::fs::File::create(&log_path)?;
+    let log = diagnostics::log_file(&log_path)?;
     let mut completion = Command::new(&binary);
     completion
         .arg("--config-dir")
@@ -315,23 +362,69 @@ pub(super) fn supervise(path: &Path) -> Result<()> {
         !evidence_path.exists(),
         "supervisor request has already been consumed"
     );
-    enable_subreaper()?;
+    #[cfg(target_os = "linux")]
+    // SAFETY: prctl changes only this isolated helper's child-reaping policy;
+    // it takes no pointers and is called before any game process is created.
+    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("enabling descendant observation");
+    }
     let mut record = Evidence {
         supervisor: std::process::id(),
-        ..Default::default()
+        started: false,
+        boundary_started: false,
+        completed: false,
+        raw_status: None,
+        leader_status: None,
+        descendant_failures: 0,
+        launch_error: None,
+        elapsed_ms: 0,
+        first_sample_ms: None,
+        gpu: request.gpu,
+        inner_raw_status: None,
     };
     atomic_json(&evidence_path, &record)?;
     // Environment belongs only to this launch; do not retain inherited secrets
     // for the whole gaming session or in a completed request on disk.
     std::fs::remove_file(path)?;
     let start = std::time::Instant::now();
-    let mut child = match Command::new(request.program)
-        .args(request.arguments)
+    let log = diagnostics::log_file(&directory.join("game.log"))?;
+    let mut game = Command::new(request.program);
+    game.args(request.arguments)
         .env_clear()
         .envs(request.environment)
         .current_dir(request.directory)
-        .spawn()
-    {
+        .stdin(Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log);
+    #[cfg(target_os = "linux")]
+    let mut inner = if request.sandboxed {
+        use std::os::fd::{AsRawFd, FromRawFd};
+        use std::os::unix::process::CommandExt;
+        let mut descriptors = [0; 2];
+        // SAFETY: pipe2 writes two initialized descriptors into this local array.
+        ensure!(
+            unsafe { libc::pipe2(descriptors.as_mut_ptr(), libc::O_CLOEXEC) } == 0,
+            "creating observer status pipe: {}",
+            std::io::Error::last_os_error()
+        );
+        // SAFETY: successful pipe2 transfers exclusive ownership of both ends.
+        let read = unsafe { std::fs::File::from_raw_fd(descriptors[0]) };
+        let write = unsafe { std::fs::File::from_raw_fd(descriptors[1]) };
+        let fd = write.as_raw_fd();
+        // SAFETY: only async-signal-safe syscalls run between fork and exec.
+        unsafe {
+            game.pre_exec(move || {
+                if libc::dup2(fd, 3) < 0 || libc::fcntl(3, libc::F_SETFD, 0) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        Some((std::io::BufReader::new(read), write))
+    } else {
+        None
+    };
+    let mut child = match game.spawn() {
         Ok(child) => child,
         Err(error) => {
             record.launch_error = Some(error.to_string());
@@ -344,8 +437,21 @@ pub(super) fn supervise(path: &Path) -> Result<()> {
             return Err(error).context("starting game command");
         }
     };
-    record.started = true;
+    record.boundary_started = true;
+    record.started = !request.sandboxed;
     session.phase = SessionPhase::Running;
+    #[cfg(target_os = "linux")]
+    let mut inner_reader = if let Some((mut reader, write)) = inner.take() {
+        drop(write);
+        if let Err(error) = inner_startup(&mut reader, &mut record) {
+            eprintln!(
+                "sandbox startup evidence unavailable: {error}; continuing descendant observation"
+            );
+        }
+        Some(reader)
+    } else {
+        None
+    };
     // A status-write failure after spawn must not orphan an otherwise healthy
     // observer. Keep reaping; the final durable evidence is the completion gate.
     let progress =
@@ -354,7 +460,7 @@ pub(super) fn supervise(path: &Path) -> Result<()> {
         child.wait()?
     } else {
         loop {
-            observe_sample(&request.sample_directory, start, &mut record);
+            observe_sample(request.sample_directory.as_deref(), start, &mut record);
             if let Some(status) = child.try_wait()? {
                 break status;
             }
@@ -363,35 +469,6 @@ pub(super) fn supervise(path: &Path) -> Result<()> {
     };
     record.leader_status = Some(into_raw(status));
     record.raw_status = record.leader_status;
-    reap_descendants(&request.sample_directory, start, &mut record)?;
-    observe_sample(&request.sample_directory, start, &mut record);
-    record.elapsed_ms = start.elapsed().as_millis();
-    // Other platforms cannot infer descendant lifetime from a child handle.
-    record.completed = cfg!(target_os = "linux");
-    atomic_json(&evidence_path, &record)?;
-    if let Err(error) = progress {
-        eprintln!("session progress could not be recorded: {error}; final exit evidence was saved");
-    }
-    if !record.completed {
-        bail!("game child exited; confirm descendant exit manually on this platform");
-    }
-    Ok(())
-}
-
-fn enable_subreaper() -> Result<()> {
-    #[cfg(target_os = "linux")]
-    // SAFETY: called only by isolated, single-threaded helpers before spawning.
-    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
-        return Err(std::io::Error::last_os_error()).context("enabling descendant observation");
-    }
-    Ok(())
-}
-
-fn reap_descendants(
-    sample_directory: &Option<PathBuf>,
-    start: std::time::Instant,
-    record: &mut Evidence,
-) -> Result<()> {
     #[cfg(target_os = "linux")]
     loop {
         let mut status = 0;
@@ -400,8 +477,8 @@ fn reap_descendants(
         let pid = unsafe {
             libc::waitpid(
                 -1,
-                &mut status,
-                if sample_directory.is_some() {
+                &raw mut status,
+                if request.sample_directory.is_some() {
                     libc::WNOHANG
                 } else {
                     0
@@ -419,117 +496,96 @@ fn reap_descendants(
             continue;
         }
         if pid == 0 {
-            observe_sample(sample_directory, start, record);
+            observe_sample(request.sample_directory.as_deref(), start, &mut record);
             std::thread::sleep(std::time::Duration::from_millis(100));
             continue;
         }
         let error = std::io::Error::last_os_error();
         match error.raw_os_error() {
-            Some(libc::EINTR) => continue,
+            Some(libc::EINTR) => {}
             Some(libc::ECHILD) => break,
             _ => return Err(error).context("waiting for detached game descendants"),
         }
     }
-    Ok(())
-}
-
-/// Bubblewrap's built-in init exits with its first child, killing remaining
-/// namespace processes. Our init retains the namespace until all children exit.
-pub(super) fn wait_tree(command: &[OsString]) -> Result<()> {
-    #[cfg(not(target_os = "linux"))]
-    bail!("sandbox descendant observation requires Linux");
+    observe_sample(request.sample_directory.as_deref(), start, &mut record);
     #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        let (program, args) = command.split_first().context("sandbox command is empty")?;
-        enable_subreaper()?;
-        let status = Command::new(program).args(args).spawn()?.wait()?;
-        let mut record = Evidence {
-            raw_status: Some(into_raw(status)),
-            ..Default::default()
-        };
-        reap_descendants(&None, std::time::Instant::now(), &mut record)?;
-        let status = from_raw(
-            record
-                .raw_status
-                .context("sandbox exit status is missing")?,
-        );
-        // PID 1 ignores default terminating signals; carry their conventional
-        // nonzero exit code instead. A failed child must never become success.
-        std::process::exit(
-            status
-                .code()
-                .unwrap_or_else(|| 128 + status.signal().unwrap_or(1)),
-        );
-    }
-}
-
-pub(super) fn preflight_sandbox(command: &Command) -> Result<()> {
-    let status = sandbox_tree(command, &super::cli_binary()?.canonicalize()?, true)?
-        .stdout(Stdio::null())
-        .status()
-        .context("probing sandbox namespace init")?;
-    ensure!(
-        status.success(),
-        "sandbox namespace init probe failed: {status}"
-    );
-    Ok(())
-}
-
-fn sandbox_tree(command: &Command, binary: &Path, probe: bool) -> Result<Command> {
-    let args: Vec<_> = command.get_args().collect();
-    let mut boundary = 0;
-    // ponytail: parse only modde-games::library::sandbox's bounded option set;
-    // new builder options must extend this table. Never split on an arbitrary
-    // '--' that might be an environment value or argv. Unknown options fail closed.
-    loop {
-        let option = args
-            .get(boundary)
-            .context("sandbox command boundary is missing")?;
-        let values = match option.to_str() {
-            Some("--") => break,
-            Some(
-                "--die-with-parent" | "--new-session" | "--unshare-user" | "--unshare-pid"
-                | "--unshare-ipc" | "--unshare-uts" | "--unshare-net" | "--clearenv",
-            ) => 0,
-            Some("--cap-drop" | "--proc" | "--dev" | "--tmpfs" | "--dir" | "--chdir") => 1,
-            Some("--ro-bind" | "--bind" | "--dev-bind" | "--setenv") => 2,
-            _ => bail!("unsupported sandbox supervisor option: {option:?}"),
-        };
-        boundary += values + 1;
-    }
-    ensure!(boundary + 1 < args.len(), "sandbox game command is empty");
-    let mut wrapped = Command::new(command.get_program());
-    wrapped
-        .args(&args[..boundary])
-        .arg("--as-pid-1")
-        .arg("--ro-bind")
-        .arg(binary)
-        .arg(binary)
-        .arg("--")
-        .arg(binary)
-        .args(["library", "wait-tree", "--"]);
-    if probe {
-        // Exercise the real inner helper and its packaged runtime, never the
-        // game or its wrappers, before deployment or live save replacement.
-        wrapped.arg(binary).arg("--help");
-    } else {
-        wrapped.args(&args[boundary + 1..]);
-    }
-    if let Some(path) = command.get_current_dir() {
-        wrapped.current_dir(path);
-    }
-    for (key, value) in command.get_envs() {
-        if let Some(value) = value {
-            wrapped.env(key, value);
-        } else {
-            wrapped.env_remove(key);
+    if let Some(reader) = &mut inner_reader {
+        use std::io::BufRead;
+        let mut line = String::new();
+        while reader.read_line(&mut line).is_ok_and(|bytes| bytes > 0) {
+            let Ok(message) = serde_json::from_str::<serde_json::Value>(&line) else {
+                eprintln!("invalid inner completion evidence; session retained");
+                break;
+            };
+            if message["phase"] == "completed" {
+                record.inner_raw_status = message["raw_status"]
+                    .as_i64()
+                    .and_then(|v| i32::try_from(v).ok());
+            }
+            line.clear();
+        }
+        // An inner signal retains its real wait status rather than the CLI's
+        // normalized 128+signal exit code. Preserve outer boundary failures too.
+        if let Some(raw) = record.inner_raw_status
+            && !from_raw(raw).success()
+        {
+            record.raw_status = Some(raw);
         }
     }
-    Ok(wrapped)
+    record.elapsed_ms = start.elapsed().as_millis();
+    // Other platforms cannot infer descendant lifetime from a child handle.
+    record.completed = cfg!(target_os = "linux")
+        && (!request.sandboxed
+            || record.launch_error.is_some()
+            || record.inner_raw_status.is_some());
+    if record.launch_error.is_some() {
+        session.phase = SessionPhase::Ready;
+        atomic_json(&request.journal, &session)?;
+    }
+    atomic_json(&evidence_path, &record)?;
+    if let Err(error) = progress {
+        eprintln!("session progress could not be recorded: {error}; final exit evidence was saved");
+    }
+    if !record.completed {
+        bail!("game child exited; confirm descendant exit manually on this platform");
+    }
+    Ok(())
 }
 
-fn observe_sample(directory: &Option<PathBuf>, start: std::time::Instant, record: &mut Evidence) {
+#[cfg(target_os = "linux")]
+fn inner_startup(reader: &mut impl std::io::BufRead, record: &mut Evidence) -> Result<()> {
+    let mut attempted = false;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 {
+            if !attempted {
+                record.launch_error =
+                    Some("sandbox observer did not start; inspect game.log".into());
+            }
+            return Ok(());
+        }
+        let message: serde_json::Value = serde_json::from_str(&line)?;
+        match message["phase"].as_str() {
+            Some("starting") => attempted = true,
+            Some("started") => {
+                record.started = true;
+                return Ok(());
+            }
+            Some("failed") => {
+                record.launch_error = Some(
+                    message["error"]
+                        .as_str()
+                        .unwrap_or("inner command did not start")
+                        .into(),
+                );
+                return Ok(());
+            }
+            _ => bail!("invalid sandbox startup evidence"),
+        }
+    }
+}
+
+fn observe_sample(directory: Option<&Path>, start: std::time::Instant, record: &mut Evidence) {
     use std::io::Read;
     if record.first_sample_ms.is_some() {
         return;
@@ -555,60 +611,6 @@ fn observe_sample(directory: &Option<PathBuf>, start: std::time::Instant, record
             record.first_sample_ms = Some(start.elapsed().as_millis());
             break;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn namespace_init_keeps_option_values_and_game_argv_literal() {
-        let binary = Path::new("/bin/modde");
-        let mut command = Command::new("bwrap");
-        command.args([
-            "--unshare-pid",
-            "--setenv",
-            "LITERAL",
-            "--",
-            "--chdir",
-            "/game",
-            "--",
-            "/game/launcher",
-            "--",
-            "$(not-a-shell)",
-        ]);
-        let wrapped = sandbox_tree(&command, binary, false).unwrap();
-        assert_eq!(
-            wrapped.get_args().collect::<Vec<_>>(),
-            [
-                "--unshare-pid",
-                "--setenv",
-                "LITERAL",
-                "--",
-                "--chdir",
-                "/game",
-                "--as-pid-1",
-                "--ro-bind",
-                "/bin/modde",
-                "/bin/modde",
-                "--",
-                "/bin/modde",
-                "library",
-                "wait-tree",
-                "--",
-                "/game/launcher",
-                "--",
-                "$(not-a-shell)"
-            ]
-        );
-        let probe = sandbox_tree(&command, binary, true).unwrap();
-        let args: Vec<_> = probe.get_args().collect();
-        assert!(args.ends_with(&[binary.as_os_str(), std::ffi::OsStr::new("--help")]));
-        assert!(!args.iter().any(|arg| *arg == "/game/launcher"));
-        let mut command = Command::new("bwrap");
-        command.args(["--unexpected", "--", "true"]);
-        assert!(sandbox_tree(&command, binary, false).is_err());
     }
 }
 

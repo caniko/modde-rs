@@ -35,9 +35,33 @@ fn stdout(cmd_args: &[&str]) -> String {
     combined
 }
 
+fn without_optional_commands(mut output: String) -> String {
+    for (command, enabled) in [
+        (
+            "  gui         Launch the graphical user interface\n",
+            cfg!(feature = "gui"),
+        ),
+        (
+            "  loot        LOOT masterlist integration (Bethesda plugin sorting)\n",
+            cfg!(feature = "bethesda"),
+        ),
+    ] {
+        assert_eq!(output.matches(command).count(), usize::from(enabled));
+        output = output.replace(command, "");
+    }
+    output
+}
+
 #[test]
 fn snapshot_top_level_help() {
-    insta::assert_snapshot!(stdout(&["--help"]));
+    if cfg!(all(feature = "gui", feature = "bethesda")) {
+        insta::assert_snapshot!(stdout(&["--help"]));
+    } else {
+        insta::assert_snapshot!(
+            "snapshot_top_level_help_without_optional_commands",
+            without_optional_commands(stdout(&["--help"]))
+        );
+    }
 }
 
 #[test]
@@ -99,7 +123,14 @@ fn snapshot_tool_doctor_help() {
 fn snapshot_no_args_error() {
     // Capture clap's "missing subcommand" error so we notice when its
     // wording or exit code changes underneath us.
-    insta::assert_snapshot!(stdout(&[]));
+    if cfg!(all(feature = "gui", feature = "bethesda")) {
+        insta::assert_snapshot!(stdout(&[]));
+    } else {
+        insta::assert_snapshot!(
+            "snapshot_no_args_error_without_optional_commands",
+            without_optional_commands(stdout(&[]))
+        );
+    }
 }
 
 #[test]

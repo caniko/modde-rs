@@ -39,8 +39,8 @@ check_minisign_probe() {
   sig="$probe.minisig"
   trap 'rm -rf "$tmpdir"' RETURN
 
-  printf '%s' "$MINISIGN_SECRET_KEY" > "$key"
-  printf 'modde-rs local release credentials probe\n' > "$probe"
+  printf '%s' "$MINISIGN_SECRET_KEY" >"$key"
+  printf 'modde-rs local release credentials probe\n' >"$probe"
   printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key" -m "$probe" -x "$sig" >/dev/null
   minisign -V -m "$probe" -x "$sig" -p keys/minisign.pub >/dev/null
   ok "minisign probe signs and verifies with keys/minisign.pub"
@@ -53,8 +53,8 @@ check_cosign_degrade() {
   predicate="$tmpdir/predicate.json"
   trap 'rm -rf "$tmpdir"' RETURN
 
-  printf 'modde-rs cosign local degrade probe\n' > "$artifact"
-  printf '{"_type":"https://in-toto.io/Statement/v1","subject":[],"predicateType":"https://slsa.dev/provenance/v1","predicate":{}}\n' > "$predicate"
+  printf 'modde-rs cosign local degrade probe\n' >"$artifact"
+  printf '{"_type":"https://in-toto.io/Statement/v1","subject":[],"predicateType":"https://slsa.dev/provenance/v1","predicate":{}}\n' >"$predicate"
 
   if env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u COSIGN_PRIVATE_KEY \
     bash -c 'test -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" && test -z "${COSIGN_PRIVATE_KEY:-}"'; then
@@ -65,76 +65,76 @@ check_cosign_degrade() {
 }
 
 check_workflow_contract() {
-  grep -F 'nix develop -c simit dist apt build --version "$VERSION" --release-dir release' .forgejo/workflows/release.yml >/dev/null \
-    && ok "workflow uses Simit for Debian package builds" \
-    || missing+=("workflow:Simit Debian package builder")
+  grep -F 'nix develop -c simit dist apt build --version "$VERSION" --release-dir release' .forgejo/workflows/release.yml >/dev/null &&
+    ok "workflow uses Simit for Debian package builds" ||
+    missing+=("workflow:Simit Debian package builder")
 
-  grep -F 'nix develop -c simit dist apt publish --version "$VERSION" --release-dir release --push' .forgejo/workflows/release.yml >/dev/null \
-    && ok "workflow uses Simit for APT publication" \
-    || missing+=("workflow:Simit APT publisher")
+  grep -F 'nix develop -c simit dist apt publish --version "$VERSION" --release-dir release --push' .forgejo/workflows/release.yml >/dev/null &&
+    ok "workflow uses Simit for APT publication" ||
+    missing+=("workflow:Simit APT publisher")
 
-  grep -F 'nix develop -c simit dist scoop bump --version "$VERSION"' .forgejo/workflows/release.yml >/dev/null \
-    && grep -F 'SCOOP_BUCKET_TOKEN: ${{ secrets.CODEBERG_TOKEN }}' .forgejo/workflows/release.yml >/dev/null \
-    && ok "workflow uses Simit for Scoop publication" \
-    || missing+=("workflow:Simit Scoop publisher")
+  grep -F 'nix develop -c simit dist scoop bump --version "$VERSION"' .forgejo/workflows/release.yml >/dev/null &&
+    grep -F 'SCOOP_BUCKET_TOKEN: ${{ secrets.CODEBERG_TOKEN }}' .forgejo/workflows/release.yml >/dev/null &&
+    ok "workflow uses Simit for Scoop publication" ||
+    missing+=("workflow:Simit Scoop publisher")
 
-  ! grep -F 'bash scripts/build-deb.sh' .forgejo/workflows/release.yml >/dev/null \
-    && ! grep -F 'reprepro -b' .forgejo/workflows/release.yml >/dev/null \
-    && ok "workflow contains no project-local APT implementation" \
-    || missing+=("workflow:project-local APT implementation")
+  ! grep -F 'bash scripts/build-deb.sh' .forgejo/workflows/release.yml >/dev/null &&
+    ! grep -F 'reprepro -b' .forgejo/workflows/release.yml >/dev/null &&
+    ok "workflow contains no project-local APT implementation" ||
+    missing+=("workflow:project-local APT implementation")
 
-  grep -F 'keyless Sigstore failed and COSIGN_PRIVATE_KEY unset; continuing without cosign signature or attestation' .forgejo/workflows/release.yml >/dev/null \
-    && ok "workflow keeps missing cosign fallback warning-only" \
-    || missing+=("workflow:cosign warning-only fallback")
+  grep -F 'keyless Sigstore failed and COSIGN_PRIVATE_KEY unset; continuing without cosign signature or attestation' .forgejo/workflows/release.yml >/dev/null &&
+    ok "workflow keeps missing cosign fallback warning-only" ||
+    missing+=("workflow:cosign warning-only fallback")
 
-  grep -F 'nix run .#copr-cli -- build --nowait "${COPR_PROJECT}" target/modde-release/root-artifacts/srpms/*.src.rpm' .forgejo/workflows/release.yml >/dev/null \
-    && ok "workflow uses local COPR CLI flake app" \
-    || missing+=("workflow:local COPR CLI app")
+  grep -F 'nix run .#copr-cli -- build --nowait "${COPR_PROJECT}" target/modde-release/root-artifacts/srpms/*.src.rpm' .forgejo/workflows/release.yml >/dev/null &&
+    ok "workflow uses local COPR CLI flake app" ||
+    missing+=("workflow:local COPR CLI app")
 
-  grep -F 'target/modde-release/root-artifacts/linux-result \' .forgejo/workflows/release.yml >/dev/null \
-    && grep -F 'target/modde-release/root-artifacts/flatpak-result \' .forgejo/workflows/release.yml >/dev/null \
-    && ok "workflow passes local result paths to nix path-info for Attic" \
-    || missing+=("workflow:Attic local result paths")
+  grep -F 'target/modde-release/root-artifacts/linux-result \' .forgejo/workflows/release.yml >/dev/null &&
+    grep -F 'target/modde-release/root-artifacts/flatpak-result \' .forgejo/workflows/release.yml >/dev/null &&
+    ok "workflow passes local result paths to nix path-info for Attic" ||
+    missing+=("workflow:Attic local result paths")
 
-  grep -F 'Attic login failed for configured Nix closure cache publishing.' .forgejo/workflows/release.yml >/dev/null \
-    && grep -F 'Attic push failed for configured Nix closure cache publishing.' .forgejo/workflows/release.yml >/dev/null \
-    && ok "workflow fails closed when configured Attic publishing fails" \
-    || missing+=("workflow:Attic failure contract")
+  grep -F 'Attic login failed for configured Nix closure cache publishing.' .forgejo/workflows/release.yml >/dev/null &&
+    grep -F 'Attic push failed for configured Nix closure cache publishing.' .forgejo/workflows/release.yml >/dev/null &&
+    ok "workflow fails closed when configured Attic publishing fails" ||
+    missing+=("workflow:Attic failure contract")
 
-  grep -F 'skipping cosign verification because release signing degrades to warning-only' scripts/smoke/smoke-signatures.sh >/dev/null \
-    && ok "smoke keeps missing cosign verification warning-only" \
-    || missing+=("smoke:cosign warning-only fallback")
+  grep -F 'skipping cosign verification because release signing degrades to warning-only' scripts/smoke/smoke-signatures.sh >/dev/null &&
+    ok "smoke keeps missing cosign verification warning-only" ||
+    missing+=("smoke:cosign warning-only fallback")
 
-  grep -F 'COPR publish will perform the authoritative remote build' scripts/smoke/smoke-srpm.sh >/dev/null \
-    && ok "smoke lets COPR remote build validate SRPM when local podman policy is unavailable" \
-    || missing+=("smoke:COPR local podman fallback")
+  grep -F 'COPR publish will perform the authoritative remote build' scripts/smoke/smoke-srpm.sh >/dev/null &&
+    ok "smoke lets COPR remote build validate SRPM when local podman policy is unavailable" ||
+    missing+=("smoke:COPR local podman fallback")
 
-  grep -F 'Authenticode signing is optional and was skipped by the release workflow' scripts/smoke/smoke-windows-zip.sh >/dev/null \
-    && ok "smoke treats unsigned Windows artifacts as optional when signing credentials are absent" \
-    || missing+=("smoke:Windows optional signing fallback")
+  grep -F 'Authenticode signing is optional and was skipped by the release workflow' scripts/smoke/smoke-windows-zip.sh >/dev/null &&
+    ok "smoke treats unsigned Windows artifacts as optional when signing credentials are absent" ||
+    missing+=("smoke:Windows optional signing fallback")
 
-  grep -F 'Flathub publish will perform the authoritative build' scripts/smoke/smoke-flatpak.sh >/dev/null \
-    && ok "smoke treats unavailable Flatpak runtime install as a runner limitation" \
-    || missing+=("smoke:Flatpak runtime fallback")
+  grep -F 'Flathub publish will perform the authoritative build' scripts/smoke/smoke-flatpak.sh >/dev/null &&
+    ok "smoke treats unavailable Flatpak runtime install as a runner limitation" ||
+    missing+=("smoke:Flatpak runtime fallback")
 
-  grep -F 'wine cannot execute' scripts/smoke/smoke-windows-zip.sh >/dev/null \
-    && ok "smoke treats unavailable Wine runtime execution as a runner limitation" \
-    || missing+=("smoke:Wine runtime fallback")
+  grep -F 'wine cannot execute' scripts/smoke/smoke-windows-zip.sh >/dev/null &&
+    ok "smoke treats unavailable Wine runtime execution as a runner limitation" ||
+    missing+=("smoke:Wine runtime fallback")
 
-  grep -F 'smoke-darwin-tarball.sh) continue' scripts/local-release-deploy.sh >/dev/null \
-    && missing+=("local-deploy:Darwin smoke must run by default") \
-    || ok "local deploy includes Darwin tarball smoke"
+  grep -F 'smoke-darwin-tarball.sh) continue' scripts/local-release-deploy.sh >/dev/null &&
+    missing+=("local-deploy:Darwin smoke must run by default") ||
+    ok "local deploy includes Darwin tarball smoke"
 
-  grep -F 'Homebrew disabled while macOS artifacts are skipped' scripts/local-release-deploy.sh >/dev/null \
-    && missing+=("local-deploy:Homebrew must not be globally disabled") \
-    || ok "local deploy no longer hard-disables Homebrew"
+  grep -F 'Homebrew disabled while macOS artifacts are skipped' scripts/local-release-deploy.sh >/dev/null &&
+    missing+=("local-deploy:Homebrew must not be globally disabled") ||
+    ok "local deploy no longer hard-disables Homebrew"
 
-  grep -F 'publish_homebrew()' scripts/local-release-deploy.sh >/dev/null \
-    && grep -F 'HOMEBREW_TAP_TOKEN' scripts/local-release-deploy.sh >/dev/null \
-    && grep -F "modde-\${version}-aarch64-darwin.tar.gz" scripts/local-release-deploy.sh >/dev/null \
-    && ! grep -F "modde-\${version}-x86_64-" scripts/local-release-deploy.sh | grep -F "darwin.tar.gz" >/dev/null \
-    && ok "local deploy has credential-gated Homebrew publisher with arm64 Darwin artifacts" \
-    || missing+=("local-deploy:Homebrew publisher with Darwin artifact gates")
+  grep -F 'publish_homebrew()' scripts/local-release-deploy.sh >/dev/null &&
+    grep -F 'HOMEBREW_TAP_TOKEN' scripts/local-release-deploy.sh >/dev/null &&
+    grep -F 'modde-${version}-aarch64-darwin.tar.gz' scripts/local-release-deploy.sh >/dev/null &&
+    ! grep -F 'modde-${version}-x86_64-' scripts/local-release-deploy.sh | grep -F "darwin.tar.gz" >/dev/null &&
+    ok "local deploy has credential-gated Homebrew publisher with arm64 Darwin artifacts" ||
+    missing+=("local-deploy:Homebrew publisher with Darwin artifact gates")
 }
 
 load_canix_release_inputs

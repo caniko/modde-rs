@@ -12,7 +12,8 @@ Arguments:
 Options:
       --data-dir <DATA_DIR>          Override data directory (default: ~/.local/share/modde or $`MODDE_DATA_DIR`) [env: MODDE_DATA_DIR=]
       --game <GAME>                  
-      --heap-profile <HEAP_PROFILE>  Write a DHAT heap profile. Requires the `heap-profile` cargo feature [env: MODDE_HEAP_PROFILE=]
+      --config-dir <CONFIG_DIR>      Override the base configuration directory used by modde and its session journal
       --json                         Emit machine-readable JSON
       --fix                          Apply the first recommended fix automatically (safe, conservative)
+      --heap-profile <HEAP_PROFILE>  Write a DHAT heap profile. Requires the `heap-profile` cargo feature [env: MODDE_HEAP_PROFILE=]
   -h, --help                         Print help

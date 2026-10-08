@@ -13,15 +13,20 @@ diff --git a/src/commands/copr.rs b/src/commands/copr.rs
 diff --git a/src/readme_badges.rs b/src/readme_badges.rs
 --- a/src/readme_badges.rs
 +++ b/src/readme_badges.rs
-@@ -184,7 +184,7 @@
+@@ -184,5 +184,5 @@
              "COPR",
              "configured",
              "3f51b5",
 -            Some(".copr/Makefile".to_owned()),
 +            Some(crate::commands::copr::MAKEFILE_PATH.to_owned()),
          ));
-     }
-     if config.apt.is_some() {
+@@ -192,5 +192,5 @@
+             "apt",
+             "configured",
+             "a81d33",
+-            Some("dist/apt/conf/distributions".to_owned()),
++            config.apt.as_ref().and_then(|apt| apt.public_url.clone()),
+         ));
 diff --git a/src/render/release_workflow.rs b/src/render/release_workflow.rs
 --- a/src/render/release_workflow.rs
 +++ b/src/render/release_workflow.rs
@@ -103,66 +108,7 @@ diff --git a/src/render/release_workflow.rs b/src/render/release_workflow.rs
          copr.nix_tool
      )
      .expect("write");
-@@ -2009,25 +2011,7 @@
-     let dir = &windows.dir;
-     let tar = windows.tar_archive.replace("{version}", "${VERSION}");
-     let zip = windows.zip_archive.replace("{version}", "${VERSION}");
--    w.push_str("      - name: Sign Windows Authenticode artifacts\n        env:\n");
--    writeln!(
--        w,
--        "          WINDOWS_SIGNING_PFX: ${{{{ secrets.{} }}}}",
--        windows.pfx_secret
--    )
--    .expect("write");
--    writeln!(
--        w,
--        "          WINDOWS_SIGNING_PASS: ${{{{ secrets.{} }}}}",
--        windows.pass_secret
--    )
--    .expect("write");
--    writeln!(
--        w,
--        "          WINDOWS_SIGNING_SUBJECT: ${{{{ secrets.{} }}}}",
--        windows.subject_secret
--    )
--    .expect("write");
-+    w.push_str("      - name: Package Windows artifacts\n");
-     w.push_str("        run: |\n          set -euo pipefail\n          . ./release-env\n");
-     let exes = windows
-         .binaries
-@@ -2036,30 +2020,7 @@
-         .collect::<Vec<_>>()
-         .join(" ");
-     writeln!(w, "          for exe in {exes}; do test -s \"$exe\"; done").expect("write");
--    w.push_str("          if [ -n \"${WINDOWS_SIGNING_PFX:-}\" ] && [ -n \"${WINDOWS_SIGNING_PASS:-}\" ]; then\n");
--    w.push_str("            nix shell nixpkgs#osslsigncode nixpkgs#openssl -c bash <<'SCRIPT'\n");
--    w.push_str("          set -euo pipefail\n          umask 077\n");
--    w.push_str("          pfx_file=\"$(mktemp)\"; pass_file=\"$(mktemp)\"\n");
--    w.push_str("          trap 'rm -f \"$pfx_file\" \"$pass_file\"' EXIT\n");
--    w.push_str(
--        "          printf '%s' \"$WINDOWS_SIGNING_PFX\" | base64 --decode > \"$pfx_file\"\n",
--    );
--    w.push_str("          printf '%s' \"$WINDOWS_SIGNING_PASS\" > \"$pass_file\"\n");
--    writeln!(w, "          for exe in {exes}; do").expect("write");
--    w.push_str("            osslsigncode sign -pkcs12 \"$pfx_file\" -readpass \"$pass_file\" -h sha256 \\\n");
--    writeln!(
--        w,
--        "              -n {} -i {} -ts {} \\",
--        shell_quote(&windows.sign_name),
--        shell_quote(&windows.sign_url),
--        shell_quote(&windows.timestamp_url)
--    )
--    .expect("write");
--    w.push_str("              -in \"$exe\" -out \"${exe}.signed\"\n");
--    w.push_str("            osslsigncode verify -in \"${exe}.signed\"\n");
--    w.push_str("            mv \"${exe}.signed\" \"$exe\"\n");
--    w.push_str("          done\n          SCRIPT\n");
--    w.push_str("          else\n            echo '::warning::WINDOWS_SIGNING_PFX/PASS unset; publishing unsigned Windows EXEs.'\n          fi\n");
-+    w.push_str("          echo '::warning::Windows Authenticode signing disabled on this Forgejo runner; publishing unsigned Windows EXEs.'\n");
-     let basenames = windows
-         .binaries
-         .iter()
-@@ -2267,6 +2228,7 @@
+@@ -2267,6 +2269,7 @@
          .replace("{version}", "${VERSION}")
          .replace("{arch}", "x86_64");
      let key_env = &chocolatey.api_key_env;
@@ -170,7 +116,7 @@ diff --git a/src/render/release_workflow.rs b/src/render/release_workflow.rs
      w.push_str("      - name: Publish Chocolatey package\n        env:\n");
      // Source the key from an Actions secret, unless the runner already provides
      // it in the job environment (e.g. a Forgejo runner credential).
-@@ -2295,9 +2257,12 @@
+@@ -2295,9 +2298,12 @@
      } else {
          writeln!(w, "          ZIP=\"release/{zip}\"; test -s \"$ZIP\"").expect("write");
      }
@@ -186,7 +132,7 @@ diff --git a/src/render/release_workflow.rs b/src/render/release_workflow.rs
          chocolatey.nix_tool
      )
      .expect("write");
-@@ -2342,7 +2307,11 @@
+@@ -2342,7 +2348,11 @@
      }
      push_choco_flag(w, "--choco-download-repo", &chocolatey.download_repo);
      push_choco_flag(w, "--choco-archive-pattern", &chocolatey.archive_pattern);
@@ -199,7 +145,7 @@ diff --git a/src/render/release_workflow.rs b/src/render/release_workflow.rs
  }
  
  fn push_choco_flag(w: &mut String, flag: &str, value: &str) {
-@@ -2794,7 +2763,7 @@
+@@ -2794,7 +2804,7 @@
          assert!(workflow.contains("cargo vendor vendor > ../cargo-vendor-config.toml"));
          assert!(
              workflow.contains(
@@ -208,7 +154,7 @@ diff --git a/src/render/release_workflow.rs b/src/render/release_workflow.rs
              )
          );
          assert!(workflow.contains("COPR_PROJECT=\"caniko/rs-modde\""));
-@@ -2847,7 +2816,14 @@
+@@ -2847,7 +2857,14 @@
          assert!(workflow.contains(
              "require_credential 'global/user secret' 'AUR_SSH_KEY' \"${AUR_SSH_KEY:-}\""
          ));
@@ -224,18 +170,16 @@ diff --git a/src/render/release_workflow.rs b/src/render/release_workflow.rs
          assert!(
              workflow
                  .contains("for pkg in modde modde-bin modde-git; do publish_pkg \"$pkg\"; done")
-@@ -2896,7 +2872,9 @@
+@@ -2896,7 +2913,8 @@
          assert!(!workflow.contains("Matrix secrets unset; skipping."));
          // Stage B channels
          assert!(workflow.contains("cargo sbom > release/sbom.json"));
--        assert!(workflow.contains("osslsigncode sign -pkcs12"));
 +        assert!(workflow.contains("cp -a target/modde-release/root-artifacts/release ./release"));
-+        assert!(workflow.contains("Package Windows artifacts"));
-+        assert!(!workflow.contains("osslsigncode sign -pkcs12"));
+         assert!(workflow.contains("osslsigncode sign -pkcs12"));
          assert!(workflow.contains("zip_out=\"$PWD/release/modde-${VERSION}-x86_64-windows.zip\""));
          assert!(!workflow.contains("OLDPWD"));
          assert!(workflow.contains("require_credential 'global/user secret'"));
-@@ -2905,7 +2883,7 @@
+@@ -2905,7 +2923,7 @@
          assert!(workflow.contains("wine \"$tmpdir/wingetcreate.exe\" update Caniko.Modde"));
          assert!(workflow.contains("/api/v1/statuses"));
          assert!(workflow.contains(

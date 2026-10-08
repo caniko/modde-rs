@@ -23,7 +23,9 @@ async fn resolve_profile_name(
             .await?
             .map(|(_, name)| name)
             .ok_or_else(|| {
-                anyhow::anyhow!("no active profile for installation '{scope}'; use --profile to specify")
+                anyhow::anyhow!(
+                    "no active profile for installation '{scope}'; use --profile to specify"
+                )
             }),
     }
 }
@@ -39,9 +41,15 @@ fn require_save_profiles_supported(game: &str) -> Result<()> {
     }
 }
 
-fn save_directory(context: &modde_games::library::context::InstallationContext) -> Result<std::path::PathBuf> {
+fn save_directory(
+    context: &modde_games::library::context::InstallationContext,
+) -> Result<std::path::PathBuf> {
     require_save_profiles_supported(context.saves.game_id.as_str())?;
-    context.saves.directory.clone().context("configure this installation's save_directory in Library")
+    context
+        .saves
+        .directory
+        .clone()
+        .context("configure this installation's save_directory in Library")
 }
 
 /// Print a fingerprint mismatch warning to stderr.
@@ -152,7 +160,8 @@ pub async fn handle(action: SaveAction) -> Result<()> {
             let p = pm.load(&profile, Some(&game_id)).await?;
             let fp = compute_fingerprint(&p);
 
-            let count = sm.capture_with_fingerprint(&context.saves.scope, &profile, &save_dir, Some(&fp))?;
+            let count =
+                sm.capture_with_fingerprint(&context.saves.scope, &profile, &save_dir, Some(&fp))?;
             if count > 0 {
                 if let Some(msg) = message {
                     amend_last_commit(context.saves.scope.as_str(), &msg)?;
@@ -207,18 +216,30 @@ pub async fn handle(action: SaveAction) -> Result<()> {
             let context = installation_context(&game, &pm).await?;
             save_directory(&context)?;
             let game_id = GameId::from(game.as_str());
-            anyhow::ensure!(pm.db().get_active_profile(&context.saves.scope).await?.as_ref().is_some_and(|(_, name)| name == &profile),
-                "activate this profile for the selected installation before restoring its saves");
+            anyhow::ensure!(
+                pm.db()
+                    .get_active_profile(&context.saves.scope)
+                    .await?
+                    .as_ref()
+                    .is_some_and(|(_, name)| name == &profile),
+                "activate this profile for the selected installation before restoring its saves"
+            );
 
             // Check fingerprint compatibility before restoring
             let p = pm.load(&profile, Some(&game_id)).await?;
             let current_fp = compute_fingerprint(&p);
 
-            let check =
-                SaveManager::check_restore_compatibility(&context.saves.scope, &profile, &commit, &current_fp)?;
+            let check = SaveManager::check_restore_compatibility(
+                &context.saves.scope,
+                &profile,
+                &commit,
+                &current_fp,
+            )?;
             warn_fingerprint_mismatch(&check);
 
-            let count = context.restore_saves(&pm, &profile, &commit, Some(&current_fp)).await?;
+            let count = context
+                .restore_saves(&pm, &profile, &commit, Some(&current_fp))
+                .await?;
             println!("Restored {count} save file(s) from snapshot {commit} to game directory.");
         }
         SaveAction::AutoCapture { game, profile } => {
@@ -232,8 +253,12 @@ pub async fn handle(action: SaveAction) -> Result<()> {
             let p = pm.load(&profile_name, Some(&game_id)).await?;
             let fp = compute_fingerprint(&p);
 
-            let count =
-                sm.capture_with_fingerprint(&context.saves.scope, &profile_name, &save_dir, Some(&fp))?;
+            let count = sm.capture_with_fingerprint(
+                &context.saves.scope,
+                &profile_name,
+                &save_dir,
+                Some(&fp),
+            )?;
             if count > 0 {
                 if let Some(tracker) = modde_games::resolve_save_tracker(&game) {
                     let saves = tracker.detect_saves(&save_dir)?;
@@ -322,8 +347,12 @@ pub async fn handle(action: SaveAction) -> Result<()> {
                 })
                 .await;
 
-                let count =
-                    sm.capture_with_fingerprint(&context.saves.scope, &profile_name, &save_dir, Some(&fp))?;
+                let count = sm.capture_with_fingerprint(
+                    &context.saves.scope,
+                    &profile_name,
+                    &save_dir,
+                    Some(&fp),
+                )?;
 
                 if count > 0 {
                     let current_saves = tracker

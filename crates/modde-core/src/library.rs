@@ -63,6 +63,8 @@ pub struct LaunchSettings {
     pub wrappers: Vec<Vec<String>>,
     pub environment: BTreeMap<String, String>,
     pub working_directory: Option<PathBuf>,
+    /// Stable PCI render node for Mesa game rendering. None uses the host default.
+    pub gpu_render_node: Option<PathBuf>,
     /// Named mod profile, taking precedence over the active-profile fallback.
     pub profile: Option<String>,
     /// With no named profile, use the installation's active profile. Set false
@@ -73,6 +75,9 @@ pub struct LaunchSettings {
     pub sandbox: SandboxSettings,
     /// A generated wrapper is installed at the store's actual command boundary.
     pub store_hook: bool,
+    /// Operator assertion: Steam Cloud is disabled for this entitlement. Steam
+    /// does not expose an authoritative offline per-game cloud policy API.
+    pub steam_cloud_disabled: bool,
 }
 
 impl Default for LaunchSettings {
@@ -85,11 +90,13 @@ impl Default for LaunchSettings {
             wrappers: Vec::new(),
             environment: BTreeMap::new(),
             working_directory: None,
+            gpu_render_node: None,
             profile: None,
             use_active_profile: true,
             save_directory: None,
             sandbox: SandboxSettings::default(),
             store_hook: false,
+            steam_cloud_disabled: false,
         }
     }
 }
@@ -143,6 +150,9 @@ pub struct PendingSession {
     pub save_transition: Option<SaveTransition>,
     #[serde(default)]
     pub observation: Option<SessionObservation>,
+    /// Private correlated diagnostics, allocated before preparation.
+    #[serde(default)]
+    pub diagnostics: Option<PathBuf>,
     /// Store handoff and one-run options, retained for interrupted completion.
     #[serde(default)]
     pub launch_request: Option<serde_json::Value>,
@@ -155,6 +165,7 @@ pub struct SessionObservation {
     pub unit: Option<String>,
 }
 
+pub mod diagnostics;
 mod session;
 pub use session::SessionPhase;
 mod save_transition;

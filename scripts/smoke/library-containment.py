@@ -111,7 +111,7 @@ exit 0
     assert json.loads(run("library", "status"))["session"] is None
     assert (home / "secret").read_text() == "not granted"
     assert not (readonly / "forbidden").exists()
-    observations = list((config / "sessions").glob("run-*/evidence.json"))
+    observations = list((root / "data/logs/launches").glob("run-*/evidence.json"))
     assert len(observations) == 4
     statuses = []
     for path in observations:

@@ -74,16 +74,16 @@ pub use self::state::{
     ToolReleaseSupport, ToolRevertResult, ToolSettingWriteResult, ToolState, ToolUiEntry, View,
     WabbajackInstallerState, WabbajackTab,
 };
-pub use crate::views::library::{
-    LibraryEntry, LibraryEntryKind, LibraryLoadResult, LibraryState, ManagerListInstance,
-};
 pub use self::tool_ops::parse_executable_environment;
 #[cfg(test)]
-use self::tool_ops::{apply_tool_for_game, validate_optiscaler_apply};
+use self::tool_ops::validate_optiscaler_apply;
 #[cfg(test)]
 use self::tool_settings::{
     get_tool_setting_value, normalize_tool_settings_for_specs, set_nested_tool_setting,
     tool_apply_is_pending, tool_apply_signature,
+};
+pub use crate::views::library::{
+    LibraryEntry, LibraryEntryKind, LibraryLoadResult, LibraryState, ManagerListInstance,
 };
 
 pub type ToolOptionCatalog = HashMap<String, Vec<String>>;

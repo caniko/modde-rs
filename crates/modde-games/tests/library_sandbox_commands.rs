@@ -102,7 +102,7 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
         .filter(|chunk| chunk[0] == Path::new("--setenv") && chunk[1] == Path::new("WINEPREFIX"))
         .map(|chunk| chunk[2].clone())
         .collect();
-    assert!(!wine_environment.is_empty());
+    assert_ne!(wine_environment, [] as [std::path::PathBuf; 0]);
     assert!(wine_environment.iter().all(|path| *path == compat));
 
     // Heroic's downloaded UMU launcher may load modules beside its entry point.
@@ -130,7 +130,7 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
     settings.executable = None;
     let supplied = vec![
         home.join("wrapper").into_os_string(),
-        alias.into_os_string(),
+        alias.clone().into_os_string(),
         install.join("Game.exe").into_os_string(),
     ];
     let command = launch::boundary_command(&game, &settings, &supplied).unwrap();

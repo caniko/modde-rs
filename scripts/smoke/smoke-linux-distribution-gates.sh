@@ -49,18 +49,18 @@ assert_file dist/aur/modde-git/PKGBUILD "AUR development package template"
 assert_file dist/aur/modde-git/.SRCINFO "AUR development package metadata"
 assert_file dist/rpm/modde.spec "COPR SRPM spec"
 
-grep -q "linuxDistributionSupport" flake.nix || \
+grep -q "linuxDistributionSupport" flake.nix ||
   die "flake.nix does not define linuxDistributionSupport; required upstream producer: release configuration"
 for channel in apt copr aur nix flatpak appimage tarball; do
-  grep -q "${channel} = {" flake.nix || \
+  grep -q "${channel} = {" flake.nix ||
     die "linux_distribution_support is missing channel ${channel}; required upstream producer: release configuration"
 done
 
-grep -q '^Architectures: amd64$' dist/apt/conf/distributions || \
+grep -q '^Architectures: amd64$' dist/apt/conf/distributions ||
   die "APT metadata must keep Architectures: amd64 until arm64 .deb builds are produced"
 
 if [ ! -s dist/apt/key.gpg.asc ]; then
-  warn "missing dist/apt/key.gpg.asc; APT publish can still use MODDE_APT_REPO_GPG_PUBLIC_KEY from Actions vars, but the committed public key should be regenerated with: gpg --armor --export \"\$MODDE_APT_REPO_GPG_KEY_ID\" > dist/apt/key.gpg.asc"
+  warn 'missing dist/apt/key.gpg.asc; APT publish can still use MODDE_APT_REPO_GPG_PUBLIC_KEY from Actions vars, but the committed public key should be regenerated with: gpg --armor --export "$MODDE_APT_REPO_GPG_KEY_ID" > dist/apt/key.gpg.asc'
 fi
 
 assert_optional_glob "${RELEASE_DIR}/modde-${VERSION}-x86_64-linux.tar.gz" "Build release artifacts tarball output"
