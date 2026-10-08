@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sandbox (Partial)**: Add disabled-by-default per-installation bubblewrap
   settings and alternating paired MangoHud captures. Require measured frame
   times and usable post-warmup samples, convert MangoHud elapsed nanoseconds,
-  and preserve observed exit status during re-ingestion. Compilation, regression
-  execution, containment qualification and overhead measurements remain pending.
+  and preserve observed exit status during re-ingestion. Compilation, focused
+  regressions and isolated native containment passed; live provider qualification
+  and representative game overhead remain pending.
 - **Build**: Add optional game, GUI, archive, PostgreSQL and manager Cargo
   features. Separate Nix application development, documentation and release
   shells; refresh pinned inputs and the Simit workflow patch.
@@ -145,6 +146,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dependencies**: Update direct crates to their latest stable releases and
+  refresh Git-pinned dependencies. Raise the minimum Rust version to 1.94 for
+  SQLx 0.9 and adapt database, resolver, telemetry and xtask integrations.
+- **Library**: Add explicit installation-alias rebinding that preserves the old
+  copy's profiles, launch settings and save vaults.
+- **Sandbox**: Keep detached game/Wine descendants alive through namespace-init
+  observation; retain failed-child outcomes. Fix mounts over already-visible
+  executable/save symlinks and preserve public XDG desktop discovery hints.
+- **Performance**: Recheck retained measured CSVs against stored samples before
+  automatic bisect grading. Preserve available observed exit evidence when
+  skipping analysis, and store absolute paths for manually ingested captures.
 - **Manager**: Explicitly release mutation leases even when forked children retain
   descriptors, and identify missing source-parent prerequisites in diagnostics.
 - **Manager**: Plan and apply compare prepared content and preserve unchanged files.

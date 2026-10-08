@@ -149,12 +149,12 @@ status = "Done"
 [features.owned_game_library]
 label = "Owned game library"
 # Source includes exact-install lifecycle, cloud-sync gates and completion
-# receipts. Compilation, regressions and live provider/save qualification are
-# pending; the playing guide records the supported boundaries and recovery flow.
+# receipts. Compilation/regressions and isolated native save continuity passed;
+# standalone Wine capture also passed; packaged/live provider qualification is pending.
 status = "Partial"
 
 [features.sandboxed_launch]
 label = "Sandboxed launch"
-# Source includes bubblewrap preflight and paired capture tooling. Containment,
-# nested-runtime compatibility and performance overhead have not been measured.
+# Source includes bubblewrap preflight and paired capture tooling. Isolated native
+# containment passed; nested/provider runtimes and game overhead remain unqualified.
 status = "Partial"

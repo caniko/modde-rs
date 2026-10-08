@@ -18,10 +18,10 @@ A configured directory is not enough to launch a local game: choose its
 executable. Games do not need a mod plugin to appear in Library or run. A mod
 plugin is needed for profile deployment and profile-managed saves.
 
-This remains a **Partial, unqualified** capability. The implementation includes
-process supervision and store/manager integration, but compilation, regression
-execution, live provider compatibility, containment and game-performance
-measurements have not yet been completed for this change.
+This remains a **Partial** capability. Compilation and focused core, CLI,
+game-adapter and GUI regressions have passed. Those checks do not establish live
+provider compatibility, packaged-runtime containment or representative game
+performance; see the qualification record in the Library handoff.
 
 ## Owned games and provider coverage
 
@@ -73,6 +73,12 @@ including orphaned children after a launcher forks and exits. If available in th
 same host namespaces, a systemd user service also tracks the session cgroup with
 `ExitType=cgroup`. Inside an existing container or a different namespace, the
 observer stays in the caller's namespaces.
+
+Sandboxed launches also use a namespace-init reaper, so bubblewrap does not kill
+an orphaned game when its first launcher exits. It waits for all descendants and
+keeps a failing child's result nonzero. Signals inside that namespace are reported
+as conventional `128 + signal` exit codes; the outer observer records the sandbox
+boundary's status.
 
 Use the actual game command. A command that asks a pre-existing service to launch
 the game can hand work outside the observed process tree. Wine prefixes must be
@@ -154,9 +160,21 @@ Catalogue refresh can persist this identity metadata in `library.json`.
 
 Path aliases record their resolved targets. Retargeting a known symlink is
 rejected instead of transferring the old installation's configuration to the
-new copy. Restore the original link before refreshing, or register the new
-physical path as a separate installation and review its imported launch settings.
-Merely refreshing Library does not authorize that transfer.
+new copy. Restore the original link before refreshing, or explicitly rebind it:
+
+```sh
+modde library rebind OLD_INSTALLATION_ID --alias /games/current --target /games/new-copy
+```
+
+Both paths must be existing absolute directories, and the alias must resolve to
+the expected target. The old copy keeps its settings, active profile and vaults;
+the new target receives its existing identity or a separate identity with default
+settings. Rebinding does not move saves or transfer configuration. If the old
+configuration still refers to the alias (including arguments, environment or
+sandbox grants), restore the original link and configure physical paths first.
+Old legacy save bindings using the alias also block rebinding. Refresh Library
+afterward and review the target's launch settings. Merely refreshing never
+authorizes a transfer.
 
 Two physical copies keep separate commands and save state. Moving a copy to an
 unrelated path is not an automatic migration of its settings or vault. A store URI cannot select
@@ -417,6 +435,10 @@ targets. Its cache persists between sessions. Host session D-Bus is not exposed
 automatically; tools requiring it may need a different supported configuration. Display/input access, especially
 X11, is not a security boundary against a hostile desktop client.
 
+Public `XDG_DATA_DIRS` and `XDG_CURRENT_DESKTOP` hints are retained for native
+asset discovery and Wine desktop helpers. They do not grant directories or the
+session bus; files outside the mounted paths remain unavailable.
+
 Network access defaults to enabled; disabling it requests a separate network
 namespace. Permission arrays use existing absolute paths. Additional symlink
 targets and external assets must be granted explicitly.
@@ -481,8 +503,12 @@ request also evaluates the selected crash/performance oracle then; a delayed
 completion cannot grade a newer candidate. Performance bisects require a
 successful, installation-scoped baseline with matching launch settings and the
 default warmup. Its source profile and enabled mod order/versions must also match
-the baseline; changing them requires a new baseline. Older bisects without an
-installation pin must be restarted.
+the baseline; changing them requires a new baseline. Automatic grading reparses
+retained CSVs with the measured parser and checks their full sample series and
+summaries against the database. Legacy FPS-derived frame times, changed CSVs or
+changed warmup summaries require re-ingestion with the recorded warmup before
+grading; missing CSVs must be restored or replaced by a new capture. Older bisects
+without an installation pin must be restarted.
 Abort/completion restores the source profile before candidate cleanup, and the
 next Play redeploys it.
 
@@ -502,7 +528,12 @@ benchmark provenance. If exit evidence cannot be
 read, skip automatic analysis first and ingest manually; that ingestion cannot
 establish a successful observed exit for a new bisect baseline.
 Re-ingesting a completed run preserves its recorded exit status, including a
-failed exit or an unknown status.
+failed exit or an unknown status. When analysis was skipped before ingestion,
+modde uses the matching retained `session.json` evidence if it proves a completed,
+started process; it preserves unsuccessful exits too. Skip attempts to retain this
+evidence but still releases continuation when the evidence or output path is
+unavailable. Missing evidence remains an unknown exit. Ingested CSV paths are saved
+as absolute paths so later grading does not depend on the caller's directory.
 
 No overhead measurements have been collected for this implementation. The
 commands and reports provide the measurement workflow, not a performance result.
