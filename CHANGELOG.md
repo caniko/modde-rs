@@ -191,6 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Nix tooling**: Match exported tool-schema enum lists to the repository's
+  formatter so regeneration and the schema-freshness check agree.
 - **Test isolation**: Bind UI fixtures to disposable SQLite databases and reject
   PostgreSQL in the test-cleanup helper before SQL execution. Assert disposable
   data/configuration paths so inherited desktop database settings cannot redirect
