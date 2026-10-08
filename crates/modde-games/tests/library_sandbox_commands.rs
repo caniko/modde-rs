@@ -62,7 +62,7 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
     settings.wrappers.clear();
     let supplied = vec![
         wrapper.into_os_string(),
-        link.into_os_string(),
+        link.clone().into_os_string(),
         install.join("Game.exe").into_os_string(),
     ];
     let command = launch::boundary_command(&game, &settings, &supplied).unwrap();
@@ -72,7 +72,7 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
             .any(|chunk| chunk[0] == Path::new("--ro-bind")
                 && chunk[1] == root.path().join("wine-runtime"))
     );
-    assert!(args.ends_with(&[runner, install.join("Game.exe")]));
+    assert!(args.ends_with(&[link, install.join("Game.exe")]));
 
     // UMU's container root and physical pfx stay distinct in a sandbox too.
     // The container is writable for prefix locks, shader caches and metadata.
@@ -141,4 +141,43 @@ fn sandbox_grants_runtime_trees_but_not_arbitrary_launcher_parent_directories() 
                 && chunk[1] == root.path().join("umu-runtime"))
     );
     assert!(args.ends_with(&[umu, install.join("Game.exe")]));
+
+    // A runner already visible through a read-only tree must not be mounted
+    // over that tree's symlink. Bubblewrap rejects symlink destinations.
+    let tree = root.path().join("readonly-tree");
+    let target = root.path().join("elsewhere/program");
+    program(&target);
+    std::fs::create_dir(&tree).unwrap();
+    let entry = tree.join("entry");
+    std::os::unix::fs::symlink(&target, &entry).unwrap();
+    settings.sandbox.read_only.push(tree);
+    let command =
+        launch::boundary_command(&game, &settings, &[entry.clone().into_os_string()]).unwrap();
+    let args: Vec<_> = command.get_args().map(PathBuf::from).collect();
+    assert!(
+        !args
+            .windows(3)
+            .any(|chunk| chunk[0] == Path::new("--ro-bind") && chunk[2] == entry)
+    );
+    assert!(
+        args.windows(3)
+            .any(|chunk| chunk[0] == Path::new("--ro-bind") && chunk[2] == target)
+    );
+    assert!(args.ends_with(&[entry]));
+    let physical_saves = root.path().join("physical-saves");
+    std::fs::create_dir(&physical_saves).unwrap();
+    let save_alias = prefix.join("save-alias");
+    std::os::unix::fs::symlink(&physical_saves, &save_alias).unwrap();
+    settings.save_directory = Some(save_alias.clone());
+    let command = launch::boundary_command(&game, &settings, &supplied).unwrap();
+    let args: Vec<_> = command.get_args().map(PathBuf::from).collect();
+    assert!(
+        !args
+            .windows(3)
+            .any(|chunk| chunk[0] == Path::new("--bind") && chunk[2] == save_alias)
+    );
+    assert!(
+        args.windows(3)
+            .any(|chunk| chunk[0] == Path::new("--bind") && chunk[2] == physical_saves)
+    );
 }

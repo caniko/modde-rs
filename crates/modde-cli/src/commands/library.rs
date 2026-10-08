@@ -14,8 +14,39 @@ use crate::cli::args::LibraryAction;
 mod hooks;
 mod process;
 
+fn cli_binary() -> Result<std::path::PathBuf> {
+    cli_binary_at(&std::env::current_exe()?)
+}
+
+fn cli_binary_at(current: &std::path::Path) -> Result<std::path::PathBuf> {
+    // Nix's wrapProgram moves the executable to .modde-wrapped (and appends
+    // underscores on repeated wrapping). Re-enter the public wrapper so store
+    // hooks and detached helpers retain packaged PATH/loader dependencies.
+    if current
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.strip_prefix(".modde-wrapped")
+                .is_some_and(|suffix| suffix.chars().all(|c| c == '_'))
+        })
+    {
+        let public = current.with_file_name("modde");
+        anyhow::ensure!(
+            public.is_file(),
+            "packaged CLI wrapper is missing: {}",
+            public.display()
+        );
+        return Ok(public);
+    }
+    Ok(current.to_path_buf())
+}
+
 pub(crate) fn supervise(request: &std::path::Path) -> Result<()> {
     process::supervise(request)
+}
+
+pub(crate) fn wait_tree(command: &[std::ffi::OsString]) -> Result<()> {
+    process::wait_tree(command)
 }
 
 /// A sibling of the observer, so waiting for the mutation lease cannot keep
@@ -179,6 +210,7 @@ pub(crate) async fn handle(action: LibraryAction) -> Result<()> {
             check_outcome(play_inner(&id, options, Some(command)).await?)?;
         }
         LibraryAction::Supervise { request } => process::supervise(&request)?,
+        LibraryAction::WaitTree { command } => process::wait_tree(&command)?,
         LibraryAction::CompleteObserved { observation } => complete_observed(&observation)?,
         LibraryAction::ManagerWrap {
             id,
@@ -554,6 +586,11 @@ async fn play_inner(
     } else {
         launch::prepare(game, &settings, &games)?
     };
+    if settings.sandbox.enabled
+        && let launch::PreparedLaunch::Direct(command) = &prepared
+    {
+        process::preflight_sandbox(command)?;
+    }
     if let Some(profile) = &profile {
         if !options.no_deploy {
             session.deployment_started = true;
@@ -639,6 +676,7 @@ async fn play_inner(
                 .performance
                 .as_ref()
                 .map(|capture| capture.directory.as_path()),
+            settings.sandbox.enabled,
         )
         .map(|(status, lease)| {
             _observer_lease = lease;
@@ -695,6 +733,21 @@ mod tests {
     use super::*;
     use modde_core::library::LegacySaveBinding;
     use modde_games::library::context::save_scope;
+
+    #[test]
+    fn packaged_helpers_and_hooks_reenter_the_public_cli_wrapper() {
+        let root = tempfile::tempdir().unwrap();
+        let public = root.path().join("modde");
+        std::fs::write(&public, "package wrapper").unwrap();
+        for name in [".modde-wrapped", ".modde-wrapped_"] {
+            assert_eq!(cli_binary_at(&root.path().join(name)).unwrap(), public);
+        }
+        assert_eq!(cli_binary_at(&public).unwrap(), public);
+        let custom = root.path().join("my-modde");
+        assert_eq!(cli_binary_at(&custom).unwrap(), custom);
+        std::fs::remove_file(&public).unwrap();
+        assert!(cli_binary_at(&root.path().join(".modde-wrapped")).is_err());
+    }
 
     fn game(id: &str) -> LibraryGame {
         LibraryGame {
@@ -1068,7 +1121,10 @@ async fn manager_launch(
     }
     let command =
         launch::prepare_boundary(&game, &settings, std::slice::from_ref(&game), &command)?;
-    let (status, _observer) = process::run(command, &mut session, None)?;
+    if settings.sandbox.enabled {
+        process::preflight_sandbox(&command)?;
+    }
+    let (status, _observer) = process::run(command, &mut session, None, settings.sandbox.enabled)?;
     complete_session(&session, &pm, Some(status), false).await?;
     check_outcome(launch::LaunchOutcome::Exited(status))
 }

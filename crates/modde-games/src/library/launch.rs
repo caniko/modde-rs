@@ -441,7 +441,20 @@ fn sandbox_program(path: PathBuf, settings: &mut LaunchSettings) -> Result<std::
             settings.sandbox.read_only.push(root.to_path_buf());
         }
     }
-    Ok(resolved.into_os_string())
+    // Scripted Proton/UMU launchers need their resolved location for sibling
+    // modules. Other programs keep their invocation name (e.g. multicall
+    // coreutils/busybox and Wine loaders), with only that file additionally
+    // granted rather than exposing its parent directory.
+    let program = if resolved
+        .file_name()
+        .is_some_and(|name| name == "proton" || name == "umu-run")
+    {
+        resolved
+    } else {
+        settings.sandbox.read_only.push(path.clone());
+        path
+    };
+    Ok(program.into_os_string())
 }
 
 pub fn preflight(
@@ -459,10 +472,12 @@ pub fn preflight(
 fn probe_sandbox(game: &LibraryGame, settings: &LaunchSettings) -> Result<()> {
     // Resolve independently of a game's custom PATH, and grant the real target
     // so a private-HOME symlink cannot make only the probe fail.
-    let program = resolve_wrapper("true", &LaunchSettings::default())?.canonicalize()?;
     let mut probe = settings.clone();
-    probe.sandbox.read_only.push(program.clone());
-    let status = super::sandbox::command(game, &probe, &program)?
+    let program = sandbox_program(
+        resolve_wrapper("true", &LaunchSettings::default())?,
+        &mut probe,
+    )?;
+    let status = super::sandbox::command(game, &probe, Path::new(&program))?
         .status()
         .context("bubblewrap preflight failed (install bwrap and enable user namespaces)")?;
     if !status.success() {

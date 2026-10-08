@@ -263,6 +263,10 @@ pub(super) fn command(
         "USER",
         "LOGNAME",
         "DISPLAY",
+        // Wine desktop helpers and native asset discovery need these public
+        // hints. They grant no filesystem paths or access to the session bus.
+        "XDG_DATA_DIRS",
+        "XDG_CURRENT_DESKTOP",
         "WAYLAND_DISPLAY",
         "XDG_RUNTIME_DIR",
         "XAUTHORITY",
@@ -302,6 +306,28 @@ pub(super) fn command(
 
 #[cfg(target_os = "linux")]
 fn bind(command: &mut Command, mode: &str, path: &Path) {
+    if matches!(mode, "--ro-bind" | "--bind")
+        && std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink())
+    {
+        let args: Vec<_> = command.get_args().collect();
+        // The last covering mount wins. Private HOME mounts have a different
+        // source and must not suppress an explicit grant beneath that HOME.
+        let exposed = args.windows(3).rev().find(|args| {
+            matches!(
+                args[0].to_str(),
+                Some("--ro-bind" | "--bind" | "--dev-bind")
+            ) && path.starts_with(Path::new(args[2]))
+        });
+        if exposed.is_some_and(|args| args[1] == args[2]) {
+            // The existing tree already exposes the logical entry. Mounting
+            // onto its symlink fails in bubblewrap; grant only an otherwise
+            // hidden target, preserving the invocation name through the tree.
+            if let Ok(target) = path.canonicalize() {
+                bind(command, mode, &target);
+            }
+            return;
+        }
+    }
     command.arg(mode).arg(path).arg(path);
 }
 
@@ -350,5 +376,31 @@ mod tests {
                 .to_string()
                 .contains("host root")
         );
+    }
+
+    #[test]
+    fn desktop_discovery_is_preserved_without_granting_desktop_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let game = LibraryGame::new(
+            super::super::Store::Local,
+            "test".into(),
+            "Test".into(),
+            Some(dir.path().into()),
+        );
+        let command = command(&game, &LaunchSettings::default(), Path::new("true")).unwrap();
+        let args: Vec<_> = command.get_args().collect();
+        for key in ["XDG_DATA_DIRS", "XDG_CURRENT_DESKTOP"] {
+            if let Some(value) = std::env::var_os(key) {
+                assert!(
+                    args.windows(3)
+                        .any(|args| args[0] == "--setenv" && args[1] == key && args[2] == value)
+                );
+                assert!(
+                    !args
+                        .windows(3)
+                        .any(|args| args[0] == "--bind" && args[1] == value)
+                );
+            }
+        }
     }
 }

@@ -42,6 +42,12 @@ pub(crate) fn run() -> Result<()> {
         return crate::commands::library::supervise(request);
     }
     if let super::args::Commands::Library {
+        action: super::args::LibraryAction::WaitTree { command },
+    } = &cli.command
+    {
+        return crate::commands::library::wait_tree(command);
+    }
+    if let super::args::Commands::Library {
         action: super::args::LibraryAction::CompleteObserved { observation },
     } = &cli.command
     {

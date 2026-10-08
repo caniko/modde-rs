@@ -35,6 +35,12 @@ pub(crate) enum LibraryAction {
     /// Isolated process supervisor (invoked by modde)
     #[command(hide = true)]
     Supervise { request: PathBuf },
+    /// Namespace init that waits for the actual command and orphaned descendants
+    #[command(hide = true)]
+    WaitTree {
+        #[arg(last = true, required = true)]
+        command: Vec<std::ffi::OsString>,
+    },
     /// Complete one observed session if its original CLI was interrupted
     #[command(hide = true)]
     CompleteObserved { observation: PathBuf },

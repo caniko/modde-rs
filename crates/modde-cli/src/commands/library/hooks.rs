@@ -26,7 +26,7 @@ pub(super) fn install(game: &LibraryGame) -> Result<String> {
     let directory = data.join("launch-hooks");
     std::fs::create_dir_all(&directory)?;
     let wrapper = directory.join(format!("{}.sh", game.id));
-    let binary = std::env::current_exe()?;
+    let binary = super::cli_binary()?;
     let script = format!(
         "#!/bin/sh\n# Generated exact-install command boundary; argv is never re-parsed.\nexec {} --config-dir {} --data-dir {} library wrap {} -- \"$@\"\n",
         quote(binary.to_str().context("non-UTF8 executable path")?),
@@ -421,9 +421,12 @@ pub(super) fn require_idle_prefix(prefix: Option<&Path>) -> Result<()> {
                     .find_map(|value| value.strip_prefix(key))
                     .map(|value| PathBuf::from(std::ffi::OsStr::from_bytes(value)))
             };
-            let actual = value(b"WINEPREFIX=")
-                .or_else(|| value(b"HOME=").map(|home| home.join(".wine")))
-                .with_context(|| format!("cannot establish the prefix of Wine process {pid}"))?;
+            let actual = boundary_prefix(
+                value(b"WINEPREFIX=").map(PathBuf::into_os_string),
+                value(b"STEAM_COMPAT_DATA_PATH=").map(PathBuf::into_os_string),
+            )?
+            .or_else(|| value(b"HOME=").map(|home| home.join(".wine")))
+            .with_context(|| format!("cannot establish the prefix of Wine process {pid}"))?;
             let actual = if actual.is_absolute() {
                 actual
             } else {
@@ -562,5 +565,40 @@ mod tests {
             assert!(validate_cloud_sync(&settings).is_err());
         }
         assert!(validate_cloud_sync(&serde_json::json!({"autoSyncSaves": false})).is_ok());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_live_wine_server_using_a_compat_root_blocks_the_physical_prefix() {
+        use std::process::{Command, Stdio};
+        let root = tempfile::tempdir().unwrap();
+        let compat = root.path().join("compat");
+        let prefix = compat.join("pfx");
+        std::fs::create_dir_all(&prefix).unwrap();
+        let ready = root.path().join("ready");
+        let mut child = Command::new("sh")
+            .args([
+                "-c",
+                "printf wineserver > /proc/$$/comm; printf ready > \"$1\"; read value",
+                "wine-fixture",
+            ])
+            .arg(&ready)
+            .env("WINEPREFIX", &compat)
+            .env("STEAM_COMPAT_DATA_PATH", &compat)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let start = std::time::Instant::now();
+        while !ready.exists() && start.elapsed() < std::time::Duration::from_secs(5) {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let busy = require_idle_prefix(Some(&prefix));
+        let unrelated = require_idle_prefix(Some(&root.path().join("another-prefix")));
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(ready.exists(), "Wine fixture did not start");
+        assert!(busy.unwrap_err().to_string().contains("already in use"));
+        assert!(unrelated.is_ok());
+        assert!(require_idle_prefix(Some(&prefix)).is_ok());
     }
 }

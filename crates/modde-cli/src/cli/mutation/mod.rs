@@ -10,6 +10,7 @@ pub(super) fn command_mutates_state(cmd: &Commands) -> bool {
             LibraryAction::List { .. }
                 | LibraryAction::Status
                 | LibraryAction::Supervise { .. }
+                | LibraryAction::WaitTree { .. }
                 | LibraryAction::Configure { file: None, .. }
         ),
         // Pure read paths.

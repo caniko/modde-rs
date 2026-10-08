@@ -261,6 +261,7 @@ fn sandbox_launch_uses_the_executable_selected_by_the_new_deployment() {
         profile: Some("replacement".into()),
         arguments: vec![marker.to_string_lossy().into_owned()],
         save_directory: Some(saves),
+        wrappers: vec![vec!["env".into()]],
         ..Default::default()
     };
     settings.sandbox.enabled = true;
