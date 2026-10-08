@@ -101,7 +101,7 @@ pub(super) fn dispatch_async(cli: Cli) -> Result<()> {
                     .await?;
                 }
                 BisectAction::Run { session_id } => {
-                    commands::bisect::handle_run(session_id).await?;
+                    Box::pin(commands::bisect::handle_run(session_id)).await?;
                 }
                 BisectAction::Retry { session_id } => {
                     commands::bisect::handle_retry(session_id).await?;
