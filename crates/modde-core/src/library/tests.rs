@@ -202,12 +202,14 @@ fn a_detached_legacy_id_is_not_reused_as_the_fallback_for_another_copy() {
     std::fs::create_dir(&b).unwrap();
     let mut prefs = LibraryPreferences::default();
     let old = prefs
-        .bind_installation(&[a.clone()], &["old".into()], &[])
+        .bind_installation(std::slice::from_ref(&a), &["old".into()], &[])
         .unwrap();
     prefs
         .launches
         .insert(old.clone(), LaunchSettings::default());
-    let new = prefs.bind_installation(&[b], &[old.clone()], &[]).unwrap();
+    let new = prefs
+        .bind_installation(&[b], std::slice::from_ref(&old), &[])
+        .unwrap();
     assert_ne!(new, old);
     assert_eq!(prefs.installations[&old].resolved_paths[&a], a);
 }
@@ -226,7 +228,11 @@ fn explicit_alias_rebinding_keeps_old_state_and_checks_the_expected_target() {
     let old = installation_id("local:example", &alias);
     assert_eq!(
         prefs
-            .bind_installation(&[alias.clone()], &[old.clone()], &["local:example".into()])
+            .bind_installation(
+                std::slice::from_ref(&alias),
+                std::slice::from_ref(&old),
+                &["local:example".into()],
+            )
             .unwrap(),
         old
     );
@@ -278,12 +284,18 @@ fn explicit_alias_rebinding_keeps_old_state_and_checks_the_expected_target() {
     assert_eq!(prefs.needs_deploy, before.needs_deploy);
     assert_eq!(
         prefs
-            .bind_installation(&[alias.clone()], &[old.clone()], &["local:example".into()])
+            .bind_installation(
+                std::slice::from_ref(&alias),
+                std::slice::from_ref(&old),
+                &["local:example".into()],
+            )
             .unwrap(),
         new
     );
     assert_eq!(
-        prefs.bind_installation(&[a], &[old.clone()], &[]).unwrap(),
+        prefs
+            .bind_installation(&[a], std::slice::from_ref(&old), &[])
+            .unwrap(),
         old
     );
     // Rebinding back joins the existing physical copy rather than moving vaults.
