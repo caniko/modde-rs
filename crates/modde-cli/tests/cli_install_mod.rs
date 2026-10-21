@@ -6,18 +6,16 @@
 //! * Nexus account is not Premium — the install bails before
 //!   downloading anything
 //!
-//! The full happy-path install (download + extract + analyze + execute)
-//! depends on a live archive, a registered game plugin, and a profile;
-//! that's covered separately by lower-level tests in `modde-core` /
-//! `modde-games`. The CLI-level value here is locking in that the
-//! handler reaches the right error branch and surfaces the right
-//! message — not re-testing the install pipeline itself.
+//! The happy paths serve a full mocked Nexus API and CDN for a game with
+//! no registered plugin, so the generic installer decides the layout and
+//! the CLI's file selection, profile wiring and install records are
+//! exercised end to end.
 
 mod common;
 
 use common::Fixture;
 use serde_json::json;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn run_install_mod(fx: &Fixture, base_url: &str, url: &str) -> std::process::Output {
@@ -118,5 +116,228 @@ async fn install_mod_bails_on_non_premium_account() {
     assert!(
         stderr.contains("Premium"),
         "expected 'Premium' in error message; got:\n{stderr}"
+    );
+}
+
+/// A Nexus game with no registered plugin, so the generic installer decides.
+const GAME: &str = "unlistedgame";
+
+fn zip(entries: &[&str]) -> Vec<u8> {
+    use std::io::Write as _;
+
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    let mut zip = zip::ZipWriter::new(&mut cursor);
+    for name in entries {
+        zip.start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"x").unwrap();
+    }
+    zip.finish().unwrap();
+    cursor.into_inner()
+}
+
+fn nexus_file(file_id: u64, category: &str, uploaded: u64) -> serde_json::Value {
+    json!({
+        "file_id": file_id, "name": "file", "version": "1.0", "size_kb": 1,
+        "file_name": "file.zip", "category_name": category, "uploaded_timestamp": uploaded,
+    })
+}
+
+/// Serve mod info, its file list, a Premium account, and `archive` as the
+/// CDN download for every file of `mod_id`.
+async fn mock_nexus(server: &MockServer, mod_id: u64, files: serde_json::Value, archive: Vec<u8>) {
+    let mod_path = format!("/games/{GAME}/mods/{mod_id}");
+    Mock::given(method("GET"))
+        .and(path(format!("{mod_path}.json")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "mod_id": mod_id, "name": "Test Mod", "summary": null, "version": "1.0", "author": "a",
+        })))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("{mod_path}/files.json")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "files": files })))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/users/validate.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "is_premium": true })))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(format!(
+            r"^{mod_path}/files/\d+/download_link\.json$"
+        )))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!([{ "URI": format!("{}/cdn/{mod_id}.zip", server.uri()) }])),
+        )
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!("/cdn/{mod_id}.zip")))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(archive))
+        .mount(server)
+        .await;
+}
+
+fn mod_url(mod_id: u64) -> String {
+    format!("https://www.nexusmods.com/{GAME}/mods/{mod_id}")
+}
+
+fn stdout(output: &std::process::Output) -> String {
+    assert!(
+        output.status.success(),
+        "install failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[tokio::test]
+async fn install_mod_installs_the_newest_main_file_and_records_it() {
+    let fx = Fixture::new();
+    let server = MockServer::start().await;
+    let files = json!([
+        nexus_file(1, "MAIN", 100),
+        nexus_file(2, "MAIN", 200),
+        nexus_file(3, "OPTIONAL", 300),
+    ]);
+    mock_nexus(&server, 100, files, zip(&["version.dll"])).await;
+
+    let out = stdout(&run_install_mod(&fx, &server.uri(), &mod_url(100)));
+    assert!(out.contains("file 2)"), "{out}");
+    assert!(out.contains("Staged 1 files into"), "{out}");
+    assert!(out.contains("Mod 'unlistedgame_100_2' added to profile 'unlistedgame'"));
+    assert!(
+        fx.data_dir()
+            .join("store/unlistedgame_100_2/__dll_overlay__/version.dll")
+            .is_file()
+    );
+
+    let again = stdout(&run_install_mod(&fx, &server.uri(), &mod_url(100)));
+    assert!(
+        again.contains("Already in store, skipping download"),
+        "{again}"
+    );
+
+    let db = modde_core::ModdeDb::open_at(&fx.data_dir().join("modde.db"))
+        .await
+        .unwrap();
+    let profile = db
+        .load_profile(GAME, &modde_core::GameId::from(GAME))
+        .await
+        .unwrap();
+    assert_eq!(
+        profile.mods.len(),
+        1,
+        "a reinstall must not duplicate the mod"
+    );
+    assert_eq!(
+        profile.mods[0].install_status,
+        Some(modde_core::installer::InstallStatus::Installed)
+    );
+    let installed = db
+        .installed_files_for_mod(
+            profile.id.unwrap(),
+            &modde_core::ModId::from("unlistedgame_100_2"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(installed.len(), 1);
+}
+
+#[tokio::test]
+async fn install_mod_falls_back_to_the_first_file_without_main() {
+    let fx = Fixture::new();
+    let server = MockServer::start().await;
+    mock_nexus(
+        &server,
+        110,
+        json!([nexus_file(7, "OPTIONAL", 1)]),
+        zip(&["version.dll"]),
+    )
+    .await;
+
+    let out = stdout(&run_install_mod(&fx, &server.uri(), &mod_url(110)));
+    assert!(out.contains("Mod 'unlistedgame_110_7' added"), "{out}");
+}
+
+#[tokio::test]
+async fn install_mod_fails_when_the_mod_has_no_files() {
+    let fx = Fixture::new();
+    let server = MockServer::start().await;
+    mock_nexus(&server, 120, json!([]), zip(&["version.dll"])).await;
+
+    let output = run_install_mod(&fx, &server.uri(), &mod_url(120));
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no files found for mod 120"));
+}
+
+#[tokio::test]
+async fn install_mod_reports_pending_and_unknown_layouts() {
+    let fx = Fixture::new();
+    let server = MockServer::start().await;
+    mock_nexus(
+        &server,
+        130,
+        json!([nexus_file(1, "MAIN", 1)]),
+        zip(&["fomod/ModuleConfig.xml"]),
+    )
+    .await;
+    mock_nexus(
+        &server,
+        131,
+        json!([nexus_file(1, "MAIN", 1)]),
+        zip(&["readme.txt"]),
+    )
+    .await;
+
+    let pending = stdout(&run_install_mod(&fx, &server.uri(), &mod_url(130)));
+    assert!(
+        pending.contains("Install method 'fomod' needs user input"),
+        "{pending}"
+    );
+
+    let unknown = stdout(&run_install_mod(&fx, &server.uri(), &mod_url(131)));
+    assert!(unknown.contains("unknown install layout"), "{unknown}");
+    assert!(
+        unknown.contains("unknown-installers/unlistedgame_131_1"),
+        "{unknown}"
+    );
+}
+
+#[tokio::test]
+async fn install_mod_warns_when_adding_to_a_locked_profile() {
+    let fx = Fixture::new();
+    let server = MockServer::start().await;
+    mock_nexus(
+        &server,
+        140,
+        json!([nexus_file(1, "MAIN", 1)]),
+        zip(&["a.dll"]),
+    )
+    .await;
+    mock_nexus(
+        &server,
+        141,
+        json!([nexus_file(1, "MAIN", 1)]),
+        zip(&["b.dll"]),
+    )
+    .await;
+    stdout(&run_install_mod(&fx, &server.uri(), &mod_url(140)));
+
+    let lock = fx
+        .cmd()
+        .args(["profile", "lock", GAME])
+        .output()
+        .expect("spawn modde");
+    stdout(&lock);
+
+    let output = run_install_mod(&fx, &server.uri(), &mod_url(141));
+    stdout(&output);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("is locked"),
+        "expected a lock warning"
     );
 }
