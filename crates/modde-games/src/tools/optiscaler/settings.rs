@@ -366,8 +366,10 @@ pub(super) fn infer_optiscaler_ini_spec(
 ) -> ToolSettingSpec {
     let label_cow = label.into();
     let lower = label_cow.to_ascii_lowercase();
+    // Labels arrive section-qualified (`Spoofing.OverrideNvapiDll`); classify by key name.
+    let name = lower.rsplit('.').next().unwrap_or_default();
     if matches!(
-        lower.as_str(),
+        name,
         "fsr4update"
             | "dxgi"
             | "loadasiplugins"
@@ -377,10 +379,10 @@ pub(super) fn infer_optiscaler_ini_spec(
     ) {
         return ToolSettingSpec::tri_state_bool(key, label_cow, "OptiScaler.ini override.");
     }
-    if lower.ends_with("scale")
-        || lower.ends_with("alpha")
-        || lower.contains("sharpness")
-        || lower.contains("bias")
+    if name.ends_with("scale")
+        || name.ends_with("alpha")
+        || name.contains("sharpness")
+        || name.contains("bias")
     {
         return ToolSettingSpec::number(
             key,
