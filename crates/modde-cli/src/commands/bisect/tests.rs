@@ -482,3 +482,45 @@ async fn retry_validation_rejects_candidate_when_not_waiting() {
         "unexpected error: {err}"
     );
 }
+
+#[tokio::test]
+async fn only_active_sessions_are_runnable() {
+    let pm = ProfileManager::with_db(ModdeDb::open_memory().await.unwrap());
+    let mut session = seed_session_for_cleanup(&pm).await;
+    let message = |session: &modde_core::BisectSession| {
+        super::flow::ensure_runnable(session)
+            .map_err(|e| e.to_string())
+            .err()
+    };
+
+    session.status = BisectStatus::Active;
+    assert_eq!(message(&session), None);
+    session.status = BisectStatus::Waiting;
+    assert!(message(&session).unwrap().contains("modde bisect mark cleanup-retry"));
+    session.status = BisectStatus::Aborted;
+    assert!(message(&session).unwrap().contains("not active (status: aborted)"));
+}
+
+#[test]
+fn newest_file_after_searches_recursively() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let touch = |rel: &str, secs: u64| {
+        let path = tmp.path().join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_modified(UNIX_EPOCH + Duration::from_secs(secs))
+            .unwrap();
+        path
+    };
+    touch("old.log", 100);
+    let newest = touch("nested/crash.log", 300);
+    touch("mid.log", 200);
+
+    let after = |secs| super::candidate::newest_file_after(tmp.path(), UNIX_EPOCH + Duration::from_secs(secs));
+    assert_eq!(after(150).unwrap(), Some(newest));
+    assert_eq!(after(300).unwrap(), None);
+    assert!(super::candidate::newest_file_after(&tmp.path().join("missing"), UNIX_EPOCH).is_err());
+}

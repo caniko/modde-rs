@@ -1991,3 +1991,105 @@ pub async fn handle_revert(tool_id: &str, game_id: &str) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn parse(spec: &ToolSettingSpec, value: &str) -> std::result::Result<serde_json::Value, String> {
+        parse_setting_value(spec, value).map_err(|e| format!("{e:#}"))
+    }
+
+    #[test]
+    fn setting_values_are_parsed_by_kind() {
+        let flag = ToolSettingSpec::bool("flag", "Flag", "");
+        assert_eq!(parse(&flag, "on"), Ok(json!(true)));
+        assert_eq!(parse(&flag, "0"), Ok(json!(false)));
+        assert!(parse(&flag, "maybe").unwrap_err().contains("'flag'"));
+
+        let tri = ToolSettingSpec::tri_state_bool("tri", "Tri", "");
+        assert_eq!(parse(&tri, "auto"), Ok(serde_json::Value::Null));
+        assert_eq!(parse(&tri, "yes"), Ok(json!(true)));
+        assert!(parse(&tri, "maybe").is_err());
+
+        let number = ToolSettingSpec::number("n", "N", "", 0.0, 1.0, 0.1);
+        assert_eq!(parse(&number, "1"), Ok(json!(1.0)));
+        assert!(parse(&number, "1.01").unwrap_err().contains("between 0 and 1"));
+        assert!(parse(&number, "-0.1").is_err());
+        assert!(parse(&number, "abc").unwrap_err().contains("expects a number"));
+
+        let select = ToolSettingSpec::select("mode", "Mode", "", &["a", "b"]);
+        assert_eq!(parse(&select, "b"), Ok(json!("b")));
+        assert!(parse(&select, "c").unwrap_err().contains("one of: a, b"));
+
+        let read_only = ToolSettingSpec::read_only("ro", "RO", "");
+        assert!(parse(&read_only, "x").unwrap_err().contains("read-only"));
+        assert_eq!(parse(&ToolSettingSpec::text("t", "T", ""), "x"), Ok(json!("x")));
+    }
+
+    #[test]
+    fn ini_override_keys_nest_by_section_and_name() {
+        let mut config = ToolConfig::new("optiscaler");
+        config.settings = json!("not an object");
+        set_config_value(&mut config, "ini_overrides.Upscalers.Sharpness", json!("0.5"));
+        set_config_value(&mut config, "ini_overrides.Sec.a.b", json!(1));
+        set_config_value(&mut config, "ini_overrides.Sec", json!(2));
+        set_config_value(&mut config, "ini_overrides..k", json!(3));
+        set_config_value(&mut config, "plain", json!(true));
+        assert_eq!(
+            config.settings,
+            json!({
+                "ini_overrides": { "Upscalers": { "Sharpness": "0.5" }, "Sec": { "a.b": 1 } },
+                "plain": true
+            })
+        );
+
+        config.settings = json!({ "ini_overrides": "broken" });
+        set_config_value(&mut config, "ini_overrides.A.b", json!(1));
+        assert_eq!(config.settings, json!({ "ini_overrides": { "A": { "b": 1 } } }));
+    }
+
+    #[test]
+    fn cached_goverlay_dirs_map_back_to_release_selection() {
+        let release = |name| cached_goverlay_name_to_release(name);
+        assert_eq!(
+            release("goverlay-edge_edge-0.9.12"),
+            Some(("goverlay-edge:edge-0.9.12".into(), "optiscaler-edge.7z".into()))
+        );
+        assert_eq!(
+            release("goverlay-stable_0.9.1-0"),
+            Some(("goverlay-stable:0.9.1-0".into(), "optiScaler-stable.7z".into()))
+        );
+        assert_eq!(
+            release("goverlay-master_master-3ce6192"),
+            Some((
+                "goverlay-master:master-3ce6192".into(),
+                "OptiScaler_master_3ce6192.7z".into()
+            ))
+        );
+        assert_eq!(release("official_v0.9.1"), None);
+    }
+
+    #[test]
+    fn release_selection_sets_source_and_channel() {
+        let selected = |tag| {
+            let mut config = ToolConfig::new("optiscaler");
+            apply_release_selection_to_config(&mut config, tag, "a.7z");
+            (
+                config.get_str("source_mode").map(str::to_string),
+                config.get_str("goverlay_channel").map(str::to_string),
+                config.get_str("release_tag").map(str::to_string),
+            )
+        };
+        let some = |s: &str| Some(s.to_string());
+        assert_eq!(
+            selected("goverlay-master:m"),
+            (some("goverlay_builds"), some("master"), some("goverlay-master:m"))
+        );
+        assert_eq!(
+            selected("goverlay-edge"),
+            (some("github_release"), None, some("goverlay-edge"))
+        );
+    }
+}

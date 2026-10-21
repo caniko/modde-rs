@@ -432,3 +432,54 @@ fn build_file_index(root: &std::path::Path) -> HashSet<String> {
 
     files
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use modde_games::{DiscoveredFile, DiscoveredMod, ModSource};
+
+    fn discovered(paths: &[&str]) -> DiscoveredMod {
+        DiscoveredMod {
+            mod_id: "m".into(),
+            display_name: "m".into(),
+            version: None,
+            files: paths
+                .iter()
+                .map(|p| DiscoveredFile {
+                    rel_path: (*p).to_string(),
+                    size: 1,
+                })
+                .collect(),
+            source: ModSource::Filesystem {
+                location: "mods".into(),
+            },
+            confidence: 1.0,
+        }
+    }
+
+    #[test]
+    fn dir_prefixes_lists_normalised_ancestors() {
+        assert_eq!(dir_prefixes("A\\B/c.TXT"), ["a/b/", "a/"]);
+        assert_eq!(dir_prefixes("file.txt"), [] as [&str; 0]);
+    }
+
+    #[test]
+    fn mod_root_dir_is_the_common_directory() {
+        assert_eq!(mod_root_dir(&discovered(&["mods/x.archive"])), None);
+        assert_eq!(
+            mod_root_dir(&discovered(&["Mods\\Heal\\init.lua", "mods/heal/s.json"])),
+            Some("mods/heal/".into())
+        );
+        // A shared name prefix is not a shared directory.
+        assert_eq!(
+            mod_root_dir(&discovered(&["mods/abc/x", "mods/abd/y"])),
+            Some("mods/".into())
+        );
+        // Multibyte characters diverging mid-codepoint must not panic.
+        assert_eq!(
+            mod_root_dir(&discovered(&["mods/é/a", "mods/è/b"])),
+            Some("mods/".into())
+        );
+        assert_eq!(mod_root_dir(&discovered(&["a.txt", "b.txt"])), None);
+    }
+}
