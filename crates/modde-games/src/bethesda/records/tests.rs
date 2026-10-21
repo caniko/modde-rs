@@ -318,3 +318,92 @@ fn unsupported_record_types_are_reported_without_failing_clean_validation() {
     assert!(report.is_empty(), "{report:?}");
     assert_eq!(report.unsupported_record_types, ["ARMO"]);
 }
+
+#[test]
+fn parser_rejects_malformed_headers_groups_and_payloads() {
+    let err = |result: Result<PluginDocument>| result.unwrap_err().to_string();
+    assert!(
+        err(parse_plugin_bytes("A.esp", &record(b"WEAP", 0, 1, Vec::new())))
+            .contains("expected TES4")
+    );
+
+    for (size, message) in [(23u32, "invalid GRUP size"), (100, "extends past")] {
+        let mut bytes = plugin(0, &[], Vec::new());
+        let mut bad_group = group(Vec::new());
+        bad_group[4..8].copy_from_slice(&size.to_le_bytes());
+        bytes.extend(bad_group);
+        assert!(err(parse_plugin_bytes("A.esp", &bytes)).contains(message));
+    }
+
+    assert!(decompress_record(&[1, 0, 0]).is_err());
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&[1, 2, 3]).unwrap();
+    let mut payload = 99u32.to_le_bytes().to_vec();
+    payload.extend(encoder.finish().unwrap());
+    assert!(
+        decompress_record(&payload)
+            .unwrap_err()
+            .to_string()
+            .contains("size mismatch")
+    );
+
+    assert!(
+        parse_masters(&subrecord(b"XXXX", &[0; 2]))
+            .unwrap_err()
+            .to_string()
+            .contains("invalid XXXX size")
+    );
+}
+
+#[test]
+fn esl_extension_or_flag_marks_plugin_light() {
+    let light = |name: &str, flags: u32| {
+        parse_plugin_bytes(name, &plugin(flags, &[], Vec::new()))
+            .unwrap()
+            .is_light
+    };
+    assert!(light("A.ESL", 0));
+    assert!(light("A.esp", ESL_FLAG));
+    assert!(!light("A.esp", 0));
+}
+
+#[test]
+fn bethesda_plugin_extensions_are_case_insensitive() {
+    for name in ["A.ESP", "b.esm", "c.Esl"] {
+        assert!(is_bethesda_plugin(name), "{name}");
+    }
+    for name in ["a.esp.bak", "esp", "a.bsa"] {
+        assert!(!is_bethesda_plugin(name), "{name}");
+    }
+}
+
+#[test]
+fn reference_compactness_comes_from_light_map_then_extension() {
+    let source = PluginDocument {
+        filename: "Mod.esp".to_string(),
+        masters: vec!["Light.esm".to_string(), "Dlc.esl".to_string()],
+        is_light: false,
+        records: Vec::new(),
+    };
+    let active: HashMap<String, String> = ["Light.esm", "Dlc.esl", "Mod.esp"]
+        .into_iter()
+        .map(|name| (name.to_lowercase(), name.to_string()))
+        .collect();
+    let light = HashMap::from([("light.esm".to_string(), true)]);
+    let key = |form_id| {
+        resolve_reference(&source, form_id, &active, &light)
+            .key
+            .unwrap()
+    };
+
+    let from_map = key(0x0012_3456);
+    assert!(from_map.compact);
+    assert_eq!(from_map.object_id, 0x456);
+    assert!(key(0x0100_0abc).compact);
+    let own = key(0x0212_3456);
+    assert!(!own.compact);
+    assert_eq!((own.plugin.as_str(), own.object_id), ("mod.esp", 0x12_3456));
+
+    let missing = resolve_reference(&source, 0x0300_0001, &active, &light);
+    assert!(missing.mod_index_out_of_range && missing.key.is_none());
+}
