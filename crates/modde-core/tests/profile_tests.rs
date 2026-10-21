@@ -428,3 +428,68 @@ async fn test_pm_list_only_created_profiles() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name, "real-profile");
 }
+
+#[test]
+fn test_validate_profile_name_rejects_unsafe_names() {
+    use modde_core::profile::validate_profile_name;
+
+    for bad in ["", ".", "..", "a/b", "a\\b", "a\0b", "a:b", &"x".repeat(256)] {
+        assert!(
+            matches!(validate_profile_name(bad), Err(CoreError::Validation(_))),
+            "{bad:?} should be rejected"
+        );
+    }
+    for good in ["main", "...", ".hidden", "Skyrim 2026 — é", &"x".repeat(255)] {
+        validate_profile_name(good).unwrap_or_else(|e| panic!("{good:?} rejected: {e}"));
+    }
+}
+
+#[tokio::test]
+async fn test_pm_create_or_update_keeps_id_and_replaces_mods() {
+    let pm = ProfileManager::with_db(ModdeDb::open_memory().await.unwrap());
+
+    let mut profile = make_manual_profile("p", "skyrim-se", vec![simple_mod("skse", true)]);
+    let id = pm.create_or_update(&profile).await.unwrap();
+    profile.mods = vec![simple_mod("ussep", false)];
+    assert_eq!(pm.create_or_update(&profile).await.unwrap(), id);
+
+    let loaded = pm.load("p", None).await.unwrap();
+    assert_eq!(loaded.mods.len(), 1);
+    assert_eq!(loaded.mods[0].mod_id, "ussep");
+    assert!(!loaded.mods[0].enabled);
+
+    let invalid = make_manual_profile("..", "skyrim-se", vec![]);
+    assert!(matches!(
+        pm.create_or_update(&invalid).await,
+        Err(CoreError::Validation(_))
+    ));
+    assert_eq!(pm.list().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn test_toml_import_skips_invalid_entries_and_is_idempotent() {
+    let pm = ProfileManager::with_db(ModdeDb::open_memory().await.unwrap());
+    let tmp = tempfile::tempdir().unwrap();
+    assert_eq!(
+        pm.import_toml(&tmp.path().join("missing")).await.unwrap(),
+        0
+    );
+
+    let write = |dir: &str, profile: &str| {
+        let dir = tmp.path().join(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("profile.toml"), profile).unwrap();
+    };
+    let profile_toml =
+        |name: &str| toml::to_string(&make_manual_profile(name, "skyrim-se", vec![])).unwrap();
+    write("good", &profile_toml("good"));
+    write("escape", &profile_toml(".."));
+    write("broken", "not = [valid");
+    std::fs::create_dir_all(tmp.path().join("no-toml")).unwrap();
+    std::fs::write(tmp.path().join("stray.toml"), profile_toml("stray")).unwrap();
+
+    assert_eq!(pm.import_toml(tmp.path()).await.unwrap(), 1);
+    assert_eq!(pm.import_toml(tmp.path()).await.unwrap(), 0);
+    let names: Vec<String> = pm.list().await.unwrap().into_iter().map(|p| p.name).collect();
+    assert_eq!(names, ["good"]);
+}

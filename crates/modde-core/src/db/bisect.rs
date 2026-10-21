@@ -203,6 +203,10 @@ impl ModdeDb {
                     continue;
                 }
             };
+            if let Err(e) = crate::profile::validate_profile_name(&profile.name) {
+                tracing::warn!(path = %toml_path.display(), error = %e, "skipping profile with invalid name");
+                continue;
+            }
 
             if profile.load_order_lock.is_none() {
                 profile.load_order_lock = Some(LoadOrderLock::now(LockReason::TomlImport {

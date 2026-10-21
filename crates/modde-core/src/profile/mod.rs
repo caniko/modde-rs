@@ -401,6 +401,11 @@ pub fn validate_profile_name(name: &str) -> Result<()> {
     if name.is_empty() {
         return Err(CoreError::Validation("profile name cannot be empty".into()));
     }
+    if name == "." || name == ".." {
+        return Err(CoreError::Validation(
+            format!("profile name cannot be '{name}'").into(),
+        ));
+    }
     if name.len() > 255 {
         return Err(CoreError::Validation(
             "profile name too long (max 255 characters)".into(),
