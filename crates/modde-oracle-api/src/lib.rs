@@ -261,6 +261,84 @@ mod tests {
     }
 
     #[test]
+    fn batch_limits_are_enforced() {
+        let batch = |schema_version, events| CompatEventBatch {
+            schema_version,
+            client_version: "0.3.9".to_string(),
+            events,
+        };
+        assert_eq!(
+            batch(2, vec![valid_event()]).validate(),
+            Err(ValidationError::UnsupportedSchema(2))
+        );
+        assert_eq!(
+            batch(CURRENT_SCHEMA_VERSION, Vec::new()).validate(),
+            Err(ValidationError::EmptyBatch)
+        );
+        batch(
+            CURRENT_SCHEMA_VERSION,
+            vec![valid_event(); MAX_EVENTS_PER_BATCH],
+        )
+        .validate()
+        .expect("a full batch is accepted");
+        assert_eq!(
+            batch(
+                CURRENT_SCHEMA_VERSION,
+                vec![valid_event(); MAX_EVENTS_PER_BATCH + 1]
+            )
+            .validate(),
+            Err(ValidationError::BatchTooLarge {
+                actual: MAX_EVENTS_PER_BATCH + 1,
+                max: MAX_EVENTS_PER_BATCH,
+            })
+        );
+    }
+
+    #[test]
+    fn event_fields_are_bounded_and_hash_shaped() {
+        let check = |edit: fn(&mut CompatEvent)| {
+            let mut event = valid_event();
+            edit(&mut event);
+            event.validate()
+        };
+        assert_eq!(
+            check(|e| e.game_id = "g".repeat(MAX_GAME_ID_LEN + 1)),
+            Err(ValidationError::FieldTooLong { field: "game_id" })
+        );
+        assert_eq!(
+            check(|e| e.platform = " ".to_string()),
+            Err(ValidationError::EmptyField { field: "platform" })
+        );
+        assert_eq!(
+            check(|e| e.mod_set_hash = "a".repeat(MAX_HASH_LEN + 1)),
+            Err(ValidationError::FieldTooLong {
+                field: "mod_set_hash"
+            })
+        );
+        assert_eq!(
+            check(|e| e.mod_hashes.clear()),
+            Err(ValidationError::EmptyModSet)
+        );
+        assert_eq!(
+            check(|e| e.pair_hashes = vec!["g".repeat(64)]),
+            Err(ValidationError::UnsafeField {
+                field: "pair_hashes"
+            })
+        );
+        assert_eq!(
+            check(|e| e.mod_set_hash = "AB:cd-ef_01".to_string()),
+            Ok(())
+        );
+        assert_eq!(
+            check(|e| {
+                e.kind = CompatEventKind::Session;
+                e.crash_signature_hash = None;
+            }),
+            Ok(())
+        );
+    }
+
+    #[test]
     fn rejects_crash_without_signature() {
         let mut event = valid_event();
         event.crash_signature_hash = None;

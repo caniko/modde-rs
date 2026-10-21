@@ -269,3 +269,82 @@ async fn assert_ok(response: axum::response::Response) -> axum::response::Respon
     }
     response
 }
+
+#[test]
+fn rate_limiter_clamps_burst_and_tracks_keys_independently() {
+    use crate::rate_limit::RateLimiter;
+
+    let limiter = RateLimiter::new(0, Duration::from_secs(60), false);
+    assert!(limiter.check("a").is_ok());
+    assert!(limiter.check("a").is_err());
+    assert!(limiter.check("b").is_ok());
+
+    let resetting = RateLimiter::new(1, Duration::ZERO, false);
+    assert!((0..3).all(|_| resetting.check("a").is_ok()));
+}
+
+#[test]
+fn rate_limit_key_trusts_forwarded_headers_only_behind_a_proxy() {
+    use crate::app::rate_limit_key;
+    use axum::http::{HeaderMap, HeaderValue};
+
+    let headers = |pairs: &[(&'static str, &'static str)]| {
+        let mut map = HeaderMap::new();
+        for (name, value) in pairs {
+            map.insert(*name, HeaderValue::from_static(value));
+        }
+        map
+    };
+    let peer = Some(SocketAddr::from(([10, 0, 0, 1], 1234)));
+    let forwarded = headers(&[("x-forwarded-for", " 1.2.3.4 , 5.6.7.8")]);
+
+    assert_eq!(rate_limit_key(&forwarded, peer, true), "1.2.3.4");
+    assert_eq!(rate_limit_key(&forwarded, peer, false), "10.0.0.1");
+    assert_eq!(
+        rate_limit_key(&headers(&[("x-real-ip", "9.9.9.9")]), peer, true),
+        "9.9.9.9"
+    );
+    assert_eq!(
+        rate_limit_key(&headers(&[("x-forwarded-for", "")]), peer, true),
+        "10.0.0.1"
+    );
+    assert_eq!(rate_limit_key(&HeaderMap::new(), None, true), "unknown");
+}
+
+#[test]
+fn aggregate_drops_small_cohorts_and_tracks_windows() {
+    use crate::aggregate::aggregate_events;
+
+    let pair = "e".repeat(64);
+    let events = vec![
+        event(CompatEventKind::Crash, &pair, 5),
+        event(CompatEventKind::Session, &pair, 1),
+        event(CompatEventKind::Session, &pair, 9),
+        event(CompatEventKind::Session, &"f".repeat(64), 3),
+    ];
+    let stats = aggregate_events(&events, 2);
+    assert_eq!(stats.len(), 1, "the single-event pair is below min_cohort");
+
+    // Laplace noise is zero under cfg(test): pair 1/3 crashes, baseline 1/4.
+    let stat = &stats[0];
+    assert_eq!(stat.pair_hash, pair);
+    assert_eq!(stat.coinstall_count, 3);
+    assert_eq!((stat.window_start_unix, stat.window_end_unix), (1, 9));
+    assert!((stat.crash_signature_rate - 1.0 / 3.0).abs() < 1e-9);
+    assert!((stat.baseline_rate - 0.25).abs() < 1e-9);
+    assert!((stat.lift - 4.0 / 3.0).abs() < 1e-9);
+
+    let crash_free = aggregate_events(&[event(CompatEventKind::Session, &pair, 1)], 1);
+    assert_eq!(crash_free[0].lift, 0.0);
+}
+
+#[test]
+fn confidence_buckets_by_cohort_size() {
+    use crate::aggregate::confidence;
+    use modde_oracle_api::ConfidenceBucket::{High, Low, Medium};
+
+    assert_eq!(
+        [199, 200, 999, 1000].map(confidence),
+        [Low, Medium, Medium, High]
+    );
+}
