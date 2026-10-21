@@ -69,9 +69,7 @@ pub fn match_wabbajack_manifest(
     let directives = manifest.install_directives();
 
     // Group directives by archive_hash → list of game-relative paths.
-    // Also extract the MO2 mod name from the `mods/<Name>/...` prefix.
     let mut archive_files: HashMap<u64, Vec<String>> = HashMap::new();
-    let mut archive_mod_names: HashMap<u64, String> = HashMap::new();
 
     for d in &directives {
         match d {
@@ -81,17 +79,8 @@ pub fn match_wabbajack_manifest(
             | InstallDirective::PatchedFromArchive {
                 archive_hash, to, ..
             } => {
-                let normalized = to.replace('\\', "/");
-
-                // Extract the MO2 mod name before lowercasing (preserves casing).
-                if archive_mod_names.get(archive_hash).is_none()
-                    && let Some(name) = extract_mo2_mod_name(&normalized)
-                {
-                    archive_mod_names.insert(*archive_hash, name);
-                }
-
                 // Strip prefix and lowercase for matching.
-                let game_relative = strip_mo2_prefix(&normalized.to_lowercase());
+                let game_relative = strip_mo2_prefix(&to.replace('\\', "/").to_lowercase());
                 archive_files
                     .entry(*archive_hash)
                     .or_default()
@@ -195,20 +184,6 @@ pub fn manifest_match_to_enabled(m: &ManifestMatch) -> EnabledMod {
     }
 }
 
-/// Extract the MO2 mod name from a directive path.
-///
-/// Paths like `mods/Immersive Healing/archive/pc/mod/ImmersiveHealing.archive`
-/// yield `"Immersive Healing"`.
-fn extract_mo2_mod_name(path: &str) -> Option<String> {
-    let rest = path.strip_prefix("mods/")?;
-    let end = rest.find('/')?;
-    let name = &rest[..end];
-    if name.is_empty() {
-        return None;
-    }
-    Some(name.to_string())
-}
-
 /// Strip MO2 staging prefix from a path.
 ///
 /// `mods/<mod_name>/<game_relative_path>` → `<game_relative_path>`.
@@ -230,9 +205,9 @@ fn clean_archive_name(name: &str) -> String {
     // Strip extension.
     let stem = name.rsplit_once('.').map_or(name, |(s, _)| s);
     // Nexus filenames: "ModName-modid-version-timestamp". Strip from first `-{digits}`.
-    if let Some(idx) = stem
-        .find('-')
-        .filter(|&i| stem[i + 1..].starts_with(|c: char| c.is_ascii_digit()))
+    if let Some((idx, _)) = stem
+        .match_indices('-')
+        .find(|&(i, _)| stem[i + 1..].starts_with(|c: char| c.is_ascii_digit()))
     {
         stem[..idx].replace('_', " ")
     } else {
@@ -363,5 +338,69 @@ pub fn discovered_to_enabled(
         enabled: true,
         version: version.map(String::from),
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest() -> WabbajackManifest {
+        serde_json::from_value(serde_json::json!({
+            "Name": "t", "Author": "t", "Description": "t", "Game": "SkyrimSpecialEdition", "Version": "1",
+            "Archives": [
+                { "Hash": 1, "Name": "SkyUI-Patch-12604-5-2-1700000000.7z", "Size": 1,
+                  "State": { "$type": "NexusDownloader, Wabbajack.Lib",
+                             "GameName": "skyrimspecialedition", "ModID": 12604, "FileID": 5 } },
+                { "Hash": 2, "Name": "Half_Present.zip", "Size": 1 }
+            ],
+            "Directives": [
+                { "$type": "FromArchive, Wabbajack.Lib", "ArchiveHashPath": [1, "a"],
+                  "To": "mods\\SkyUI\\Interface\\A.swf" },
+                { "$type": "FromArchive, Wabbajack.Lib", "ArchiveHashPath": [2, "b"], "To": "Data/b1.esp" },
+                { "$type": "FromArchive, Wabbajack.Lib", "ArchiveHashPath": [2, "c"], "To": "Data/b2.esp" },
+                { "$type": "FromArchive, Wabbajack.Lib", "ArchiveHashPath": [3, "d"], "To": "Data/orphan.esp" }
+            ]
+        }))
+        .unwrap()
+    }
+
+    fn on_disk(paths: &[&str]) -> HashSet<String> {
+        paths.iter().map(|p| (*p).to_string()).collect()
+    }
+
+    #[test]
+    fn match_strips_mo2_prefix_and_reports_nexus_identity() {
+        let matches = match_wabbajack_manifest(&manifest(), &on_disk(&["interface/a.swf"]), 1.0);
+        assert_eq!(matches.len(), 1);
+        let m = &matches[0];
+        assert_eq!(m.mod_id, "nexus_skyrimspecialedition_12604_5");
+        assert_eq!(m.display_name, "SkyUI-Patch");
+        assert_eq!(m.covered_paths, vec!["interface/a.swf".to_string()]);
+        assert_eq!(m.nexus_game_domain.as_deref(), Some("skyrimspecialedition"));
+    }
+
+    #[test]
+    fn match_threshold_is_inclusive_and_unknown_hashes_fall_back() {
+        let disk = on_disk(&["data/b1.esp", "data/orphan.esp"]);
+        let names = |threshold| -> Vec<String> {
+            match_wabbajack_manifest(&manifest(), &disk, threshold)
+                .into_iter()
+                .map(|m| format!("{}={}", m.mod_id, m.display_name))
+                .collect()
+        };
+        assert_eq!(names(0.5), ["wj_2=Half Present", "wj_3=unknown 3"]);
+        assert_eq!(names(0.51), ["wj_3=unknown 3"]);
+    }
+
+    #[test]
+    fn clean_archive_name_strips_nexus_suffix() {
+        assert_eq!(
+            clean_archive_name("ImmersiveHealing-26281-3-1-3-1772288704.zip"),
+            "ImmersiveHealing"
+        );
+        assert_eq!(clean_archive_name("SkyUI-Patch-12604-5-2.7z"), "SkyUI-Patch");
+        assert_eq!(clean_archive_name("No_Suffix-Here.7z"), "No Suffix-Here");
+        assert_eq!(clean_archive_name("noext"), "noext");
     }
 }
