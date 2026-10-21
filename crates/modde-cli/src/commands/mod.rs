@@ -250,9 +250,45 @@ fn validate_native_record_references(profile: &Profile, _plugins: &[PluginEntry]
     Ok(())
 }
 
+/// Parse repeated `KEY=VALUE` arguments into an environment map.
+pub(crate) fn parse_env(entries: &[String]) -> Result<std::collections::HashMap<String, String>> {
+    entries
+        .iter()
+        .map(|entry| {
+            let (key, value) = entry.split_once('=').ok_or_else(|| {
+                anyhow::anyhow!("invalid env format: '{entry}' (expected KEY=VALUE)")
+            })?;
+            anyhow::ensure!(
+                !key.is_empty(),
+                "invalid env format: '{entry}' (empty key)"
+            );
+            Ok((key.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_env_splits_on_first_equals_and_rejects_bad_entries() {
+        let env = parse_env(&["A=b=c".into(), "B=".into()]).unwrap();
+        assert_eq!(env["A"], "b=c");
+        assert_eq!(env["B"], "");
+        assert!(
+            parse_env(&["=x".into()])
+                .unwrap_err()
+                .to_string()
+                .contains("empty key")
+        );
+        assert!(
+            parse_env(&["noeq".into()])
+                .unwrap_err()
+                .to_string()
+                .contains("expected KEY=VALUE")
+        );
+    }
 
     #[test]
     fn supports_save_profiles_errors_for_unknown_game() {

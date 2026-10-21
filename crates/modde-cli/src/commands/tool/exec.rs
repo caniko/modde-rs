@@ -185,7 +185,7 @@ pub async fn handle_add_executable(
         anyhow::bail!("output mod cannot be empty");
     }
 
-    let env_map = parse_environment(environment)?;
+    let env_map = crate::commands::parse_env(environment)?;
     let db = ModdeDb::open().await.context("failed to open database")?;
     let row = ExecutableConfigRow {
         game_id: game_id.to_string(),
@@ -285,20 +285,6 @@ pub async fn handle_run_executable(
         output_mod: row.output_mod,
     })
     .await
-}
-
-fn parse_environment(settings: &[String]) -> Result<HashMap<String, String>> {
-    let mut env = HashMap::new();
-    for setting in settings {
-        let (key, value) = setting.split_once('=').ok_or_else(|| {
-            anyhow::anyhow!("invalid env format: '{setting}' (expected KEY=VALUE)")
-        })?;
-        if key.is_empty() {
-            anyhow::bail!("invalid env format: '{setting}' (empty key)");
-        }
-        env.insert(key.to_string(), value.to_string());
-    }
-    Ok(env)
 }
 
 /// List known tools for a game.

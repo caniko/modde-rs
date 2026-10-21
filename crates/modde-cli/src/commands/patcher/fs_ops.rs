@@ -250,20 +250,6 @@ pub(super) fn stage_generated_dir(profile: &Profile, stage_name: &str) -> PathBu
         .join(stage_name)
 }
 
-pub(super) fn parse_env(entries: Vec<String>) -> Result<HashMap<String, String>> {
-    let mut env = HashMap::new();
-    for entry in entries {
-        let (key, value) = entry
-            .split_once('=')
-            .ok_or_else(|| anyhow::anyhow!("environment entries must be KEY=VALUE"))?;
-        if key.is_empty() {
-            anyhow::bail!("environment variable key cannot be empty");
-        }
-        env.insert(key.to_string(), value.to_string());
-    }
-    Ok(env)
-}
-
 pub(super) fn require_profile_id(profile: &Profile) -> Result<i64> {
     profile
         .id

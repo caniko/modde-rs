@@ -8,9 +8,9 @@ use anyhow::{Context, Result};
 use modde_core::profile::{Profile, ProfileManager};
 use modde_core::{CommandSettings, PatcherStageRow, PatcherStageSettings, SynthesisCliSettings};
 
-use crate::commands::load_profile_or_default;
+use crate::commands::{load_profile_or_default, parse_env};
 
-use super::fs_ops::{parse_env, require_profile_id, stage_generated_dir};
+use super::fs_ops::{require_profile_id, stage_generated_dir};
 use super::pipeline::{
     load_stage_manifests, run_enabled_pipeline, run_stage, validate_stage_definition,
     validate_stage_runtime, validate_synthesis_game,
@@ -106,7 +106,7 @@ pub async fn handle_add_command(
         PatcherStageSettings::Command(CommandSettings {
             executable,
             args,
-            environment: parse_env(environment)?,
+            environment: parse_env(&environment)?,
             working_dir,
         }),
         output_mod,
