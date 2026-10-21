@@ -83,6 +83,10 @@
           toolchainProfile = "nightly";
         };
         inherit (toolchain) craneLib;
+        treefmtEval = harbor-rs.inputs.treefmt-nix.lib.evalModule pkgs (import ./nix/treefmt.nix {
+          inherit harbor-rs;
+          rustfmtPackage = toolchain.rustToolchain;
+        });
         opencodeLspShell = harbor-rs.inputs.nix-opencode-lsp.lib.mkShell {
           inherit pkgs;
           rustAnalyzer = toolchain.rustToolchain;
@@ -270,6 +274,7 @@
             rust-analyzer
             stdenv.cc
             toolchain.rustToolchain
+            treefmtEval.config.build.wrapper
             simitCli
             alejandra
             _7zz
@@ -709,29 +714,7 @@
             inherit modde-windows;
           };
 
-        formatter = pkgs.writeShellApplication {
-          name = "modde-format";
-          runtimeInputs = [pkgs.alejandra];
-          text = ''
-            args=("$@")
-            has_path=false
-            for arg in "''${args[@]}"; do
-              case "$arg" in
-                -*) ;;
-                *) has_path=true ;;
-              esac
-            done
-
-            if [ "''${has_path}" = false ]; then
-              args=(flake.nix nix)
-              if [ "$#" -gt 0 ]; then
-                args=("$@" "''${args[@]}")
-              fi
-            fi
-
-            exec alejandra "''${args[@]}"
-          '';
-        };
+        formatter = treefmtEval.config.build.wrapper;
 
         checks = let
           hmLib = lib.extend (_final: _prev: {
@@ -1327,6 +1310,7 @@
           };
           databaseSqliteDefault = evalHmConfig {};
         in {
+          formatting = treefmtEval.config.build.check self;
           tool-schema-fresh = pkgs.runCommand "modde-tool-schema-fresh" {} ''
             ${modde}/bin/modde dev export-tool-schema --out "$TMPDIR/tool-schema.nix"
             diff -u ${./nix/tool-schema.nix} "$TMPDIR/tool-schema.nix"
