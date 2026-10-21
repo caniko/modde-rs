@@ -63,27 +63,26 @@ impl ModdeDb {
 
     /// Set the plugin order for a profile (replaces any existing order).
     pub async fn set_plugin_order(&self, profile_id: i64, plugins: &[PluginEntry]) -> Result<()> {
-        self.db
-            .execute(
-                "DELETE FROM plugin_order WHERE profile_id = ?",
-                &vals![profile_id],
+        let mut tx = self.db.begin().await?;
+        tx.execute(
+            "DELETE FROM plugin_order WHERE profile_id = ?",
+            &vals![profile_id],
+        )
+        .await?;
+        for plugin in plugins {
+            tx.execute(
+                "INSERT INTO plugin_order (profile_id, plugin_name, sort_index, enabled)
+                 VALUES (?, ?, ?, ?)",
+                &vals![
+                    profile_id,
+                    plugin.plugin_name.clone(),
+                    plugin.sort_index,
+                    plugin.enabled,
+                ],
             )
             .await?;
-        for plugin in plugins {
-            self.db
-                .execute(
-                    "INSERT INTO plugin_order (profile_id, plugin_name, sort_index, enabled)
-                     VALUES (?, ?, ?, ?)",
-                    &vals![
-                        profile_id,
-                        plugin.plugin_name.clone(),
-                        plugin.sort_index,
-                        plugin.enabled,
-                    ],
-                )
-                .await?;
         }
-        Ok(())
+        tx.commit().await
     }
 
     /// Get the plugin order for a profile.

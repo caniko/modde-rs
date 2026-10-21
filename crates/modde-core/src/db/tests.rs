@@ -154,6 +154,7 @@ async fn ui_test_cleanup_rejects_postgres_before_executing_sql() {
     );
 }
 
+mod mods;
 mod patcher;
 #[cfg(feature = "postgres")]
 mod postgres;

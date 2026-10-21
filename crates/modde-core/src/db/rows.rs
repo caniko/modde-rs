@@ -193,11 +193,19 @@ pub(super) fn encode_source(source: &ProfileSource) -> (&'static str, Option<Str
     match source {
         ProfileSource::Manual => ("manual", None),
         ProfileSource::NexusCollection { slug, version } => {
-            let data = format!("slug = {slug:?}\nversion = {version:?}");
+            // `toml::Value` renders valid TOML strings; Rust `{:?}` escapes are not.
+            let data = format!(
+                "slug = {}\nversion = {}",
+                toml::Value::from(slug.as_str()),
+                toml::Value::from(version.as_str())
+            );
             ("nexus_collection", Some(data))
         }
         ProfileSource::Wabbajack { manifest_hash } => {
-            let data = format!("manifest_hash = {manifest_hash:?}");
+            let data = format!(
+                "manifest_hash = {}",
+                toml::Value::from(manifest_hash.as_str())
+            );
             ("wabbajack", Some(data))
         }
     }
