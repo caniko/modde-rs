@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 
 use modde_core::installer::{
-    self, DossierContext, InstallMethod, InstallPlan, InstallProbe, InstallerError, ProbeTrace,
+    self, DossierContext, InstallMethod, InstallPlan, InstallProbe, ProbeTrace,
 };
 use modde_core::paths;
 use modde_core::{NexusFileId, NexusModId};
@@ -144,28 +144,11 @@ pub async fn install_single_mod(
             InstallOutcome::PendingUserInput { method: label }
         }
         _ => {
+            // `is_ready()` mirrors `execute`'s preconditions, so unknown and
+            // unconfigured methods never get here; any error is a real failure.
             std::fs::create_dir_all(&mod_store_dir)?;
-            match installer::execute(&mut plan, &staging_root, &mod_store_dir) {
-                Ok(_files) => InstallOutcome::Installed(plan),
-                Err(InstallerError::UnknownMethod { reason: _ }) => {
-                    let dossier = write_dossier(
-                        &staging_root,
-                        game_domain,
-                        mod_id,
-                        file_id,
-                        mod_info,
-                        &plan.method,
-                    )?;
-                    InstallOutcome::Unknown {
-                        dossier_path: dossier,
-                        method: plan.method.clone(),
-                    }
-                }
-                Err(InstallerError::RequiresUserInput { method }) => {
-                    InstallOutcome::PendingUserInput { method }
-                }
-                Err(e) => return Err(e.into()),
-            }
+            installer::execute(&mut plan, &staging_root, &mod_store_dir)?;
+            InstallOutcome::Installed(plan)
         }
     };
 
@@ -187,9 +170,7 @@ async fn download_with_reqwest(client: &Client, url: &str, dest: &Path) -> Resul
     )
     .context("download HTTP error")?;
     let bytes = resp.bytes().await.context("failed to read download body")?;
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    // The caller has already created the store directory `dest` lives in.
     let mut file = tokio::fs::File::create(dest).await?;
     file.write_all(&bytes).await?;
     file.flush().await?;
@@ -230,19 +211,17 @@ fn write_dossier(
         .context("failed to write unknown-installer dossier")
 }
 
+/// Copy an extracted tree, which `extract_archive` fills with only regular
+/// files and directories.
 fn copy_dir_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if !src.exists() {
-        return Ok(());
-    }
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
-        let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        if src_path.is_dir() {
-            copy_dir_tree(&src_path, &dst_path)?;
-        } else if src_path.is_file() {
-            std::fs::copy(&src_path, &dst_path)?;
+        if entry.file_type()?.is_dir() {
+            copy_dir_tree(&entry.path(), &dst_path)?;
+        } else {
+            std::fs::copy(entry.path(), &dst_path)?;
         }
     }
     Ok(())
