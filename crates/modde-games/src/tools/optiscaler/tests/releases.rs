@@ -145,3 +145,32 @@ fn goverlay_release_sorts_newest_first_by_publish_date() {
     assert_eq!(releases[0].tag, "goverlay-edge:edge-new");
     assert_eq!(releases[1].tag, "goverlay-edge:edge-old");
 }
+
+#[test]
+fn goverlay_stable_tags_are_plain_three_part_versions() {
+    for tag in ["0.9.1", "0.9.1-12"] {
+        assert!(is_goverlay_stable_tag(tag), "{tag} should be stable");
+    }
+    for tag in ["", "0.9", "0.9.1.2", "0.9.1-", "0.9.1-rc1", "v0.9.1", "0..1"] {
+        assert!(!is_goverlay_stable_tag(tag), "{tag} should not be stable");
+    }
+}
+
+#[test]
+fn installable_release_assets_are_archives() {
+    assert!(is_installable_release_asset("OptiScaler.ZIP"));
+    assert!(is_installable_release_asset("a.7z"));
+    assert!(!is_installable_release_asset("a.json"));
+    assert!(!is_installable_release_asset("zip"));
+}
+
+#[test]
+fn bare_release_tag_normalizes_to_official_once() {
+    let mut config = ToolConfig::new("optiscaler");
+    config.set("release_tag", serde_json::json!("v0.9.1"));
+
+    assert!(normalize_optiscaler_release_config(&mut config));
+    assert_eq!(config.get_str("release_tag"), Some("official:v0.9.1"));
+    assert_eq!(config.get_str("source_mode"), Some(OPTISCALER_SOURCE_OFFICIAL));
+    assert!(!normalize_optiscaler_release_config(&mut config));
+}
