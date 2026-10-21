@@ -226,12 +226,16 @@ fn decode_mod_list(data: &Value) -> Result<Vec<GqlModTile>> {
         .and_then(|m| m.get("nodes"))
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("GraphQL response missing mods.nodes"))?;
-    // The `author` field comes back as `{ name: "..." }` in the v2
-    // schema; flatten it into the `GqlModTile::author` string field.
     let mut out = Vec::new();
     if let Some(array) = nodes.as_array() {
         for raw in array {
-            let mut tile: GqlModTile = serde_json::from_value(raw.clone()).unwrap_or(GqlModTile {
+            // The `author` field comes back as `{ name: "..." }` in the v2
+            // schema; flatten it before the typed decode, which expects a string.
+            let mut raw = raw.clone();
+            if let Some(name) = raw.pointer("/author/name").cloned() {
+                raw["author"] = name;
+            }
+            let tile = GqlModTile::deserialize(&raw).unwrap_or_else(|_| GqlModTile {
                 mod_id: raw
                     .get("modId")
                     .and_then(serde_json::Value::as_u64)
@@ -244,7 +248,10 @@ fn decode_mod_list(data: &Value) -> Result<Vec<GqlModTile>> {
                     .to_string(),
                 summary: None,
                 version: None,
-                author: None,
+                author: raw
+                    .get("author")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
                 picture_url: None,
                 thumbnail_url: None,
                 endorsements: None,
@@ -252,13 +259,6 @@ fn decode_mod_list(data: &Value) -> Result<Vec<GqlModTile>> {
                 uploaded_at: None,
                 game_domain: None,
             });
-            if tile.author.is_none() {
-                tile.author = raw
-                    .get("author")
-                    .and_then(|a| a.get("name"))
-                    .and_then(|n| n.as_str())
-                    .map(str::to_string);
-            }
             out.push(tile);
         }
     }
@@ -327,4 +327,38 @@ pub async fn collections_feed(
         .ok_or_else(|| anyhow::anyhow!("GraphQL response missing collections.nodes"))?;
     let tiles: Vec<GqlCollectionTile> = serde_json::from_value(nodes)?;
     Ok(tiles)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_mod_list_keeps_typed_fields_when_author_is_an_object() {
+        let data = serde_json::json!({ "mods": { "nodes": [{
+            "modId": 7, "name": "SkyUI", "summary": "UI overhaul", "version": "5.2",
+            "author": { "name": "schlangster" }, "downloads": 10, "gameDomain": "skyrimspecialedition"
+        }]}});
+        let tiles = decode_mod_list(&data).unwrap();
+        assert_eq!(tiles.len(), 1);
+        let tile = &tiles[0];
+        assert_eq!(tile.mod_id, NexusModId::from(7));
+        assert_eq!(tile.author.as_deref(), Some("schlangster"));
+        assert_eq!(tile.summary.as_deref(), Some("UI overhaul"));
+        assert_eq!(tile.downloads, Some(10));
+        assert_eq!(tile.game_domain.as_deref(), Some("skyrimspecialedition"));
+    }
+
+    #[test]
+    fn decode_mod_list_tolerates_malformed_nodes() {
+        assert!(decode_mod_list(&serde_json::json!({ "mods": {} })).is_err());
+        let not_an_array = decode_mod_list(&serde_json::json!({ "mods": { "nodes": {} } }));
+        assert!(matches!(not_an_array.unwrap().as_slice(), []));
+        let tiles =
+            decode_mod_list(&serde_json::json!({ "mods": { "nodes": [{ "name": "x", "author": { "name": "a" } }] } }))
+                .unwrap();
+        assert_eq!(tiles[0].mod_id, NexusModId::from(0));
+        assert_eq!(tiles[0].name, "x");
+        assert_eq!(tiles[0].author.as_deref(), Some("a"));
+    }
 }
