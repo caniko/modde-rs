@@ -425,8 +425,17 @@ fn rar_magic_with_archive_extension_routes_to_rar_reader() {
 
 #[test]
 fn archive_entries_reject_absolute_and_traversal_paths() {
-    for bad in ["/etc/passwd", "\\\\server\\share", "..\\evil.dll", "a/../../b", "a/.."] {
-        assert!(validate_archive_entry(bad).is_err(), "{bad:?} should be rejected");
+    for bad in [
+        "/etc/passwd",
+        "\\\\server\\share",
+        "..\\evil.dll",
+        "a/../../b",
+        "a/..",
+    ] {
+        assert!(
+            validate_archive_entry(bad).is_err(),
+            "{bad:?} should be rejected"
+        );
     }
     for ok in ["a/b.esp", "a\\b.esp", "a/..b/c", "...", "a/./b"] {
         validate_archive_entry(ok).unwrap_or_else(|e| panic!("{ok:?} rejected: {e}"));
@@ -449,8 +458,14 @@ fn write_requests_must_agree_on_expected_size() {
         ..write(None)
     };
 
-    assert_eq!(expected_write_size(&[bytes.clone(), write(None)]).unwrap(), None);
-    assert_eq!(expected_write_size(&[write(Some(3)), bytes, write(Some(3))]).unwrap(), Some(3));
+    assert_eq!(
+        expected_write_size(&[bytes.clone(), write(None)]).unwrap(),
+        None
+    );
+    assert_eq!(
+        expected_write_size(&[write(Some(3)), bytes, write(Some(3))]).unwrap(),
+        Some(3)
+    );
     assert!(expected_write_size(&[write(Some(3)), write(Some(4))]).is_err());
     assert!(validate_declared_entry_size(2, &[write(Some(3))]).is_err());
     validate_declared_entry_size(3, &[write(Some(3))]).unwrap();

@@ -151,7 +151,15 @@ fn goverlay_stable_tags_are_plain_three_part_versions() {
     for tag in ["0.9.1", "0.9.1-12"] {
         assert!(is_goverlay_stable_tag(tag), "{tag} should be stable");
     }
-    for tag in ["", "0.9", "0.9.1.2", "0.9.1-", "0.9.1-rc1", "v0.9.1", "0..1"] {
+    for tag in [
+        "",
+        "0.9",
+        "0.9.1.2",
+        "0.9.1-",
+        "0.9.1-rc1",
+        "v0.9.1",
+        "0..1",
+    ] {
         assert!(!is_goverlay_stable_tag(tag), "{tag} should not be stable");
     }
 }
@@ -171,6 +179,9 @@ fn bare_release_tag_normalizes_to_official_once() {
 
     assert!(normalize_optiscaler_release_config(&mut config));
     assert_eq!(config.get_str("release_tag"), Some("official:v0.9.1"));
-    assert_eq!(config.get_str("source_mode"), Some(OPTISCALER_SOURCE_OFFICIAL));
+    assert_eq!(
+        config.get_str("source_mode"),
+        Some(OPTISCALER_SOURCE_OFFICIAL)
+    );
     assert!(!normalize_optiscaler_release_config(&mut config));
 }

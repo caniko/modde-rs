@@ -433,13 +433,28 @@ async fn test_pm_list_only_created_profiles() {
 fn test_validate_profile_name_rejects_unsafe_names() {
     use modde_core::profile::validate_profile_name;
 
-    for bad in ["", ".", "..", "a/b", "a\\b", "a\0b", "a:b", &"x".repeat(256)] {
+    for bad in [
+        "",
+        ".",
+        "..",
+        "a/b",
+        "a\\b",
+        "a\0b",
+        "a:b",
+        &"x".repeat(256),
+    ] {
         assert!(
             matches!(validate_profile_name(bad), Err(CoreError::Validation(_))),
             "{bad:?} should be rejected"
         );
     }
-    for good in ["main", "...", ".hidden", "Skyrim 2026 — é", &"x".repeat(255)] {
+    for good in [
+        "main",
+        "...",
+        ".hidden",
+        "Skyrim 2026 — é",
+        &"x".repeat(255),
+    ] {
         validate_profile_name(good).unwrap_or_else(|e| panic!("{good:?} rejected: {e}"));
     }
 }
@@ -490,6 +505,12 @@ async fn test_toml_import_skips_invalid_entries_and_is_idempotent() {
 
     assert_eq!(pm.import_toml(tmp.path()).await.unwrap(), 1);
     assert_eq!(pm.import_toml(tmp.path()).await.unwrap(), 0);
-    let names: Vec<String> = pm.list().await.unwrap().into_iter().map(|p| p.name).collect();
+    let names: Vec<String> = pm
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
     assert_eq!(names, ["good"]);
 }

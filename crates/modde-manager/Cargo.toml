@@ -13,7 +13,17 @@ workspace = true
 
 [features]
 default = ["wow"]
-wow = ["dep:anyhow", "dep:clap", "dep:libc", "dep:nix-manager-core", "dep:serde", "dep:serde_json", "dep:serde_yaml_ng", "dep:sha2", "dep:tempfile"]
+wow = [
+  "dep:anyhow",
+  "dep:clap",
+  "dep:libc",
+  "dep:nix-manager-core",
+  "dep:serde",
+  "dep:serde_json",
+  "dep:serde_yaml_ng",
+  "dep:sha2",
+  "dep:tempfile",
+]
 
 [[bin]]
 name = "modde-manager"

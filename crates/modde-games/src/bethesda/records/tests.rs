@@ -323,8 +323,11 @@ fn unsupported_record_types_are_reported_without_failing_clean_validation() {
 fn parser_rejects_malformed_headers_groups_and_payloads() {
     let err = |result: Result<PluginDocument>| result.unwrap_err().to_string();
     assert!(
-        err(parse_plugin_bytes("A.esp", &record(b"WEAP", 0, 1, Vec::new())))
-            .contains("expected TES4")
+        err(parse_plugin_bytes(
+            "A.esp",
+            &record(b"WEAP", 0, 1, Vec::new())
+        ))
+        .contains("expected TES4")
     );
 
     for (size, message) in [(23u32, "invalid GRUP size"), (100, "extends past")] {

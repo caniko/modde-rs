@@ -86,18 +86,63 @@ assets = [
 ]
 
 [features]
-default = ["gui", "all-games", "bethesda-archives", "postgres", "rar", "linux-integrations", "macos-integrations"]
-all-games = ["bethesda", "gamebryo", "cyberpunk", "ue4", "bg3", "stardew", "bannerlord", "witcher3", "oblivion-remastered"]
-bethesda = ["modde-games/bethesda", "modde-sources/bethesda", "modde-ui?/bethesda"]
-gamebryo = ["modde-games/gamebryo", "modde-sources/gamebryo", "modde-ui?/gamebryo"]
-cyberpunk = ["modde-games/cyberpunk", "modde-sources/cyberpunk", "modde-ui?/cyberpunk"]
+default = [
+  "gui",
+  "all-games",
+  "bethesda-archives",
+  "postgres",
+  "rar",
+  "linux-integrations",
+  "macos-integrations",
+]
+all-games = [
+  "bethesda",
+  "gamebryo",
+  "cyberpunk",
+  "ue4",
+  "bg3",
+  "stardew",
+  "bannerlord",
+  "witcher3",
+  "oblivion-remastered",
+]
+bethesda = [
+  "modde-games/bethesda",
+  "modde-sources/bethesda",
+  "modde-ui?/bethesda",
+]
+gamebryo = [
+  "modde-games/gamebryo",
+  "modde-sources/gamebryo",
+  "modde-ui?/gamebryo",
+]
+cyberpunk = [
+  "modde-games/cyberpunk",
+  "modde-sources/cyberpunk",
+  "modde-ui?/cyberpunk",
+]
 ue4 = ["modde-games/ue4", "modde-sources/ue4", "modde-ui?/ue4"]
 bg3 = ["modde-games/bg3", "modde-sources/bg3", "modde-ui?/bg3"]
 stardew = ["modde-games/stardew", "modde-sources/stardew", "modde-ui?/stardew"]
-bannerlord = ["modde-games/bannerlord", "modde-sources/bannerlord", "modde-ui?/bannerlord"]
-witcher3 = ["modde-games/witcher3", "modde-sources/witcher3", "modde-ui?/witcher3"]
-oblivion-remastered = ["modde-games/oblivion-remastered", "modde-sources/oblivion-remastered", "modde-ui?/oblivion-remastered"]
-bethesda-archives = ["modde-sources/bethesda-archives", "modde-ui?/bethesda-archives"]
+bannerlord = [
+  "modde-games/bannerlord",
+  "modde-sources/bannerlord",
+  "modde-ui?/bannerlord",
+]
+witcher3 = [
+  "modde-games/witcher3",
+  "modde-sources/witcher3",
+  "modde-ui?/witcher3",
+]
+oblivion-remastered = [
+  "modde-games/oblivion-remastered",
+  "modde-sources/oblivion-remastered",
+  "modde-ui?/oblivion-remastered",
+]
+bethesda-archives = [
+  "modde-sources/bethesda-archives",
+  "modde-ui?/bethesda-archives",
+]
 postgres = ["modde-core/postgres", "modde-ui?/postgres"]
 gui = ["dep:modde-ui"]
 rar = ["modde-sources/rar"]

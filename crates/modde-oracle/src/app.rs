@@ -147,7 +147,11 @@ async fn post_events(
     Ok(Json(CompatEventAccepted { accepted }))
 }
 
-pub(super) fn rate_limit_key(headers: &HeaderMap, peer: Option<SocketAddr>, trusted_proxy: bool) -> String {
+pub(super) fn rate_limit_key(
+    headers: &HeaderMap,
+    peer: Option<SocketAddr>,
+    trusted_proxy: bool,
+) -> String {
     if trusted_proxy {
         let forwarded = headers
             .get("x-forwarded-for")

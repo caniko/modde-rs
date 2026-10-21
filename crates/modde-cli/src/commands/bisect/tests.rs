@@ -496,9 +496,17 @@ async fn only_active_sessions_are_runnable() {
     session.status = BisectStatus::Active;
     assert_eq!(message(&session), None);
     session.status = BisectStatus::Waiting;
-    assert!(message(&session).unwrap().contains("modde bisect mark cleanup-retry"));
+    assert!(
+        message(&session)
+            .unwrap()
+            .contains("modde bisect mark cleanup-retry")
+    );
     session.status = BisectStatus::Aborted;
-    assert!(message(&session).unwrap().contains("not active (status: aborted)"));
+    assert!(
+        message(&session)
+            .unwrap()
+            .contains("not active (status: aborted)")
+    );
 }
 
 #[test]
@@ -519,7 +527,9 @@ fn newest_file_after_searches_recursively() {
     let newest = touch("nested/crash.log", 300);
     touch("mid.log", 200);
 
-    let after = |secs| super::candidate::newest_file_after(tmp.path(), UNIX_EPOCH + Duration::from_secs(secs));
+    let after = |secs| {
+        super::candidate::newest_file_after(tmp.path(), UNIX_EPOCH + Duration::from_secs(secs))
+    };
     assert_eq!(after(150).unwrap(), Some(newest));
     assert_eq!(after(300).unwrap(), None);
     assert!(super::candidate::newest_file_after(&tmp.path().join("missing"), UNIX_EPOCH).is_err());

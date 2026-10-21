@@ -1997,7 +1997,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn parse(spec: &ToolSettingSpec, value: &str) -> std::result::Result<serde_json::Value, String> {
+    fn parse(
+        spec: &ToolSettingSpec,
+        value: &str,
+    ) -> std::result::Result<serde_json::Value, String> {
         parse_setting_value(spec, value).map_err(|e| format!("{e:#}"))
     }
 
@@ -2015,9 +2018,17 @@ mod tests {
 
         let number = ToolSettingSpec::number("n", "N", "", 0.0, 1.0, 0.1);
         assert_eq!(parse(&number, "1"), Ok(json!(1.0)));
-        assert!(parse(&number, "1.01").unwrap_err().contains("between 0 and 1"));
+        assert!(
+            parse(&number, "1.01")
+                .unwrap_err()
+                .contains("between 0 and 1")
+        );
         assert!(parse(&number, "-0.1").is_err());
-        assert!(parse(&number, "abc").unwrap_err().contains("expects a number"));
+        assert!(
+            parse(&number, "abc")
+                .unwrap_err()
+                .contains("expects a number")
+        );
 
         let select = ToolSettingSpec::select("mode", "Mode", "", &["a", "b"]);
         assert_eq!(parse(&select, "b"), Ok(json!("b")));
@@ -2025,14 +2036,21 @@ mod tests {
 
         let read_only = ToolSettingSpec::read_only("ro", "RO", "");
         assert!(parse(&read_only, "x").unwrap_err().contains("read-only"));
-        assert_eq!(parse(&ToolSettingSpec::text("t", "T", ""), "x"), Ok(json!("x")));
+        assert_eq!(
+            parse(&ToolSettingSpec::text("t", "T", ""), "x"),
+            Ok(json!("x"))
+        );
     }
 
     #[test]
     fn ini_override_keys_nest_by_section_and_name() {
         let mut config = ToolConfig::new("optiscaler");
         config.settings = json!("not an object");
-        set_config_value(&mut config, "ini_overrides.Upscalers.Sharpness", json!("0.5"));
+        set_config_value(
+            &mut config,
+            "ini_overrides.Upscalers.Sharpness",
+            json!("0.5"),
+        );
         set_config_value(&mut config, "ini_overrides.Sec.a.b", json!(1));
         set_config_value(&mut config, "ini_overrides.Sec", json!(2));
         set_config_value(&mut config, "ini_overrides..k", json!(3));
@@ -2047,7 +2065,10 @@ mod tests {
 
         config.settings = json!({ "ini_overrides": "broken" });
         set_config_value(&mut config, "ini_overrides.A.b", json!(1));
-        assert_eq!(config.settings, json!({ "ini_overrides": { "A": { "b": 1 } } }));
+        assert_eq!(
+            config.settings,
+            json!({ "ini_overrides": { "A": { "b": 1 } } })
+        );
     }
 
     #[test]
@@ -2055,11 +2076,17 @@ mod tests {
         let release = |name| cached_goverlay_name_to_release(name);
         assert_eq!(
             release("goverlay-edge_edge-0.9.12"),
-            Some(("goverlay-edge:edge-0.9.12".into(), "optiscaler-edge.7z".into()))
+            Some((
+                "goverlay-edge:edge-0.9.12".into(),
+                "optiscaler-edge.7z".into()
+            ))
         );
         assert_eq!(
             release("goverlay-stable_0.9.1-0"),
-            Some(("goverlay-stable:0.9.1-0".into(), "optiScaler-stable.7z".into()))
+            Some((
+                "goverlay-stable:0.9.1-0".into(),
+                "optiScaler-stable.7z".into()
+            ))
         );
         assert_eq!(
             release("goverlay-master_master-3ce6192"),
@@ -2085,7 +2112,11 @@ mod tests {
         let some = |s: &str| Some(s.to_string());
         assert_eq!(
             selected("goverlay-master:m"),
-            (some("goverlay_builds"), some("master"), some("goverlay-master:m"))
+            (
+                some("goverlay_builds"),
+                some("master"),
+                some("goverlay-master:m")
+            )
         );
         assert_eq!(
             selected("goverlay-edge"),

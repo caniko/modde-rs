@@ -258,10 +258,7 @@ pub(crate) fn parse_env(entries: &[String]) -> Result<std::collections::HashMap<
             let (key, value) = entry.split_once('=').ok_or_else(|| {
                 anyhow::anyhow!("invalid env format: '{entry}' (expected KEY=VALUE)")
             })?;
-            anyhow::ensure!(
-                !key.is_empty(),
-                "invalid env format: '{entry}' (empty key)"
-            );
+            anyhow::ensure!(!key.is_empty(), "invalid env format: '{entry}' (empty key)");
             Ok((key.to_string(), value.to_string()))
         })
         .collect()

@@ -344,7 +344,10 @@ fn proton_prefix_override_falls_back_to_prefix_path() {
 fn proton_forced_dll_overrides_split_on_any_separator() {
     let tool = super::resolve_tool("proton").expect("proton tool should resolve");
     let mut config = tool.default_config();
-    config.set("forced_dll_overrides", serde_json::json!("dxgi.dll; winmm\tversion,,"));
+    config.set(
+        "forced_dll_overrides",
+        serde_json::json!("dxgi.dll; winmm\tversion,,"),
+    );
     assert_eq!(
         tool.wine_dll_overrides(&config).to_vec(),
         ["dxgi", "winmm", "version"]

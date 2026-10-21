@@ -279,7 +279,12 @@ fn io_err(e: serde_json::Error) -> std::io::Error {
 mod tests {
     use super::*;
 
-    fn ctx(domain: Option<&str>, mod_id: Option<u64>, file_id: Option<u64>, hash: &str) -> DossierContext {
+    fn ctx(
+        domain: Option<&str>,
+        mod_id: Option<u64>,
+        file_id: Option<u64>,
+        hash: &str,
+    ) -> DossierContext {
         DossierContext {
             game_id: "skyrim-se".to_string(),
             game_domain: domain.map(String::from),
@@ -297,9 +302,18 @@ mod tests {
     #[test]
     fn slug_prefers_nexus_identity_then_archive_hash() {
         let hash = "0123456789abcdef";
-        assert_eq!(dossier_slug(&ctx(Some("skyrimspecialedition"), Some(1), Some(2), hash)), "skyrimspecialedition_1_2");
-        assert_eq!(dossier_slug(&ctx(Some("skyrimspecialedition"), Some(1), None, hash)), "skyrimspecialedition_1");
-        assert_eq!(dossier_slug(&ctx(None, Some(1), Some(2), hash)), "skyrim-se_01234567");
+        assert_eq!(
+            dossier_slug(&ctx(Some("skyrimspecialedition"), Some(1), Some(2), hash)),
+            "skyrimspecialedition_1_2"
+        );
+        assert_eq!(
+            dossier_slug(&ctx(Some("skyrimspecialedition"), Some(1), None, hash)),
+            "skyrimspecialedition_1"
+        );
+        assert_eq!(
+            dossier_slug(&ctx(None, Some(1), Some(2), hash)),
+            "skyrim-se_01234567"
+        );
         assert_eq!(dossier_slug(&ctx(None, None, None, "abc")), "skyrim-se_abc");
     }
 }

@@ -33,7 +33,8 @@ fn game_config(launcher: &Launcher) -> Value {
     let Launcher::Heroic { config_path, .. } = launcher else {
         unreachable!()
     };
-    let config: Value = serde_json::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap();
+    let config: Value =
+        serde_json::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap();
     config["game"].clone()
 }
 
@@ -63,7 +64,11 @@ fn heroic_wrapper_goes_after_fgmod_once() {
         register_heroic_wrapper(&launcher, &wrapper).unwrap(),
         Some(WrapperRegistrationReport::HeroicRegistered)
     ));
-    assert!(register_heroic_wrapper(&launcher, &wrapper).unwrap().is_none());
+    assert!(
+        register_heroic_wrapper(&launcher, &wrapper)
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(
         wrapper_exes(&launcher),
         ["/opt/fgmod/fgmod", "/tmp/modde-wrapper.sh", "gamemoderun"]
@@ -86,7 +91,11 @@ fn heroic_wrapper_appends_without_fgmod_and_skips_library_hooks() {
         tmp.path(),
         json!({ "wrapperOptions": [{ "exe": hook.to_string_lossy(), "args": "" }] }),
     );
-    assert!(register_heroic_wrapper(&hooked, Path::new("/w.sh")).unwrap().is_none());
+    assert!(
+        register_heroic_wrapper(&hooked, Path::new("/w.sh"))
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(wrapper_exes(&hooked).len(), 1);
 }
 
@@ -194,7 +203,11 @@ mod wine {
     fn heroic_overrides_skip_dxgi_only_and_report_missing_sections() {
         let tmp = tempfile::tempdir().unwrap();
         let launcher = heroic_config(tmp.path(), json!({ "enviromentOptions": [] }));
-        assert!(apply_wine_overrides(&launcher, &dlls(&["dxgi"])).unwrap().is_none());
+        assert!(
+            apply_wine_overrides(&launcher, &dlls(&["dxgi"]))
+                .unwrap()
+                .is_none()
+        );
         assert!(apply_wine_overrides(&launcher, &[]).unwrap().is_none());
         assert_eq!(wine_value(&launcher), json!([]));
 
@@ -204,9 +217,7 @@ mod wine {
 
     #[test]
     fn non_heroic_launchers_get_instructions() {
-        let steam = Launcher::Steam {
-            app_id: "1".into(),
-        };
+        let steam = Launcher::Steam { app_id: "1".into() };
         assert!(matches!(
             apply_wine_overrides(&steam, &dlls(&["a", "b"])).unwrap(),
             Some(WineOverrideReport::SteamInstruction { override_value }) if override_value == "a=n,b;b=n,b"
@@ -229,7 +240,11 @@ fn steam_detection_reads_the_matching_appmanifest() {
         "\"installdir\" \"Cyberpunk 2077\"",
     )
     .unwrap();
-    std::fs::write(steamapps.join("appmanifest_1.acf"), "\"installdir\" \"Other\"").unwrap();
+    std::fs::write(
+        steamapps.join("appmanifest_1.acf"),
+        "\"installdir\" \"Other\"",
+    )
+    .unwrap();
 
     assert!(matches!(
         detect_launcher(&game_dir),

@@ -399,7 +399,10 @@ mod tests {
             clean_archive_name("ImmersiveHealing-26281-3-1-3-1772288704.zip"),
             "ImmersiveHealing"
         );
-        assert_eq!(clean_archive_name("SkyUI-Patch-12604-5-2.7z"), "SkyUI-Patch");
+        assert_eq!(
+            clean_archive_name("SkyUI-Patch-12604-5-2.7z"),
+            "SkyUI-Patch"
+        );
         assert_eq!(clean_archive_name("No_Suffix-Here.7z"), "No Suffix-Here");
         assert_eq!(clean_archive_name("noext"), "noext");
     }

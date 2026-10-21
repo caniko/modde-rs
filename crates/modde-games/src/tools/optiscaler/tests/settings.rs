@@ -165,9 +165,20 @@ fn optiscaler_high_level_controls_write_ini_values() {
 
 #[test]
 fn inferred_ini_specs_use_the_key_name_not_its_section() {
-    let kind = |label: &'static str| infer_optiscaler_ini_spec(format!("ini_overrides.{label}"), label).kind;
-    assert!(matches!(kind("Spoofing.OverrideNvapiDll"), ToolSettingKind::TriStateBool));
-    assert!(matches!(kind("Upscalers.Sharpness"), ToolSettingKind::Number { .. }));
-    assert!(matches!(kind("Framegen.MotionScale"), ToolSettingKind::Number { .. }));
+    let kind = |label: &'static str| {
+        infer_optiscaler_ini_spec(format!("ini_overrides.{label}"), label).kind
+    };
+    assert!(matches!(
+        kind("Spoofing.OverrideNvapiDll"),
+        ToolSettingKind::TriStateBool
+    ));
+    assert!(matches!(
+        kind("Upscalers.Sharpness"),
+        ToolSettingKind::Number { .. }
+    ));
+    assert!(matches!(
+        kind("Framegen.MotionScale"),
+        ToolSettingKind::Number { .. }
+    ));
     assert!(matches!(kind("Foo.Bar"), ToolSettingKind::Text));
 }

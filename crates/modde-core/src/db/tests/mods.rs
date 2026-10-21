@@ -51,7 +51,9 @@ async fn plugin_order_is_sorted_toggled_and_replaced() {
     assert_eq!(plugin_names(&order), ["a.esp", "b.esp"]);
     assert!(order[0].enabled && !order[1].enabled);
 
-    db.set_plugin_order(id, &[plugin("c.esp", 0)]).await.unwrap();
+    db.set_plugin_order(id, &[plugin("c.esp", 0)])
+        .await
+        .unwrap();
     assert_eq!(
         plugin_names(&db.get_plugin_order(id).await.unwrap()),
         ["c.esp"]
@@ -65,7 +67,9 @@ async fn failed_plugin_order_write_keeps_previous_order() {
         .create_profile(&sample_profile("p", "skyrim-se"))
         .await
         .unwrap();
-    db.set_plugin_order(id, &[plugin("a.esp", 0)]).await.unwrap();
+    db.set_plugin_order(id, &[plugin("a.esp", 0)])
+        .await
+        .unwrap();
 
     // UNIQUE(profile_id, plugin_name) rejects the second row.
     let duplicate = [plugin("x.esp", 0), plugin("x.esp", 1)];
@@ -132,7 +136,10 @@ async fn merge_group_spans_mods_in_mod_then_path_order() {
     db.record_install(
         id,
         &ModId::from("mod_b"),
-        &plan(vec![staged("s.psc", Some("scripts")), staged("other", None)]),
+        &plan(vec![
+            staged("s.psc", Some("scripts")),
+            staged("other", None),
+        ]),
         InstallStatus::Installed,
     )
     .await

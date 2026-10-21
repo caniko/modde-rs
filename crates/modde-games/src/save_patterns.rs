@@ -220,7 +220,13 @@ mod tests {
     fn detection_requires_extension_and_classifies_by_prefix() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir(tmp.path().join("sub")).unwrap();
-        for file in ["Auto1.sav", "Quick.SAV", "sub/Deep.sav", "Auto2.txt", "notes.txt"] {
+        for file in [
+            "Auto1.sav",
+            "Quick.SAV",
+            "sub/Deep.sav",
+            "Auto2.txt",
+            "notes.txt",
+        ] {
             std::fs::write(tmp.path().join(file), b"x").unwrap();
         }
 
@@ -231,7 +237,10 @@ mod tests {
             .map(|save| format!("{}={}", save.rel_path.display(), save.category))
             .collect();
         saves.sort();
-        assert_eq!(saves, ["Auto1.sav=auto", "Quick.SAV=manual", "sub/Deep.sav=manual"]);
+        assert_eq!(
+            saves,
+            ["Auto1.sav=auto", "Quick.SAV=manual", "sub/Deep.sav=manual"]
+        );
 
         let saves = TRACKER.detect_saves(tmp.path()).unwrap();
         assert_eq!(
