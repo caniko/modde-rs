@@ -213,7 +213,8 @@ async fn acquire_nexus_archive(
         }
     };
 
-    let dest = download_dir.join(safe_archive_file_name(&archive.name));
+    let dest = download_dir
+        .join(modde_core::fs::safe_file_name(&archive.name).unwrap_or("archive.download"));
     let verified = match source.download(handle, &dest).await {
         Ok(verified) => verified,
         Err(err) => {
@@ -225,14 +226,6 @@ async fn acquire_nexus_archive(
         }
     };
     import_acquired_archive(manifest, store_dir, archive, &verified.path).await
-}
-
-fn safe_archive_file_name(name: &str) -> String {
-    Path::new(name)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("archive.download")
-        .to_string()
 }
 
 fn acquire_message(

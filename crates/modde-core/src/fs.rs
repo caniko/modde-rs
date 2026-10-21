@@ -169,10 +169,28 @@ pub fn deploy_symlinks(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Final path component of an untrusted (remote or manifest-supplied) file
+/// name, or `None` when it has none (`..`, `/`, empty). Joining the result
+/// onto a directory cannot escape that directory.
+#[must_use]
+pub fn safe_file_name(name: &str) -> Option<&str> {
+    Path::new(name).file_name().and_then(OsStr::to_str)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn safe_file_name_keeps_only_the_final_component() {
+        assert_eq!(safe_file_name("SkyUI 5.2.7z"), Some("SkyUI 5.2.7z"));
+        assert_eq!(safe_file_name("../../.bashrc"), Some(".bashrc"));
+        assert_eq!(safe_file_name("/etc/passwd"), Some("passwd"));
+        for none in ["", "..", "/", "a/.."] {
+            assert_eq!(safe_file_name(none), None, "{none:?}");
+        }
+    }
 
     #[test]
     fn walk_files_relative_empty() {

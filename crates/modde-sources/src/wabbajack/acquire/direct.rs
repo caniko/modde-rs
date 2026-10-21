@@ -46,8 +46,8 @@ pub async fn try_acquire_manual_direct(
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .context("failed to build manual acquisition HTTP client")?;
-    let safe_name = safe_archive_file_name(&archive.name);
-    let final_path = download_dir.join(safe_name);
+    let final_path = download_dir
+        .join(modde_core::fs::safe_file_name(&archive.name).unwrap_or("archive.download"));
 
     match resolve_manual_http_flow(&client, parsed, archive, &final_path).await? {
         Some((path, computed)) => {
@@ -401,14 +401,6 @@ pub(in crate::wabbajack::acquire) fn response_looks_like_html_bytes(bytes: &[u8]
     let prefix_len = bytes.len().min(1024);
     let prefix = String::from_utf8_lossy(&bytes[..prefix_len]).to_ascii_lowercase();
     prefix.contains("<html") || prefix.contains("<form") || prefix.contains("<a ")
-}
-
-pub(in crate::wabbajack::acquire) fn safe_archive_file_name(name: &str) -> String {
-    Path::new(name)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("archive.download")
-        .to_string()
 }
 
 pub(in crate::wabbajack::acquire) fn absolutize_url(base: &Url, href: &str) -> Result<Url> {
