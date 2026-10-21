@@ -216,6 +216,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal as well as enabled-feature behavior.
 - **Nexus browse**: Keep summaries, versions, images and counts on GraphQL mod
   tiles instead of falling back to name-only cards.
+- **Nexus installs**: Reject game domains that are not plain `[A-Za-z0-9_-]`
+  tokens before building store, staging and dossier paths, so imported profile
+  data or crafted `nxm://` links cannot redirect installs or deletions outside
+  modde's directories.
 - **Profiles**: Reject `.` and `..` profile names, skip invalid names during TOML
   import, write plugin order atomically, and encode profile sources as valid
   TOML so control characters no longer make a profile unloadable. Roll back
