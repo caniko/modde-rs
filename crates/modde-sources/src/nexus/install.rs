@@ -63,6 +63,8 @@ pub async fn install_single_mod(
     mod_info: &NexusMod,
     probe: &InstallProbe,
 ) -> Result<InstallOutcome> {
+    // Update and UI callers pass domains from stored profile data.
+    modde_core::nexus_id::validate_game_domain(game_domain)?;
     let store = paths::store_dir();
     let mod_store_dir = store.join(format!("{game_domain}_{mod_id}_{file_id}"));
     if mod_store_dir.exists() {

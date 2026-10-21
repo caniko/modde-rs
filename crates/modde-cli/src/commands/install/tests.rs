@@ -246,3 +246,14 @@ fn extract_archive_nonexistent_file() {
     let result = extract_archive(&tmp.path().join("noexist.zip"), &tmp.path().join("out"));
     assert!(result.is_err());
 }
+
+#[test]
+fn parse_nexus_url_rejects_unsafe_game_domains() {
+    for url in [
+        "https://www.nexusmods.com/sky.rim/mods/1",
+        "https://www.nexusmods.com/%2E%2E%2Fhome/mods/1",
+        "https://www.nexusmods.com/sky%20rim/mods/1",
+    ] {
+        assert!(parse_nexus_url(url).is_err(), "{url} should be rejected");
+    }
+}

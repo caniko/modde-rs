@@ -54,3 +54,35 @@ macro_rules! nexus_id {
 
 nexus_id!(NexusModId);
 nexus_id!(NexusFileId);
+
+/// Reject Nexus game domains that are not a plain `[A-Za-z0-9_-]+` token.
+///
+/// Domains arrive from URLs, `nxm://` links and imported profile data, and
+/// are interpolated into store, staging and dossier directory names.
+pub fn validate_game_domain(domain: &str) -> crate::error::Result<()> {
+    if domain.is_empty()
+        || !domain
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(crate::error::CoreError::Validation(
+            format!("invalid Nexus game domain: {domain:?}").into(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_game_domain;
+
+    #[test]
+    fn game_domains_must_be_plain_tokens() {
+        for ok in ["skyrimspecialedition", "fallout4", "mount-and-blade_2"] {
+            validate_game_domain(ok).unwrap_or_else(|e| panic!("{ok:?} rejected: {e}"));
+        }
+        for bad in ["", "..", "a/b", "a\\b", "sky.rim", "sky rim", "%2E%2E"] {
+            assert!(validate_game_domain(bad).is_err(), "{bad:?} accepted");
+        }
+    }
+}

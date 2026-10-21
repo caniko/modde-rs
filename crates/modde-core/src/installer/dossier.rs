@@ -54,7 +54,7 @@ pub struct DossierContext {
 /// A slug identifying the dossier dir. Stable across retries.
 #[must_use]
 pub fn dossier_slug(ctx: &DossierContext) -> String {
-    match (
+    let slug = match (
         ctx.game_domain.as_deref(),
         ctx.nexus_mod_id,
         ctx.nexus_file_id,
@@ -66,9 +66,17 @@ pub fn dossier_slug(ctx: &DossierContext) -> String {
         _ => format!(
             "{}_{}",
             ctx.game_id,
-            &ctx.source_archive_hash[..8.min(ctx.source_archive_hash.len())]
+            ctx.source_archive_hash
+                .get(..8)
+                .unwrap_or(&ctx.source_archive_hash)
         ),
-    }
+    };
+    // `dump` replaces this directory wholesale, so caller data must never
+    // turn the slug into more than one path component.
+    slug.replace(
+        |c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+        "_",
+    )
 }
 
 /// Root directory holding all unknown-installer dossiers.
@@ -315,5 +323,21 @@ mod tests {
             "skyrim-se_01234567"
         );
         assert_eq!(dossier_slug(&ctx(None, None, None, "abc")), "skyrim-se_abc");
+    }
+
+    #[test]
+    fn slug_is_always_a_single_safe_path_component() {
+        let slug = dossier_slug(&ctx(Some("../../x"), Some(1), Some(2), "h"));
+        assert!(
+            !slug.contains(['/', '\\']) && !slug.contains(".."),
+            "{slug}"
+        );
+        let mut fallback = ctx(None, None, None, "../hash");
+        fallback.game_id = "..\\evil".to_string();
+        let slug = dossier_slug(&fallback);
+        assert!(
+            !slug.contains(['/', '\\']) && !slug.contains(".."),
+            "{slug}"
+        );
     }
 }

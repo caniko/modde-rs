@@ -128,6 +128,7 @@ pub(super) fn parse_nexus_url(url: &str) -> Result<(String, NexusModId, Option<N
         bail!("URL does not look like a Nexus mod URL: {url}");
     }
 
+    modde_core::nexus_id::validate_game_domain(game_domain)?;
     let game_domain = (*game_domain).to_string();
     let mod_id = mod_id
         .parse::<u64>()

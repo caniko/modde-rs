@@ -39,6 +39,7 @@ impl NxmUri {
             bail!("invalid nxm:// URI format: nxm://{uri}");
         }
 
+        modde_core::nexus_id::validate_game_domain(game_domain)?;
         let game_domain = game_domain.to_string();
         let mod_id = mod_id
             .parse::<u64>()
@@ -327,5 +328,8 @@ mod tests {
         assert!(NxmUri::parse("nxm://game/mods/100/files/200/extra").is_err());
         assert!(NxmUri::parse("nxm://game/mods//files/200").is_err());
         assert!(NxmUri::parse("nxm://game/mods/100/files/").is_err());
+        // The domain becomes part of store, staging and dossier paths.
+        assert!(NxmUri::parse("nxm://../mods/100/files/200").is_err());
+        assert!(NxmUri::parse("nxm://..\\..\\x/mods/100/files/200").is_err());
     }
 }
