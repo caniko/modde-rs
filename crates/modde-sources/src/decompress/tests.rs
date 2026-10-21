@@ -422,3 +422,53 @@ fn rar_magic_with_archive_extension_routes_to_rar_reader() {
         "{msg}"
     );
 }
+
+#[test]
+fn archive_entries_reject_absolute_and_traversal_paths() {
+    for bad in ["/etc/passwd", "\\\\server\\share", "..\\evil.dll", "a/../../b", "a/.."] {
+        assert!(validate_archive_entry(bad).is_err(), "{bad:?} should be rejected");
+    }
+    for ok in ["a/b.esp", "a\\b.esp", "a/..b/c", "...", "a/./b"] {
+        validate_archive_entry(ok).unwrap_or_else(|e| panic!("{ok:?} rejected: {e}"));
+    }
+}
+
+#[test]
+fn write_requests_must_agree_on_expected_size() {
+    let write = |expected_size| ArchiveRequest {
+        directive_index: 0,
+        from: "a".into(),
+        inner_path: None,
+        kind: ArchiveRequestKind::WriteFile {
+            to: PathBuf::from("out"),
+            expected_size,
+        },
+    };
+    let bytes = ArchiveRequest {
+        kind: ArchiveRequestKind::Bytes,
+        ..write(None)
+    };
+
+    assert_eq!(expected_write_size(&[bytes.clone(), write(None)]).unwrap(), None);
+    assert_eq!(expected_write_size(&[write(Some(3)), bytes, write(Some(3))]).unwrap(), Some(3));
+    assert!(expected_write_size(&[write(Some(3)), write(Some(4))]).is_err());
+    assert!(validate_declared_entry_size(2, &[write(Some(3))]).is_err());
+    validate_declared_entry_size(3, &[write(Some(3))]).unwrap();
+}
+
+#[test]
+fn final_output_size_must_match_exactly() {
+    validate_final_output_size(5, None).unwrap();
+    validate_final_output_size(3, Some(3)).unwrap();
+    assert!(validate_final_output_size(2, Some(3)).is_err());
+    assert!(validate_final_output_size(4, Some(3)).is_err());
+}
+
+#[test]
+fn zip_magic_requires_a_full_signature() {
+    assert!(bytes_have_zip_magic(b"PK\x03\x04rest"));
+    assert!(bytes_have_zip_magic(b"PK\x05\x06"));
+    assert!(!bytes_have_zip_magic(b""));
+    assert!(!bytes_have_zip_magic(b"PK"));
+    assert!(!bytes_have_zip_magic(b"7z\xbc\xaf"));
+}
