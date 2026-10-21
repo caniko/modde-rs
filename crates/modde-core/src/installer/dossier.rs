@@ -274,3 +274,32 @@ fn write_prompt(dir: &Path, ctx: &DossierContext, method: &InstallMethod) -> Ins
 fn io_err(e: serde_json::Error) -> std::io::Error {
     std::io::Error::other(e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx(domain: Option<&str>, mod_id: Option<u64>, file_id: Option<u64>, hash: &str) -> DossierContext {
+        DossierContext {
+            game_id: "skyrim-se".to_string(),
+            game_domain: domain.map(String::from),
+            nexus_mod_id: mod_id.map(NexusModId::from),
+            nexus_file_id: file_id.map(NexusFileId::from),
+            mod_name: "Mod".to_string(),
+            mod_author: None,
+            mod_version: None,
+            mod_summary: None,
+            nexus_url: None,
+            source_archive_hash: hash.to_string(),
+        }
+    }
+
+    #[test]
+    fn slug_prefers_nexus_identity_then_archive_hash() {
+        let hash = "0123456789abcdef";
+        assert_eq!(dossier_slug(&ctx(Some("skyrimspecialedition"), Some(1), Some(2), hash)), "skyrimspecialedition_1_2");
+        assert_eq!(dossier_slug(&ctx(Some("skyrimspecialedition"), Some(1), None, hash)), "skyrimspecialedition_1");
+        assert_eq!(dossier_slug(&ctx(None, Some(1), Some(2), hash)), "skyrim-se_01234567");
+        assert_eq!(dossier_slug(&ctx(None, None, None, "abc")), "skyrim-se_abc");
+    }
+}
