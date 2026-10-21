@@ -23,21 +23,16 @@ pub(super) async fn handle_single_mod(url: String, profile_name: Option<String>)
             .await
             .context("failed to fetch mod files")?;
 
-        // Prefer MAIN files sorted by upload timestamp (newest first).
-        // Fall back to the first file if no MAIN category exists.
-        let mut candidates: Vec<_> = files
+        // Prefer the newest MAIN file; fall back to the first file if no
+        // MAIN category exists.
+        let file = files
             .files
-            .into_iter()
+            .iter()
             .filter(|f| f.category_name.as_deref() == Some("MAIN"))
-            .collect();
-        candidates.sort_by_key(|f| std::cmp::Reverse(f.uploaded_timestamp));
-
-        let file = candidates
-            .into_iter()
-            .next()
+            .max_by_key(|f| f.uploaded_timestamp)
             .or_else(|| {
                 warn!(%mod_id, "no MAIN category file found, using first available file");
-                None
+                files.files.first()
             })
             .ok_or_else(|| anyhow::anyhow!("no files found for mod {mod_id}"))?;
 
