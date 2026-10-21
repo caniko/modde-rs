@@ -64,8 +64,14 @@ impl Fixture {
         // Trust-store env vars: rustls-native-certs respects these and they
         // are the only way the TLS init can find roots inside the Nix build
         // sandbox (no /etc/ssl/certs/). Pass them through when the parent
-        // env sets them; harmless when unset.
-        for var in ["SSL_CERT_FILE", "SSL_CERT_DIR", "NIX_SSL_CERT_FILE"] {
+        // env sets them; harmless when unset. `LLVM_PROFILE_FILE` lets
+        // cargo-llvm-cov collect coverage from the spawned binary.
+        for var in [
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "NIX_SSL_CERT_FILE",
+            "LLVM_PROFILE_FILE",
+        ] {
             if let Some(val) = std::env::var_os(var) {
                 cmd.env(var, val);
             }
