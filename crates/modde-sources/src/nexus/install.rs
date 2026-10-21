@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 
 use modde_core::installer::{
-    self, DossierContext, InstallMethod, InstallPlan, InstallProbe, ProbeTrace,
+    self, DossierContext, InstallMethod, InstallPlan, InstallProbe, InstallStatus, ProbeTrace,
 };
 use modde_core::paths;
 use modde_core::{NexusFileId, NexusModId};
@@ -27,7 +27,7 @@ use modde_core::{NexusFileId, NexusModId};
 use super::api::NexusMod;
 use super::cdn::generate_download_link;
 
-/// Result of the install pipeline, mirroring `modde_cli::install::InstallOutcome`.
+/// Result of the install pipeline shared by the CLI, `modde update` and the UI.
 ///
 /// The caller decides how to persist each variant:
 /// * `Installed` → `ModdeDb::record_install(..., InstallStatus::Installed)`
@@ -45,6 +45,18 @@ pub enum InstallOutcome {
         method: InstallMethod,
     },
     AlreadyStaged,
+}
+
+impl InstallOutcome {
+    /// The profile-row install status this outcome records.
+    #[must_use]
+    pub fn status(&self) -> InstallStatus {
+        match self {
+            Self::Installed(_) | Self::AlreadyStaged => InstallStatus::Installed,
+            Self::PendingUserInput { .. } => InstallStatus::PendingUserInput,
+            Self::Unknown { .. } => InstallStatus::Unknown,
+        }
+    }
 }
 
 /// Run the single-mod install pipeline end-to-end.
@@ -111,14 +123,8 @@ pub async fn install_single_mod(
 
     let outcome = match &plan.method {
         InstallMethod::Unknown { .. } => {
-            let dossier = write_dossier(
-                &staging_root,
-                game_domain,
-                mod_id,
-                file_id,
-                mod_info,
-                &plan.method,
-            )?;
+            let dossier =
+                write_dossier(&staging_root, game_domain, mod_id, file_id, mod_info, &plan)?;
             InstallOutcome::Unknown {
                 dossier_path: dossier,
                 method: plan.method.clone(),
@@ -132,16 +138,9 @@ pub async fn install_single_mod(
             std::fs::create_dir_all(&mod_store_dir)?;
             copy_dir_tree(&staging_root, &mod_store_dir)
                 .context("failed to copy staging to store for pending install")?;
-            // Leaky abstraction: `method` is a runtime enum so we can't
-            // tie the PendingUserInput string literal to its label. We
-            // only ever produce `fomod` or `bain` here, so match and
-            // pick the right label.
-            let label = match plan.method {
-                InstallMethod::Fomod { .. } => "fomod",
-                InstallMethod::Bain { .. } => "bain",
-                _ => "unknown",
-            };
-            InstallOutcome::PendingUserInput { method: label }
+            InstallOutcome::PendingUserInput {
+                method: plan.method.label(),
+            }
         }
         _ => {
             // `is_ready()` mirrors `execute`'s preconditions, so unknown and
@@ -183,8 +182,9 @@ fn write_dossier(
     mod_id: NexusModId,
     file_id: NexusFileId,
     mod_info: &NexusMod,
-    method: &InstallMethod,
+    plan: &InstallPlan,
 ) -> Result<PathBuf> {
+    let method = &plan.method;
     let ctx = DossierContext {
         game_id: game_domain.to_string(),
         game_domain: Some(game_domain.to_string()),
@@ -197,10 +197,7 @@ fn write_dossier(
         nexus_url: Some(format!(
             "https://www.nexusmods.com/{game_domain}/mods/{mod_id}"
         )),
-        // Hash was already consumed by the caller — we don't store it
-        // again here because the dossier context uses it for dedup,
-        // not for integrity. Pass an empty string if we've lost it.
-        source_archive_hash: String::new(),
+        source_archive_hash: plan.source_archive_hash.clone(),
     };
     let trace = vec![ProbeTrace {
         probe: "generic+game".to_string(),

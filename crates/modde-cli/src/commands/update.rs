@@ -365,13 +365,7 @@ pub async fn handle_apply(options: ApplyOptions) -> Result<()> {
             slot.nexus_file_id = Some(new_file_id);
             slot.version = Some(mod_info.version.clone());
             slot.installed_timestamp = file.uploaded_timestamp.map(|t| t as i64);
-            slot.install_status = Some(match &outcome {
-                InstallOutcome::Installed(_) | InstallOutcome::AlreadyStaged => {
-                    InstallStatus::Installed
-                }
-                InstallOutcome::PendingUserInput { .. } => InstallStatus::PendingUserInput,
-                InstallOutcome::Unknown { .. } => InstallStatus::Unknown,
-            });
+            slot.install_status = Some(outcome.status());
         }
 
         if let InstallOutcome::Installed(plan) = &outcome {

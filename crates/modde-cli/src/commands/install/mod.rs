@@ -1,17 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use tracing::{info, warn};
 
-use modde_core::installer::{
-    self as installer, DossierContext, InstallMethod, InstallStatus, InstallerError,
-};
+use modde_core::installer::{self as installer, InstallStatus};
 use modde_core::manifest::collection::CollectionManifest;
 use modde_core::paths;
 use modde_core::profile::{
     EnabledMod, LoadOrderLock, LockReason, Profile, ProfileManager, ProfileSource,
 };
-use modde_core::{ModdeDb, NexusFileId, NexusModId};
+use modde_core::{NexusFileId, NexusModId};
 use modde_sources::nexus::api::NexusApi;
 use modde_sources::nexus::auth::load_api_key;
 use modde_sources::nexus::cdn::generate_download_link;
@@ -42,15 +40,15 @@ async fn save_profile_and_settings(
     pm: &ProfileManager,
     profile: &Profile,
     game_dir: Option<&Path>,
-) -> Result<()> {
-    pm.create_or_update(profile).await?;
+) -> Result<i64> {
+    let profile_id = pm.create_or_update(profile).await?;
     let mut settings = modde_core::settings::AppSettings::load();
     if let Some(gd) = game_dir {
         settings.set_game_path(&profile.game_id, gd.to_path_buf());
     }
     settings.selected_game = Some(profile.game_id.to_string());
     settings.save();
-    Ok(())
+    Ok(profile_id)
 }
 
 /// One-line rendering of a lock reason for CLI warnings. Intentionally

@@ -168,7 +168,9 @@ async fn unconfigured_installers_are_staged_for_user_input() {
     let other = nexus(true, Some(zip(&["a.psc"]))).await;
     assert!(matches!(
         install(&other, 22, &merge).await.unwrap(),
-        InstallOutcome::PendingUserInput { method: "unknown" }
+        InstallOutcome::PendingUserInput {
+            method: "script-merge"
+        }
     ));
 }
 
@@ -189,7 +191,13 @@ async fn unknown_layout_writes_a_dossier() {
         dossier_path,
         modde_core::installer::dossiers_dir().join(format!("{DOMAIN}_30_1"))
     );
-    assert!(dossier_path.join("metadata.json").is_file());
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dossier_path.join("metadata.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        metadata["source_archive_hash"].as_str().map(str::len),
+        Some(16)
+    );
     assert!(!store_dir(30).exists());
     assert!(!staging_dir(30).exists());
 }

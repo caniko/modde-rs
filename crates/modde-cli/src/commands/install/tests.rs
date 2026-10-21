@@ -1,6 +1,7 @@
 #![allow(clippy::wildcard_imports)]
 use super::*;
 use std::io::Write as _;
+use std::path::PathBuf;
 
 // ── parse_nexus_url ──────────────────────────────────────────────
 
