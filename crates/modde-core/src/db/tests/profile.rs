@@ -433,3 +433,39 @@ async fn duplicate_profile_errors() {
         .unwrap_err();
     assert!(matches!(err, CoreError::Database(_)));
 }
+
+fn with_duplicate_mods(mut profile: Profile) -> Profile {
+    let duplicate = profile.mods[0].clone();
+    profile.mods.push(duplicate);
+    profile
+}
+
+#[tokio::test]
+async fn failed_create_leaves_no_profile_row() {
+    let db = test_db().await;
+    // UNIQUE(profile_id, mod_id) rejects the second insert after the profile row.
+    let profile = with_duplicate_mods(sample_profile("dup-mods", "skyrim-se"));
+
+    assert!(db.create_profile(&profile).await.is_err());
+    assert_eq!(db.list_profiles(None).await.unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn failed_update_keeps_previous_mods_and_rules() {
+    let db = test_db().await;
+    let profile = sample_profile("stable", "skyrim-se");
+    db.create_profile(&profile).await.unwrap();
+
+    assert!(
+        db.update_profile(&with_duplicate_mods(profile))
+            .await
+            .is_err()
+    );
+    let loaded = db
+        .load_profile("stable", &GameId::from("skyrim-se"))
+        .await
+        .unwrap();
+    let mods: Vec<&str> = loaded.mods.iter().map(|m| m.mod_id.as_str()).collect();
+    assert_eq!(mods, ["mod_a", "mod_b"]);
+    assert_eq!(loaded.load_order_rules.len(), 1);
+}

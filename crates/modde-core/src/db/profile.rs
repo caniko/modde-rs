@@ -9,8 +9,8 @@ impl ModdeDb {
         let (source_type, source_data) = encode_source(&profile.source);
         let load_order_lock = encode_lock(profile.load_order_lock.as_ref());
 
-        let id = self
-            .db
+        let mut tx = self.db.begin().await?;
+        let id = tx
             .fetch_one(
                 "INSERT INTO profiles (name, game_id, source_type, source_data, overrides, load_order_lock)
                  VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
@@ -26,9 +26,10 @@ impl ModdeDb {
             )
             .await?;
 
-        self.insert_mods(id, &profile.mods).await?;
-        self.insert_rules(id, &profile.load_order_rules).await?;
-        self.record_profile_state_snapshot(id, profile).await?;
+        Self::insert_mods(&mut tx, id, &profile.mods).await?;
+        Self::insert_rules(&mut tx, id, &profile.load_order_rules).await?;
+        Self::insert_profile_state_snapshot(&mut tx, id, profile).await?;
+        tx.commit().await?;
 
         Ok(id)
     }
@@ -170,41 +171,37 @@ impl ModdeDb {
                 CoreError::ProfileNotFound(format!("{} (game: {})", profile.name, profile.game_id))
             })?;
 
-        self.db
-            .execute(
-                "UPDATE profiles SET source_type = ?, source_data = ?, overrides = ?,
-                        load_order_lock = ?, updated_at = {NOW}
-                 WHERE id = ?",
-                &vals![
-                    source_type,
-                    source_data,
-                    profile.overrides.to_string_lossy().to_string(),
-                    load_order_lock,
-                    profile_id,
-                ],
-            )
-            .await?;
+        // Replacing mods and rules is delete-then-insert; a failed insert must
+        // not leave the profile emptied.
+        let mut tx = self.db.begin().await?;
+        tx.execute(
+            "UPDATE profiles SET source_type = ?, source_data = ?, overrides = ?,
+                    load_order_lock = ?, updated_at = {NOW}
+             WHERE id = ?",
+            &vals![
+                source_type,
+                source_data,
+                profile.overrides.to_string_lossy().to_string(),
+                load_order_lock,
+                profile_id,
+            ],
+        )
+        .await?;
+        tx.execute(
+            "DELETE FROM profile_mods WHERE profile_id = ?",
+            &vals![profile_id],
+        )
+        .await?;
+        tx.execute(
+            "DELETE FROM load_order_rules WHERE profile_id = ?",
+            &vals![profile_id],
+        )
+        .await?;
 
-        self.db
-            .execute(
-                "DELETE FROM profile_mods WHERE profile_id = ?",
-                &vals![profile_id],
-            )
-            .await?;
-        self.db
-            .execute(
-                "DELETE FROM load_order_rules WHERE profile_id = ?",
-                &vals![profile_id],
-            )
-            .await?;
-
-        self.insert_mods(profile_id, &profile.mods).await?;
-        self.insert_rules(profile_id, &profile.load_order_rules)
-            .await?;
-        self.record_profile_state_snapshot(profile_id, profile)
-            .await?;
-
-        Ok(())
+        Self::insert_mods(&mut tx, profile_id, &profile.mods).await?;
+        Self::insert_rules(&mut tx, profile_id, &profile.load_order_rules).await?;
+        Self::insert_profile_state_snapshot(&mut tx, profile_id, profile).await?;
+        tx.commit().await
     }
 
     /// Persist the profile mod state used by `modde doctor` for recent diffs.
@@ -213,23 +210,32 @@ impl ModdeDb {
         profile_id: i64,
         profile: &Profile,
     ) -> Result<()> {
+        let mut tx = self.db.begin().await?;
+        Self::insert_profile_state_snapshot(&mut tx, profile_id, profile).await?;
+        tx.commit().await
+    }
+
+    async fn insert_profile_state_snapshot(
+        tx: &mut DbTx<'_>,
+        profile_id: i64,
+        profile: &Profile,
+    ) -> Result<()> {
         let snapshot = DoctorProfileModSnapshot::from_profile(profile);
         let snapshot_json = serde_json::to_string(&snapshot).map_err(|e| {
             CoreError::Other(format!("failed to encode profile state snapshot: {e}").into())
         })?;
-        self.db
-            .execute(
-                "INSERT INTO profile_state_snapshots
-                    (profile_id, game_id, profile_name, snapshot_json)
-                 VALUES (?, ?, ?, ?)",
-                &vals![
-                    profile_id,
-                    &profile.game_id,
-                    profile.name.clone(),
-                    snapshot_json,
-                ],
-            )
-            .await?;
+        tx.execute(
+            "INSERT INTO profile_state_snapshots
+                (profile_id, game_id, profile_name, snapshot_json)
+             VALUES (?, ?, ?, ?)",
+            &vals![
+                profile_id,
+                &profile.game_id,
+                profile.name.clone(),
+                snapshot_json,
+            ],
+        )
+        .await?;
         Ok(())
     }
 

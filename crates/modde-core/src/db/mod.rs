@@ -34,7 +34,7 @@ use crate::resolver::{GameId, LoadOrderRule, ModId};
 use crate::settings::{AppSettings, DatabaseSettings, DbBackend};
 
 pub use backend::Val;
-use backend::{Db, DbRow, vals};
+use backend::{Db, DbRow, DbTx, vals};
 
 /// Summary view of a profile (without loading all mods).
 #[derive(Debug, Clone, PartialEq)]

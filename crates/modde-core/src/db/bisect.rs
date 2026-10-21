@@ -239,7 +239,11 @@ impl ModdeDb {
 
     // ── Internal helpers ──────────────────────────────────────────
 
-    pub(super) async fn insert_mods(&self, profile_id: i64, mods: &[EnabledMod]) -> Result<()> {
+    pub(super) async fn insert_mods(
+        tx: &mut DbTx<'_>,
+        profile_id: i64,
+        mods: &[EnabledMod],
+    ) -> Result<()> {
         for (idx, m) in mods.iter().enumerate() {
             let lock_reason = encode_lock_reason(m.lock.as_ref());
             let nexus_mod_id = m.nexus_mod_id.map(NexusModId::to_i64).transpose()?;
@@ -252,8 +256,7 @@ impl ModdeDb {
                 .transpose()?;
             let install_status = m.install_status.map(InstallStatus::as_str);
 
-            self.db
-                .execute(
+            tx.execute(
                     "INSERT INTO profile_mods (profile_id, mod_id, display_name, enabled, version, fomod_config, sort_index,
                             nexus_mod_id, nexus_file_id, nexus_game_domain, installed_timestamp,
                             category_id, notes, tags, lock_reason,
@@ -286,7 +289,7 @@ impl ModdeDb {
     }
 
     pub(super) async fn insert_rules(
-        &self,
+        tx: &mut DbTx<'_>,
         profile_id: i64,
         rules: &[LoadOrderRule],
     ) -> Result<()> {
@@ -302,13 +305,12 @@ impl ModdeDb {
                     ("incompatible", mod_a.as_str(), mod_b.as_str())
                 }
             };
-            self.db
-                .execute(
-                    "INSERT INTO load_order_rules (profile_id, rule_type, mod_a, mod_b)
+            tx.execute(
+                "INSERT INTO load_order_rules (profile_id, rule_type, mod_a, mod_b)
                      VALUES (?, ?, ?, ?)",
-                    &vals![profile_id, rule_type, mod_a, mod_b],
-                )
-                .await?;
+                &vals![profile_id, rule_type, mod_a, mod_b],
+            )
+            .await?;
         }
         Ok(())
     }

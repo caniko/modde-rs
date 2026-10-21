@@ -384,8 +384,8 @@ impl Db {
         }
     }
 
-    /// Begin a transaction for the few multi-statement writers that need
-    /// all-or-nothing semantics (`record_install`, `remove_installed_mod`).
+    /// Begin a transaction for multi-statement writers that need
+    /// all-or-nothing semantics (profile writes, install tracking).
     pub async fn begin(&self) -> Result<DbTx<'_>> {
         Ok(match self {
             Db::Sqlite(pool) => DbTx::Sqlite(pool.begin().await?),
@@ -428,6 +428,29 @@ impl DbTx<'_> {
                     .execute(&mut **tx)
                     .await?
                     .rows_affected())
+            }
+        }
+    }
+
+    /// Run a query expected to return exactly one row.
+    pub async fn fetch_one<T>(
+        &mut self,
+        sql: &str,
+        vals: &[Val],
+        map: impl Fn(&dyn DbRow) -> Result<T>,
+    ) -> Result<T> {
+        let sql = prepare_sql(self.dialect(), sql);
+        match self {
+            DbTx::Sqlite(tx) => {
+                let args = sqlite_args(vals)?;
+                let r = sqlx::query_with(sql, args).fetch_one(&mut **tx).await?;
+                map(&r as &dyn DbRow)
+            }
+            #[cfg(feature = "postgres")]
+            DbTx::Postgres(tx) => {
+                let args = pg_args(vals)?;
+                let r = sqlx::query_with(sql, args).fetch_one(&mut **tx).await?;
+                map(&r as &dyn DbRow)
             }
         }
     }

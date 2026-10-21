@@ -62,17 +62,14 @@ impl ProfileManager {
     /// Create a profile if it doesn't exist, or update it if it does.
     pub async fn create_or_update(&self, profile: &Profile) -> Result<i64> {
         validate_profile_name(&profile.name)?;
-        match self.db.create_profile(profile).await {
-            Ok(id) => Ok(id),
-            Err(CoreError::Database(_)) => {
+        // Branch on existence, not on the create error: any database failure
+        // while creating must surface instead of being retried as an update.
+        match self.db.load_profile(&profile.name, &profile.game_id).await {
+            Ok(existing) => {
                 self.db.update_profile(profile).await?;
-                // Return the existing ID
-                let loaded = self
-                    .db
-                    .load_profile(&profile.name, &profile.game_id)
-                    .await?;
-                Ok(loaded.id.unwrap_or(0))
+                Ok(existing.id.unwrap_or(0))
             }
+            Err(CoreError::ProfileNotFound(_)) => self.db.create_profile(profile).await,
             Err(e) => Err(e),
         }
     }

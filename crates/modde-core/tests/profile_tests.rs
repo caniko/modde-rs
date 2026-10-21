@@ -514,3 +514,20 @@ async fn test_toml_import_skips_invalid_entries_and_is_idempotent() {
         .collect();
     assert_eq!(names, ["good"]);
 }
+
+#[tokio::test]
+async fn test_pm_create_or_update_surfaces_create_failures() {
+    let pm = ProfileManager::with_db(ModdeDb::open_memory().await.unwrap());
+    let profile = make_manual_profile(
+        "dup-mods",
+        "skyrim-se",
+        vec![simple_mod("skse", true), simple_mod("skse", false)],
+    );
+
+    let err = pm.create_or_update(&profile).await.unwrap_err();
+    assert!(
+        !matches!(err, CoreError::ProfileNotFound(_)),
+        "a failed create must not be retried as an update: {err:?}"
+    );
+    assert_eq!(pm.list().await.unwrap().len(), 0);
+}
