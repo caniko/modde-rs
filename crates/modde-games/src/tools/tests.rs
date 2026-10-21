@@ -318,3 +318,38 @@ async fn optiscaler_install_release_from_path_extracts_local_archive() {
             .exists()
     );
 }
+
+#[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
+fn proton_prefix_override_falls_back_to_prefix_path() {
+    let tool = super::resolve_tool("proton").expect("proton tool should resolve");
+    let wineprefix = |config: &super::ToolConfig| {
+        tool.env_vars(config)
+            .into_iter()
+            .find(|(key, _)| key == "WINEPREFIX")
+            .map(|(_, value)| value)
+    };
+    let mut config = tool.default_config();
+    assert_eq!(wineprefix(&config), None);
+
+    config.set("prefix_path", serde_json::json!(" /games/prefix "));
+    assert_eq!(wineprefix(&config).as_deref(), Some("/games/prefix"));
+
+    config.set("prefix_path_override", serde_json::json!("/override"));
+    assert_eq!(wineprefix(&config).as_deref(), Some("/override"));
+}
+
+#[test]
+#[cfg(all(target_os = "linux", feature = "linux-integrations"))]
+fn proton_forced_dll_overrides_split_on_any_separator() {
+    let tool = super::resolve_tool("proton").expect("proton tool should resolve");
+    let mut config = tool.default_config();
+    config.set("forced_dll_overrides", serde_json::json!("dxgi.dll; winmm\tversion,,"));
+    assert_eq!(
+        tool.wine_dll_overrides(&config).to_vec(),
+        ["dxgi", "winmm", "version"]
+    );
+
+    config.set("dll_override_mode", serde_json::json!("off"));
+    assert_eq!(tool.wine_dll_overrides(&config).to_vec(), [] as [&str; 0]);
+}

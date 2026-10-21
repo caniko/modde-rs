@@ -231,8 +231,10 @@ impl GameTool for Proton {
     fn env_vars(&self, config: &ToolConfig) -> SmallVec<[(String, String); 4]> {
         let mut vars = SmallVec::new();
 
+        // `default_config` stores an empty override, which must not mask `prefix_path`.
         if let Some(prefix) = config
             .get_str("prefix_path_override")
+            .filter(|prefix| !prefix.trim().is_empty())
             .or_else(|| config.get_str("prefix_path"))
             && !prefix.trim().is_empty()
         {
