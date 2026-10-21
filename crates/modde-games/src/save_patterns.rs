@@ -184,3 +184,76 @@ fn category_capture_summary(saves: &[DetectedSave]) -> String {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn no_label(_: &Path, _: &str) -> Option<String> {
+        None
+    }
+
+    const TRACKER: PatternSaveTracker = PatternSaveTracker {
+        prefix_rules: &[PrefixSaveRule {
+            prefix: "Auto",
+            category: "auto",
+        }],
+        file_extensions: &["sav"],
+        default_category: "manual",
+        recursive: true,
+        exclude_patterns: &[],
+        label_extractor: no_label,
+        summary: CaptureSummary::ByCategory,
+    };
+
+    #[test]
+    fn patterns_follow_prefixes_and_recursion() {
+        assert_eq!(TRACKER.save_patterns().to_vec(), ["Auto*", "**/*.sav"]);
+        let flat = PatternSaveTracker {
+            recursive: false,
+            ..TRACKER
+        };
+        assert_eq!(flat.save_patterns().to_vec(), ["Auto*", "*.sav"]);
+    }
+
+    #[test]
+    fn detection_requires_extension_and_classifies_by_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("sub")).unwrap();
+        for file in ["Auto1.sav", "Quick.SAV", "sub/Deep.sav", "Auto2.txt", "notes.txt"] {
+            std::fs::write(tmp.path().join(file), b"x").unwrap();
+        }
+
+        let mut saves: Vec<String> = TRACKER
+            .detect_saves(tmp.path())
+            .unwrap()
+            .iter()
+            .map(|save| format!("{}={}", save.rel_path.display(), save.category))
+            .collect();
+        saves.sort();
+        assert_eq!(saves, ["Auto1.sav=auto", "Quick.SAV=manual", "sub/Deep.sav=manual"]);
+
+        let saves = TRACKER.detect_saves(tmp.path()).unwrap();
+        assert_eq!(
+            TRACKER.describe_capture(&saves),
+            "capture: 3 saves (1 auto, 2 manual)"
+        );
+        let missing = TRACKER.detect_saves(&tmp.path().join("missing")).unwrap();
+        assert!(matches!(missing.as_slice(), []));
+    }
+
+    #[test]
+    fn single_and_empty_captures_use_the_default_summary() {
+        let save = DetectedSave {
+            rel_path: PathBuf::from("Auto1.sav"),
+            category: Cow::Borrowed("auto"),
+            label: None,
+            modified: SystemTime::UNIX_EPOCH,
+        };
+        assert_eq!(TRACKER.describe_capture(&[]), "capture: no new saves");
+        assert_eq!(
+            TRACKER.describe_capture(&[save]),
+            "capture: Auto1.sav [auto]"
+        );
+    }
+}
