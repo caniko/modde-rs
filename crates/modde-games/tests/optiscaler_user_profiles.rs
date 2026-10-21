@@ -136,3 +136,32 @@ fn optiscaler_resolve_profiles_reuses_cached_slice() {
 
     assert!(std::ptr::eq(first, second));
 }
+
+#[test]
+#[cfg(feature = "ue4")]
+fn optiscaler_profile_export_round_trips_through_import_format() {
+    use modde_games::optiscaler::{OptiScalerImportToml, serialize_optiscaler_profiles_toml};
+
+    let _ = shared_data_dir();
+    let profiles = resolve_optiscaler_profiles("stellar-blade");
+    let exported = serialize_optiscaler_profiles_toml(profiles).expect("serialize profiles");
+    let imported: OptiScalerImportToml = toml::from_str(&exported).expect("parse exported TOML");
+
+    let imported = imported.optiscaler.profile;
+    assert_eq!(imported.len(), profiles.len());
+    let local = imported
+        .iter()
+        .find(|profile| profile.id == "community-dxgi")
+        .expect("local override exported");
+    assert_eq!(local.release_tag.as_deref(), Some("official:v0.9.1"));
+    assert_eq!(local.fsr4_variant.as_deref(), Some("latest_fp8"));
+    assert!(local.copy_companion_files && local.emulate_fp8 && !local.spoof_dlss);
+    assert!(
+        !exported.contains("spoof_dlss = false"),
+        "false bools are omitted"
+    );
+
+    let empty = serialize_optiscaler_profiles_toml(&[]).expect("serialize empty");
+    let empty: OptiScalerImportToml = toml::from_str(&empty).expect("parse empty export");
+    assert!(matches!(empty.optiscaler.profile.as_slice(), []));
+}

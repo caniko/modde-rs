@@ -136,5 +136,10 @@ pub fn serialize(profiles: &[crate::optiscaler::OptiScalerProfile]) -> anyhow::R
         },
     };
     let body = toml::to_string_pretty(&toml)?;
-    Ok(format!("[optiscaler]\n{body}"))
+    // Keep an explicit header; toml only emits one itself for an empty profile list.
+    if body.starts_with("[optiscaler]") {
+        Ok(body)
+    } else {
+        Ok(format!("[optiscaler]\n{body}"))
+    }
 }
