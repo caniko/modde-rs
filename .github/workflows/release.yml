@@ -32,15 +32,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  validate:
     permissions:
-      contents: write
-      id-token: write
+      contents: read
+    timeout-minutes: 360
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           extra_nix_config: |
@@ -56,12 +58,23 @@ jobs:
           git config --global --add url.https://github.com/.insteadOf git@github.com:
 
       - name: Validate tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME:-${FORGE_REF_NAME:-${FORGEJO_REF_NAME:-}}}"
           if [ -z "$VERSION" ]; then ref="${GITHUB_REF:-${FORGE_REF:-${FORGEJO_REF:-}}}"; VERSION="${ref#refs/tags/}"; fi
+          TAG="$VERSION"
           echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta|alpha)\.[0-9]+)?$'
-          git fetch --force --tags origin "refs/tags/${VERSION}:refs/tags/${VERSION}"
+          git_fetch() {
+            if [ -n "${GITHUB_TOKEN:-}" ]; then
+              auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+              git -c "http.extraHeader=$auth_header" fetch "$@"
+            else
+              git fetch "$@"
+            fi
+          }
+          git_fetch --force --tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
           tag_worktree="$(mktemp -d)"
           rmdir "$tag_worktree"
           cleanup_validation() {
@@ -69,9 +82,20 @@ jobs:
             if [ -n "${GNUPGHOME:-}" ]; then rm -rf "$GNUPGHOME"; fi
           }
           trap cleanup_validation EXIT
-          git worktree add --detach "$tag_worktree" "$VERSION"
+          GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
+          git_fetch --no-tags origin HEAD
+          git show "FETCH_HEAD:keys/maintainers.gpg" > "$GNUPGHOME/maintainers.gpg"
+          test -s "$GNUPGHOME/maintainers.gpg"
+          gpg --batch --import "$GNUPGHOME/maintainers.gpg"
+          git verify-tag "$TAG"
+          signed_tag_name="$(git cat-file tag "refs/tags/$TAG" | sed -n '1,/^$/s/^tag //p')"
+          test "$signed_tag_name" = "$TAG" || { echo 'Signed tag object name differs from the release label' >&2; exit 1; }
+          validated_sha="$(git rev-parse --verify "refs/tags/${TAG}^{commit}")"
+          checkout_sha="$(git rev-parse --verify HEAD)"
+          event_sha="${GITHUB_SHA:-${FORGE_SHA:-${FORGEJO_SHA:-}}}"
+          test -n "$event_sha" && test "$validated_sha" = "$event_sha" && test "$checkout_sha" = "$event_sha" || { echo "Signed tag commit does not match the immutable event checkout" >&2; exit 1; }
+          git worktree add --detach "$tag_worktree" "$validated_sha"
           test "$(nix eval --raw "$tag_worktree#modde.version")" = "$VERSION"
-          test -s "$tag_worktree/keys/maintainers.gpg"
           if ! grep -q "^## \[$VERSION\] - [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" "$tag_worktree/CHANGELOG.md"; then
             echo "CHANGELOG.md missing section for $VERSION" >&2
             exit 1
@@ -80,12 +104,114 @@ jobs:
           IS_PRERELEASE=false
           if printf '%s\n' "$VERSION" | grep -Eq -- '-(rc|beta|alpha)\.[0-9]+$'; then IS_PRERELEASE=true; fi
 
-          GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
-          gpg --batch --import "$tag_worktree/keys/maintainers.gpg"
-          git verify-tag "$VERSION"
-          validated_sha="$(git -C "$tag_worktree" rev-parse HEAD)"
           git checkout --detach "$validated_sha"
-          { printf 'VERSION=%s\n' "$VERSION"; printf 'IS_PRERELEASE=%s\n' "$IS_PRERELEASE"; } > release-env
+          { printf 'TAG=%s\n' "$TAG"; printf 'VERSION=%s\n' "$VERSION"; printf 'IS_PRERELEASE=%s\n' "$IS_PRERELEASE"; } > release-env
+      - name: Required gate generated-workflows
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c simit init ci --platform github --ci-provider actions --runtime nix --workspace --workspace-strategy aggregate --runner ubuntu-latest --publish-crates=false --with-artifacts=false --check --diff && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c simit init release --platform github --ci-provider actions --check --diff
+      - name: Required gate crate-compatibility
+        timeout-minutes: 90
+        run: |
+          set -euo pipefail
+          bash .github/scripts/check-crate-compatibility.sh
+      - name: Required gate library-qualification
+        timeout-minutes: 60
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c cargo xtask library-qualify --containment --jobs 4
+      - name: Required gate library-package-lifecycle
+        timeout-minutes: 90
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix build --no-update-lock-file --max-jobs 1 --cores 2 .#modde --out-link result-qualified-package && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c cargo xtask library-package-qualify --binary "$(readlink -f result-qualified-package)/bin/modde" --output "$RUNNER_TEMP/modde-package-receipt"
+  release:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            max-jobs = 1
+            cores = 2
+            substituters = https://attic.candee.baby/canix https://cache.nixos.org
+            trusted-public-keys = canix:lPzPzKrmYqW5Rxa5r0uQWvCqD3S5nx0h2eCy7XD5JM8= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+
+      - name: Configure GitHub input transport
+        run: |
+          git config --global --add url.https://github.com/.insteadOf ssh://git@github.com/
+          git config --global --add url.https://github.com/.insteadOf git@github.com:
+
+      - name: Validate tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME:-${FORGE_REF_NAME:-${FORGEJO_REF_NAME:-}}}"
+          if [ -z "$VERSION" ]; then ref="${GITHUB_REF:-${FORGE_REF:-${FORGEJO_REF:-}}}"; VERSION="${ref#refs/tags/}"; fi
+          TAG="$VERSION"
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta|alpha)\.[0-9]+)?$'
+          git_fetch() {
+            if [ -n "${GITHUB_TOKEN:-}" ]; then
+              auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+              git -c "http.extraHeader=$auth_header" fetch "$@"
+            else
+              git fetch "$@"
+            fi
+          }
+          git_fetch --force --tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          tag_worktree="$(mktemp -d)"
+          rmdir "$tag_worktree"
+          cleanup_validation() {
+            if [ -n "${tag_worktree:-}" ]; then git worktree remove --force "$tag_worktree" >/dev/null 2>&1 || rm -rf "$tag_worktree"; fi
+            if [ -n "${GNUPGHOME:-}" ]; then rm -rf "$GNUPGHOME"; fi
+          }
+          trap cleanup_validation EXIT
+          GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
+          git_fetch --no-tags origin HEAD
+          git show "FETCH_HEAD:keys/maintainers.gpg" > "$GNUPGHOME/maintainers.gpg"
+          test -s "$GNUPGHOME/maintainers.gpg"
+          gpg --batch --import "$GNUPGHOME/maintainers.gpg"
+          git verify-tag "$TAG"
+          signed_tag_name="$(git cat-file tag "refs/tags/$TAG" | sed -n '1,/^$/s/^tag //p')"
+          test "$signed_tag_name" = "$TAG" || { echo 'Signed tag object name differs from the release label' >&2; exit 1; }
+          validated_sha="$(git rev-parse --verify "refs/tags/${TAG}^{commit}")"
+          checkout_sha="$(git rev-parse --verify HEAD)"
+          event_sha="${GITHUB_SHA:-${FORGE_SHA:-${FORGEJO_SHA:-}}}"
+          test -n "$event_sha" && test "$validated_sha" = "$event_sha" && test "$checkout_sha" = "$event_sha" || { echo "Signed tag commit does not match the immutable event checkout" >&2; exit 1; }
+          git worktree add --detach "$tag_worktree" "$validated_sha"
+          test "$(nix eval --raw "$tag_worktree#modde.version")" = "$VERSION"
+          if ! grep -q "^## \[$VERSION\] - [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" "$tag_worktree/CHANGELOG.md"; then
+            echo "CHANGELOG.md missing section for $VERSION" >&2
+            exit 1
+          fi
+
+          IS_PRERELEASE=false
+          if printf '%s\n' "$VERSION" | grep -Eq -- '-(rc|beta|alpha)\.[0-9]+$'; then IS_PRERELEASE=true; fi
+
+          git checkout --detach "$validated_sha"
+          { printf 'TAG=%s\n' "$TAG"; printf 'VERSION=%s\n' "$VERSION"; printf 'IS_PRERELEASE=%s\n' "$IS_PRERELEASE"; } > release-env
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          . ./release-env
+          awk -v version="$VERSION" '
+            $0 ~ "^## \\[" version "\\] - [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$" { found = 1; print; next }
+            found && /^## \[/ { exit }
+            found && /^\[[^]]+\]: / { exit }
+            found { print }
+            END { if (!found) exit 1 }
+          ' CHANGELOG.md > release-notes.md
       - name: Check release credentials
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -151,15 +277,19 @@ jobs:
         run: |
           set -euo pipefail
           . ./release-env
-          git archive --format=tar.gz --prefix=modde-rs/ -o "modde-rs-v${VERSION}.tar.gz" HEAD
+          export SOURCE_ARCHIVE="modde-rs-v${VERSION}.tar.gz"
+          export SRPM_DIR='target/modde-release/root-artifacts/srpms'
+          git archive --format=tar.gz --prefix=modde-rs/ -o "$SOURCE_ARCHIVE" HEAD
           nix shell nixpkgs#rpm nixpkgs#cargo nixpkgs#rustc -c bash <<'SCRIPT'
           set -euo pipefail
-          tar xf modde-rs-*.tar.gz
+          tar xf "$SOURCE_ARCHIVE"
           ( cd modde-rs && cargo vendor vendor > ../cargo-vendor-config.toml )
           tar czf vendor.tar.gz -C modde-rs vendor
-          rm -rf target/modde-release/root-artifacts/srpms && mkdir -p target/modde-release/root-artifacts/srpms
-          rpmbuild -bs dist/rpm/modde.spec --define "_sourcedir $(pwd)" --define "_srcrpmdir $(pwd)/target/modde-release/root-artifacts/srpms"
-          set -- target/modde-release/root-artifacts/srpms/*.src.rpm; test "$#" -eq 1; ls -l "$1"
+          mkdir -p -- "$SRPM_DIR"
+          rm -f -- "$SRPM_DIR"/*.src.rpm
+          rpmbuild -bs dist/rpm/modde.spec --define "_sourcedir $(pwd)" --define "_srcrpmdir $(pwd)/$SRPM_DIR"
+          shopt -s nullglob
+          srpms=("$SRPM_DIR"/*.src.rpm); test "${#srpms[@]}" -eq 1; test -s "${srpms[0]}"; ls -l "${srpms[0]}"
           SCRIPT
       - name: Generate supply-chain reports
         run: |
@@ -179,7 +309,7 @@ jobs:
         run: |
           set -euo pipefail
           . ./release-env
-          export VERSION IS_PRERELEASE
+          export TAG VERSION IS_PRERELEASE
           mkdir -p release
           copy_nix_binary() {
             result_dir="$1"; binary="$2"; destination="$3"
@@ -226,9 +356,9 @@ jobs:
           sed -i "s/@SOURCE_TARBALL_SHA256@/${source_sha256}/" target/modde-release/root-artifacts/release/com.tartanoglu.modde.json
           nix run .#flatpak-cargo-generator -- Cargo.lock -o target/modde-release/root-artifacts/release/cargo-sources.json
           cp target/modde-release/root-artifacts/srpms/*.src.rpm target/modde-release/root-artifacts/release/ 2>/dev/null || true
-
           rm -rf release
           cp -a target/modde-release/root-artifacts/release ./release
+
       - name: Build Debian packages
         run: |
           set -euo pipefail
@@ -322,7 +452,7 @@ jobs:
           git_sha="$(git rev-parse HEAD)"
           workflow_sha="$(sha256sum .github/workflows/release.yml | awk '{print $1}')"
           flake_lock_sha="missing"; if [ -f flake.lock ]; then flake_lock_sha="$(sha256sum flake.lock | awk '{print $1}')"; fi
-          builder_id="${repo_url}/blob/${VERSION}/.github/workflows/release.yml"
+          builder_id="${repo_url}/blob/${TAG}/.github/workflows/release.yml"
           sign_blob_keyless() { file="$1"; if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then curl -fsSL -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" | jq -er '.value' > "$oidc_token"; cosign sign-blob --yes --identity-token "$(cat "$oidc_token")" --bundle "${file}.cosign.bundle" "$file"; else return 1; fi; }
           attest_blob_keyless() { file="$1"; predicate="$2"; if [ -s "$oidc_token" ]; then cosign attest-blob --yes --identity-token "$(cat "$oidc_token")" --predicate "$predicate" --type slsaprovenance1 --bundle "${file}.intoto.bundle" "$file"; else return 1; fi; }
           sign_blob_with_key() { file="$1"; test -n "${COSIGN_PRIVATE_KEY:-}"; printf '%s' "$COSIGN_PRIVATE_KEY" > "$cosign_key"; cosign sign-blob --yes --key "$cosign_key" --bundle "${file}.cosign.bundle" "$file"; }
@@ -332,7 +462,7 @@ jobs:
           while IFS= read -r file; do
             [ -f "$file" ] || continue
             artifact_sha="$(sha256sum "$file" | awk '{print $1}')"; predicate="$(mktemp)"
-            jq -n --arg builder_id "$builder_id" --arg git_sha "$git_sha" --arg workflow_sha "$workflow_sha" --arg flake_lock_sha "$flake_lock_sha" --arg repo_url "$repo_url" --arg ref "refs/tags/${VERSION}" --arg artifact "$(basename "$file")" --arg artifact_sha "$artifact_sha" '{buildDefinition:{buildType:"https://simit.rs/release",externalParameters:{repository:$repo_url,ref:$ref,artifact:$artifact,artifactDigest:{sha256:$artifact_sha}},internalParameters:{},resolvedDependencies:[{uri:($repo_url+".git"),digest:{gitCommit:$git_sha}},{uri:"flake.lock",digest:{sha256:$flake_lock_sha}},{uri:"release workflow",digest:{sha256:$workflow_sha}}]},runDetails:{builder:{id:$builder_id}}}' > "$predicate"
+            jq -n --arg builder_id "$builder_id" --arg git_sha "$git_sha" --arg workflow_sha "$workflow_sha" --arg flake_lock_sha "$flake_lock_sha" --arg repo_url "$repo_url" --arg ref "refs/tags/${TAG}" --arg artifact "$(basename "$file")" --arg artifact_sha "$artifact_sha" '{buildDefinition:{buildType:"https://simit.rs/release",externalParameters:{repository:$repo_url,ref:$ref,artifact:$artifact,artifactDigest:{sha256:$artifact_sha}},internalParameters:{},resolvedDependencies:[{uri:($repo_url+".git"),digest:{gitCommit:$git_sha}},{uri:"flake.lock",digest:{sha256:$flake_lock_sha}},{uri:"release workflow",digest:{sha256:$workflow_sha}}]},runDetails:{builder:{id:$builder_id}}}' > "$predicate"
             if sign_blob_keyless "$file" && attest_blob_keyless "$file" "$predicate"; then echo "signed+attested $file (keyless)"; elif [ -n "${COSIGN_PRIVATE_KEY:-}" ]; then echo "keyless failed for $file; using COSIGN_PRIVATE_KEY"; sign_blob_with_key "$file"; attest_blob_with_key "$file" "$predicate"; else echo "::error::keyless Sigstore failed and COSIGN_PRIVATE_KEY is unset for $file" >&2; exit 1; fi
             test -s "${file}.cosign.bundle"
             test -s "${file}.intoto.bundle"
@@ -357,17 +487,10 @@ jobs:
           nix shell nixpkgs#curl nixpkgs#jq -c bash <<'SCRIPT'
           set -euo pipefail
           . ./release-env
-          awk -v version="$VERSION" '
-            $0 ~ "^## \\[" version "\\] - [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$" { found = 1; print; next }
-            found && /^## \[/ { exit }
-            found && /^\[[^]]+\]: / { exit }
-            found { print }
-            END { if (!found) exit 1 }
-          ' CHANGELOG.md > release-notes.md || { echo "CHANGELOG.md missing section for $VERSION" >&2; exit 1; }
-          release_payload=$(jq -n --arg tag "$VERSION" --arg name "$VERSION" --arg branch "trunk" --argjson prerelease "$IS_PRERELEASE" --rawfile body release-notes.md '{tag_name: $tag, target_commitish: $branch, name: $name, body: $body, draft: false, prerelease: $prerelease}')
+          release_payload=$(jq -n --arg tag "$TAG" --arg name "$TAG" --arg branch "trunk" --argjson prerelease "$IS_PRERELEASE" --rawfile body release-notes.md '{tag_name: $tag, target_commitish: $branch, name: $name, body: $body, draft: false, prerelease: $prerelease}')
           status=$(curl -sS -o release.json -w '%{http_code}' -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' -d "$release_payload" "$GITHUB_API/repos/$GITHUB_REPO/releases")
           if [ "$status" = "409" ] || [ "$status" = "422" ]; then
-            curl -sS --fail -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API/repos/$GITHUB_REPO/releases/tags/$VERSION" > release.json
+            curl -sS --fail -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "$GITHUB_API/repos/$GITHUB_REPO/releases/tags/$TAG" > release.json
           elif [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then cat release.json; exit 1; fi
           release_id=$(jq -r '.id' release.json); test "$release_id" != "null"
           upload_url=$(jq -r '.upload_url' release.json | cut -d '{' -f 1); test -n "$upload_url"
@@ -507,7 +630,7 @@ jobs:
           set -euo pipefail
           . ./release-env
           release_url="$(jq -r '.html_url // .url // empty' release.json 2>/dev/null || true)"
-          if [ -z "$release_url" ]; then release_url="https://github.com/caniko/modde-rs/releases/tag/${VERSION}"; fi
+          if [ -z "$release_url" ]; then release_url="https://github.com/caniko/modde-rs/releases/tag/${TAG}"; fi
           body="release ${VERSION} is out: ${release_url}"
           if [ -n "${MASTODON_TOKEN:-}" ] && [ -n "${MASTODON_BASE_URL:-}" ]; then
             jq -n --arg status "$body" '{status: $status}' > mastodon-status.json
@@ -537,24 +660,26 @@ jobs:
             exit 0
           }
           if [ -z "${AUR_SSH_KEY:-}" ]; then publisher_missing aur 'AUR_SSH_KEY unset'; fi
-          nix shell nixpkgs#git nixpkgs#openssh nixpkgs#pacman nixpkgs#shadow nixpkgs#util-linux -c bash <<'SCRIPT'
+          nix shell nixpkgs#git nixpkgs#openssh nixpkgs#pacman nixpkgs#util-linux -c bash <<'SCRIPT'
           set -euo pipefail
           . ./release-env
           AUR_HOST='aur.archlinux.org'; AUR_SSH="$HOME/.ssh/aur"
           MAKEPKG_CONF="$(dirname "$(dirname "$(command -v makepkg)")")/etc/makepkg.conf"; test -r "$MAKEPKG_CONF"
-          print_srcinfo() {
+          print_srcinfo() (
+            set -euo pipefail
             pkgdir="$1"
+            owner=''
+            trap 'status=$?; rm -f "$pkgdir/.SRCINFO.tmp"; if [ -n "$owner" ]; then chown -R "$owner" "$pkgdir" || exit 1; fi; exit "$status"' EXIT
             if [ "$(id -u)" -eq 0 ]; then
-              owner_uid="$(id -u)"; owner_gid="$(id -g)"
-              groupadd -f -r aurbuild
-              if ! id -u aurbuild >/dev/null 2>&1; then useradd -m -r -g aurbuild -s /bin/sh aurbuild; fi
-              chown -R aurbuild:aurbuild "$pkgdir"
-              runuser -u aurbuild -- sh -c 'cd "$1" && makepkg --config "$2" --printsrcinfo > .SRCINFO' sh "$pkgdir" "$MAKEPKG_CONF" || setpriv --reuid="$(id -u aurbuild)" --regid="$(id -g aurbuild)" --init-groups sh -c 'cd "$1" && makepkg --config "$2" --printsrcinfo > .SRCINFO' sh "$pkgdir" "$MAKEPKG_CONF"
-              chown -R "$owner_uid:$owner_gid" "$pkgdir"
+              owner="$(stat -c '%u:%g' "$pkgdir")"
+              chown -R 65534:65534 "$pkgdir"
+              (cd "$pkgdir" && setpriv --reuid=65534 --regid=65534 --clear-groups makepkg --config "$MAKEPKG_CONF" --printsrcinfo) > "$pkgdir/.SRCINFO.tmp"
             else
-              (cd "$pkgdir" && makepkg --config "$MAKEPKG_CONF" --printsrcinfo > .SRCINFO)
+              (cd "$pkgdir" && makepkg --config "$MAKEPKG_CONF" --printsrcinfo) > "$pkgdir/.SRCINFO.tmp"
             fi
-          }
+            test -s "$pkgdir/.SRCINFO.tmp"
+            mv "$pkgdir/.SRCINFO.tmp" "$pkgdir/.SRCINFO"
+          )
           checksum_for() { awk -v a="$1" '$2 == a { print $1 }' release/SHA256SUMS.txt; }
           source_sha="$(checksum_for "modde-rs-${VERSION}.tar.gz")"
           bin_sha="$(checksum_for "modde-${VERSION}-x86_64-linux.tar.gz")"; test -n "$bin_sha"
@@ -640,7 +765,7 @@ jobs:
             exit 0
           }
           if [ -z "${WINGET_PAT:-}" ]; then publisher_missing winget 'WINGET_PAT unset'; fi
-          ZIP_NAME="modde-${VERSION}-x86_64-windows.zip"; ZIP_URL="https://github.com/caniko/modde-rs/releases/download/${VERSION}/${ZIP_NAME}"
+          ZIP_NAME="modde-${VERSION}-x86_64-windows.zip"; ZIP_URL="https://github.com/caniko/modde-rs/releases/download/${TAG}/${ZIP_NAME}"
           test -s "release/${ZIP_NAME}" || publisher_missing winget "missing release/${ZIP_NAME}"
           export ZIP_URL VERSION WINGET_PAT
           nix shell nixpkgs#curl nixpkgs#jq nixpkgs#unzip nixpkgs#wineWow64Packages.stable nixpkgs#util-linux -c bash <<'SCRIPT'
@@ -685,9 +810,9 @@ jobs:
             --description 'Cross-platform game mod manager' \
             --homepage 'https://modde.tartanoglu.com' \
             --license GPL-3.0-only \
-            --archive "darwin_arm=https://github.com/caniko/modde-rs/releases/download/${VERSION}/modde-${VERSION}-aarch64-darwin.tar.gz,release/modde-${VERSION}-aarch64-darwin.tar.gz" \
-            --archive "linux_arm=https://github.com/caniko/modde-rs/releases/download/${VERSION}/modde-${VERSION}-aarch64-linux.tar.gz,release/modde-${VERSION}-aarch64-linux.tar.gz" \
-            --archive "linux_intel=https://github.com/caniko/modde-rs/releases/download/${VERSION}/modde-${VERSION}-x86_64-linux.tar.gz,release/modde-${VERSION}-x86_64-linux.tar.gz" \
+            --archive "darwin_arm=https://github.com/caniko/modde-rs/releases/download/${TAG}/modde-${VERSION}-aarch64-darwin.tar.gz,release/modde-${VERSION}-aarch64-darwin.tar.gz" \
+            --archive "linux_arm=https://github.com/caniko/modde-rs/releases/download/${TAG}/modde-${VERSION}-aarch64-linux.tar.gz,release/modde-${VERSION}-aarch64-linux.tar.gz" \
+            --archive "linux_intel=https://github.com/caniko/modde-rs/releases/download/${TAG}/modde-${VERSION}-x86_64-linux.tar.gz,release/modde-${VERSION}-x86_64-linux.tar.gz" \
             --binary modde \
             --binary modde-ui \
             --tap "$PWD/tap"
@@ -715,6 +840,9 @@ jobs:
         run: |
           set -euo pipefail
           . ./release-env
+          SRPM_DIR='target/modde-release/root-artifacts/srpms'
+          shopt -s nullglob
+          srpms=("$SRPM_DIR"/*.src.rpm)
           COPR_PROJECT="caniko/modde-rs"
           if [ "$IS_PRERELEASE" = "true" ]; then COPR_PROJECT="caniko/modde-rs-testing"; fi
           if [ -f release-publisher-state.env ]; then . ./release-publisher-state.env; fi
@@ -727,7 +855,8 @@ jobs:
             exit 0
           }
           if [ -z "$COPR_LOGIN" ] || [ -z "$COPR_USERNAME" ] || [ -z "$COPR_TOKEN" ]; then publisher_missing copr 'COPR credentials unset'; fi
-          srpms=(target/modde-release/root-artifacts/srpms/*.src.rpm); if [ ! -e "${srpms[0]}" ]; then publisher_missing copr 'no SRPM to publish'; fi
+          if [ "${#srpms[@]}" -eq 0 ]; then publisher_missing copr 'no SRPM to publish'; fi
+          test "${#srpms[@]}" -eq 1; test -s "${srpms[0]}"
           mkdir -p ~/.config
           cat > ~/.config/copr <<EOF
           [copr-cli]
@@ -737,9 +866,82 @@ jobs:
           copr_url = https://copr.fedorainfracloud.org
           EOF
           chmod 600 ~/.config/copr
-          nix run .#copr-cli -- build --nowait "${COPR_PROJECT}" target/modde-release/root-artifacts/srpms/*.src.rpm
+          nix run .#copr-cli -- build --nowait "${COPR_PROJECT}" "${srpms[@]}"
+      - name: Prepare Chocolatey package
+        id: chocolatey-source
+        run: |
+          set -euo pipefail
+          . ./release-env
+          if [ "$IS_PRERELEASE" = "true" ]; then echo "Prerelease ${VERSION}; skipping Chocolatey package preparation."; exit 0; fi
+          if [ -f release-publisher-state.env ]; then . ./release-publisher-state.env; fi
+          publisher_missing() {
+            channel="$1"; message="$2"
+            var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
+            state="${!var:-inactive-soft}"
+            if [ "$state" = active-required ]; then echo "::error::${channel}: ${message}" >&2; exit 1; fi
+            echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
+            exit 0
+          }
+          ZIP="release/modde-${VERSION}-x86_64-windows.zip"; test -s "$ZIP" || publisher_missing chocolatey "missing $ZIP"
+          nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey -c simit dist chocolatey bump \
+            --version "$VERSION" \
+            --package-dir chocolatey-package \
+            --archive "x64=$ZIP" \
+            --choco-name 'modde' \
+            --choco-id 'modde' \
+            --choco-title 'modde' \
+            --choco-authors 'Can H. Tartanoglu' \
+            --choco-description 'Cross-platform game mod manager' \
+            --choco-project-url 'https://modde.tartanoglu.com' \
+            --choco-license-url 'https://raw.githubusercontent.com/caniko/modde-rs/trunk/LICENSE' \
+            --choco-download-repo 'caniko/modde-rs' \
+            --choco-archive-pattern 'modde-{version}-{arch}-windows.zip' \
+            --api-key-env CHOCOLATEY_API_KEY
+          printf 'prepared=true\n' >> "$GITHUB_OUTPUT"
+      - name: Restore exact Chocolatey candidate
+        if: steps.chocolatey-source.outputs.prepared == 'true'
+        id: chocolatey-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: chocolatey-package/.simit-candidates
+          key: chocolatey-${{ github.repository }}-${{ github.ref }}-${{ github.sha }}-${{ hashFiles('chocolatey-package/*.nuspec', 'chocolatey-package/tools/*.ps1') }}
+      - name: Pack Chocolatey candidate without publication credentials
+        if: steps.chocolatey-source.outputs.prepared == 'true'
+        run: |
+          set -euo pipefail
+          . ./release-env
+          ZIP="release/modde-${VERSION}-x86_64-windows.zip"
+          nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey -c simit dist chocolatey bump \
+            --version "$VERSION" \
+            --package-dir chocolatey-package \
+            --archive "x64=$ZIP" \
+            --choco-name 'modde' \
+            --choco-id 'modde' \
+            --choco-title 'modde' \
+            --choco-authors 'Can H. Tartanoglu' \
+            --choco-description 'Cross-platform game mod manager' \
+            --choco-project-url 'https://modde.tartanoglu.com' \
+            --choco-license-url 'https://raw.githubusercontent.com/caniko/modde-rs/trunk/LICENSE' \
+            --choco-download-repo 'caniko/modde-rs' \
+            --choco-archive-pattern 'modde-{version}-{arch}-windows.zip' \
+            --pack --api-key-env CHOCOLATEY_API_KEY
+      - name: Persist Chocolatey candidate before publication
+        if: steps.chocolatey-source.outputs.prepared == 'true' && steps.chocolatey-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: chocolatey-package/.simit-candidates
+          key: chocolatey-${{ github.repository }}-${{ github.ref }}-${{ github.sha }}-${{ hashFiles('chocolatey-package/*.nuspec', 'chocolatey-package/tools/*.ps1') }}
+      - name: Require persisted Chocolatey candidate
+        id: chocolatey-persisted
+        if: steps.chocolatey-source.outputs.prepared == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: chocolatey-package/.simit-candidates
+          key: chocolatey-${{ github.repository }}-${{ github.ref }}-${{ github.sha }}-${{ hashFiles('chocolatey-package/*.nuspec', 'chocolatey-package/tools/*.ps1') }}
+          fail-on-cache-miss: true
       - name: Publish Chocolatey package
         env:
+          CHOCO_CANDIDATE_CACHE_HIT: ${{ steps.chocolatey-persisted.outputs.cache-hit }}
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
           CHOCO_PUSH_SOURCE: https://push.chocolatey.org/
         run: |
@@ -757,10 +959,8 @@ jobs:
           }
           if [ -z "${CHOCOLATEY_API_KEY:-}" ]; then publisher_missing chocolatey 'CHOCOLATEY_API_KEY unset'; fi
           ZIP="release/modde-${VERSION}-x86_64-windows.zip"; test -s "$ZIP" || publisher_missing chocolatey "missing $ZIP"
-          CHOCO_VERSION_FILTER="Id%20eq%20'modde'%20and%20Version%20eq%20'${VERSION}'"
-          if curl -fsSL "https://community.chocolatey.org/api/v2/Packages()?%24filter=${CHOCO_VERSION_FILTER}" | grep -q "<entry>"; then echo "Chocolatey ${VERSION} already published; skipping."; exit 0; fi
-          choco_log="$(mktemp)"; trap 'rm -f "$choco_log"' EXIT
-          if ! nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey -c simit dist chocolatey bump \
+          if [ "${CHOCO_CANDIDATE_CACHE_HIT:-}" != true ]; then echo 'Chocolatey candidate persistence was not verified.' >&2; exit 1; fi
+          nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey -c simit dist chocolatey bump \
             --version "$VERSION" \
             --package-dir chocolatey-package \
             --archive "x64=$ZIP" \
@@ -775,10 +975,4 @@ jobs:
             --choco-archive-pattern 'modde-{version}-{arch}-windows.zip' \
             --push \
             --push-source "$CHOCO_PUSH_SOURCE" \
-            --api-key-env CHOCOLATEY_API_KEY 2>&1 | tee "$choco_log"; then
-            if grep -q 'Chocolatey rejects duplicate version pushes' "$choco_log"; then
-              echo 'Chocolatey version already published; skipping duplicate push.'
-              exit 0
-            fi
-            exit 1
-          fi
+            --api-key-env CHOCOLATEY_API_KEY

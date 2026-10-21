@@ -15,7 +15,7 @@
     };
 
     simit = {
-      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=1f5a180b7bd8d3cf4f1e8c3a105b33c251fac0e1";
+      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=fa9b48c49ee510f9628a5272f4e397725c4e99a2";
       inputs.nixpkgs.follows = "harbor-rs/nixpkgs";
       inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
       inputs.crane.follows = "harbor-rs/crane";
@@ -93,9 +93,7 @@
         };
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         moddeVersion = cargoToml.workspace.package.version or cargoToml.package.version;
-        simitPackage = simit.packages.${system}.default.overrideAttrs (old: {
-          patches = (old.patches or []) ++ [./nix/patches/simit-modde-rs-workflow.patch];
-        });
+        simitPackage = simit.packages.${system}.default;
         plinthProject = plinth.packages.${system}.plinth-project;
         visualRubric = visual-rubric.packages.${system}.default;
         simitCli = pkgs.writeShellApplication {
@@ -2190,6 +2188,8 @@
               sed -i "s/@SOURCE_TARBALL_SHA256@/''${source_sha256}/" target/modde-release/root-artifacts/release/com.tartanoglu.modde.json
               nix run .#flatpak-cargo-generator -- Cargo.lock -o target/modde-release/root-artifacts/release/cargo-sources.json
               cp target/modde-release/root-artifacts/srpms/*.src.rpm target/modde-release/root-artifacts/release/ 2>/dev/null || true
+              rm -rf release
+              cp -a target/modde-release/root-artifacts/release ./release
             ''
           ];
         };
@@ -2288,6 +2288,8 @@
         copr = {
           name = "modde";
           spec_path = "dist/rpm/modde.spec";
+          makefile_path = "dist/copr/Makefile";
+          srpm_dir = "target/modde-release/root-artifacts/srpms";
           summary = "Cross-platform game mod manager";
           description = "modde is a cross-platform game mod manager with CLI and GUI interfaces.\nIt supports Nexus Mods, Wabbajack modlists, FOMOD installers, and BAIN\npackages for games like Skyrim, Fallout, Starfield, and Cyberpunk 2077.";
           license = "GPL-3.0-only";
