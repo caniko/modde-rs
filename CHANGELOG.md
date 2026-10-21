@@ -218,7 +218,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tiles instead of falling back to name-only cards.
 - **Profiles**: Reject `.` and `..` profile names, skip invalid names during TOML
   import, write plugin order atomically, and encode profile sources as valid
-  TOML so control characters no longer make a profile unloadable.
+  TOML so control characters no longer make a profile unloadable. Roll back
+  failed profile creates and updates so they no longer leave orphan rows or
+  emptied mod and rule lists.
 - **Scanning**: Strip Nexus suffixes from hyphenated archive names such as
   `SkyUI-Patch-12604-5-2.7z`.
 - **Tools**: Offer tri-state and numeric inputs for section-qualified OptiScaler
