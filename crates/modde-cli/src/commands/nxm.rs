@@ -118,13 +118,15 @@ pub async fn handle(uri: String, _profile: Option<String>) -> Result<()> {
     let file_info = api
         .get_mod_files(&parsed.game_domain, parsed.mod_id)
         .await?;
+    // The API-supplied name is untrusted; keep only its final component.
     let file_name = file_info
         .files
         .iter()
         .find(|f| f.file_id == parsed.file_id)
+        .and_then(|f| modde_core::fs::safe_file_name(&f.file_name))
         .map_or_else(
             || format!("{}_{}.zip", parsed.mod_id, parsed.file_id),
-            |f| f.file_name.clone(),
+            str::to_string,
         );
 
     let dest = downloads_dir.join(&file_name);
