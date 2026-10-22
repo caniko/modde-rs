@@ -13,8 +13,13 @@ impl Modde {
             Message::ExternalRefresh => {
                 let task = self.reload_profile();
                 self.set_status("Refreshed from external change".to_string());
-                return Task::batch([task, self.start_library_load()]);
+                return Task::batch([
+                    task,
+                    self.start_library_load(),
+                    Self::scan_installed_games_task(),
+                ]);
             }
+            Message::InstalledGamesScanned(games) => self.installed_games = games,
             Message::ProfileContextLoaded { generation, result } => {
                 // Drop stale loads: a newer kickoff bumped the generation, so
                 // this result is for a game/profile the user has moved on from.

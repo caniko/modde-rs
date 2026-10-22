@@ -8,6 +8,8 @@ pub enum Message {
     /// External process (typically the CLI) notified the GUI that the
     /// profile DB has changed. Triggers a profile reload.
     ExternalRefresh,
+    /// Result of the off-thread Steam/Heroic scan.
+    InstalledGamesScanned(Vec<modde_games::DetectedGame>),
 
     /// Async result of `load_profile_context` — the off-thread profile +
     /// data-tab + tool reload. `generation` guards against stale loads

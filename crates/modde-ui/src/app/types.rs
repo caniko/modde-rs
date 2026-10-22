@@ -127,6 +127,10 @@ pub struct Modde {
     /// Render `status_message` in the danger colour. Set via `set_error`.
     pub status_is_error: bool,
     pub pending_confirm: Option<PendingConfirm>,
+    /// Cached Steam/Heroic scan; refreshed by `scan_installed_games_task`.
+    pub installed_games: Vec<modde_games::DetectedGame>,
+    /// Set when the database could not be opened; `view` renders only this.
+    pub startup_error: Option<String>,
     pub button_hover_toast: ButtonHoverToastState,
     pub pending_tools_load_status_message: Option<String>,
     pub settings: AppSettings,

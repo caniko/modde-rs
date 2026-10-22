@@ -19,6 +19,19 @@ impl Modde {
     // ─── View ────────────────────────────────────────────────────
 
     pub(super) fn view(&self) -> Element<'_, Message> {
+        if let Some(error) = &self.startup_error {
+            return container(
+                column![
+                    text("modde cannot start").size(18),
+                    text(error).size(13).style(danger),
+                ]
+                .spacing(12),
+            )
+            .padding(24)
+            .center(Length::Fill)
+            .into();
+        }
+
         // Show mod details in sidebar on all views except Saves;
         // show save details only on Saves view.
         let (mod_details_for_sidebar, save_details_for_sidebar) =
@@ -45,8 +58,6 @@ impl Modde {
             .as_ref()
             .map(|p| p.mods.as_slice())
             .unwrap_or(&[]);
-        let settings_state = self.settings_state();
-
         let content: Element<Message> = match &self.active_view {
             View::Library => crate::views::library::view(&self.library),
             View::ModList => crate::views::mod_list::view_filtered(
@@ -77,7 +88,7 @@ impl Modde {
                 )
             }
             View::FOMODWizard(_) => crate::views::fomod_wizard::view(self),
-            View::Settings => crate::views::settings::view(settings_state),
+            View::Settings => crate::views::settings::view(self.settings_state()),
             View::WabbajackInstaller(state) => crate::views::wabbajack::view(
                 state,
                 &self.wabbajack_manifest,
@@ -427,10 +438,18 @@ impl Modde {
     /// While idle, the listener costs nothing — `accept()` just blocks
     /// in the kernel.
     pub(super) fn subscription(&self) -> iced::Subscription<Message> {
-        iced::Subscription::batch([
-            iced::Subscription::run(external_refresh_stream),
-            iced::time::every(std::time::Duration::from_secs(2))
-                .map(|_| Message::LibrarySessionTick),
-        ])
+        let mut subscriptions = vec![iced::Subscription::run(external_refresh_stream)];
+        // The session tick does a blocking file read; only run it while the
+        // Library is visible or a session it must observe is still live.
+        if matches!(self.active_view, View::Library)
+            || !self.library.launching.is_empty()
+            || self.library.pending.is_some()
+        {
+            subscriptions.push(
+                iced::time::every(std::time::Duration::from_secs(2))
+                    .map(|_| Message::LibrarySessionTick),
+            );
+        }
+        iced::Subscription::batch(subscriptions)
     }
 }

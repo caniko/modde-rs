@@ -67,6 +67,10 @@ impl Modde {
                     self.active_view = View::BrowseNexus;
                     self.sync_browse_game_to_current(false);
                 }
+                View::Settings => {
+                    self.active_view = View::Settings;
+                    return Self::scan_installed_games_task();
+                }
                 other => {
                     self.active_view = other;
                 }

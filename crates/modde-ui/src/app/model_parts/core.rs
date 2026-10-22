@@ -24,7 +24,7 @@ impl Modde {
             nexus_config_key_exists: self.nexus_config_key_exists,
             game_install_paths: settings_game_install_paths(
                 &self.settings,
-                modde_games::scan_installed_games(),
+                self.installed_games.clone(),
             ),
             download_dir: self.settings.download_dir.clone(),
             effective_download_dir: self
@@ -36,6 +36,18 @@ impl Modde {
             theme_name: self.theme_name.clone(),
             nexus_status: self.nexus_status.clone(),
         }
+    }
+
+    /// Rescan Steam/Heroic libraries off the UI thread into `installed_games`.
+    pub(crate) fn scan_installed_games_task() -> Task<Message> {
+        Task::perform(
+            async {
+                tokio::task::spawn_blocking(modde_games::scan_installed_games)
+                    .await
+                    .unwrap_or_default()
+            },
+            Message::InstalledGamesScanned,
+        )
     }
 
     pub(crate) fn refresh_nexus_api_key_state(&mut self) {

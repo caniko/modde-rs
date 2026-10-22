@@ -139,6 +139,7 @@ fn render_path_sources_do_not_call_block_on() {
             }
             if path == "app/update.rs"
                 && (line.contains("modde_core::db::ModdeDb::open()")
+                    || line.contains("modde_core::db::ModdeDb::open_memory()")
                     || line.contains("ProfileManager::with_db(db.clone()).list()"))
             {
                 continue;

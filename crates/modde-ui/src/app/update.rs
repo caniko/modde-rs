@@ -117,9 +117,16 @@ impl Modde {
         };
         let selected_game = settings.selected_game.clone();
 
-        // TODO(phase-02): surface startup database failures as a Task error state.
-        let db = crate::app::block_on(modde_core::db::ModdeDb::open())
-            .expect("failed to open modde database at startup");
+        // On failure, fall back to a throwaway in-memory DB so the window can
+        // open and show the error; `view` renders nothing else in that state.
+        let (db, startup_error) = match crate::app::block_on(modde_core::db::ModdeDb::open()) {
+            Ok(db) => (db, None),
+            Err(error) => (
+                crate::app::block_on(modde_core::db::ModdeDb::open_memory())
+                    .expect("in-memory sqlite always opens"),
+                Some(format!("Could not open the modde database: {error}")),
+            ),
+        };
         let all_profiles =
             crate::app::block_on(ProfileManager::with_db(db.clone()).list()).unwrap_or_default();
 
@@ -137,6 +144,8 @@ impl Modde {
             status_message: "Ready".to_string(),
             status_is_error: false,
             pending_confirm: None,
+            installed_games: Vec::new(),
+            startup_error,
             button_hover_toast: ButtonHoverToastState::default(),
             pending_tools_load_status_message: None,
             settings,
@@ -242,6 +251,7 @@ impl Modde {
                 ),
                 initial_context_task,
                 initial_library_task,
+                Self::scan_installed_games_task(),
             ]),
         )
     }
@@ -331,6 +341,7 @@ impl Modde {
     fn update_inner(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ExternalRefresh
+            | Message::InstalledGamesScanned(_)
             | Message::ProfileContextLoaded { .. }
             | Message::DataTabConflictsLoaded { .. }
             | Message::UpdateCheckLoaded(_)
