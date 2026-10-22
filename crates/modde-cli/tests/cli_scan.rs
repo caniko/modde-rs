@@ -1,10 +1,11 @@
 //! End-to-end tests for `modde scan` against fake Skyrim and Cyberpunk
 //! installs, including `plugins.txt` load order and Wabbajack manifests.
 
+#![cfg(any(feature = "bethesda", feature = "cyberpunk"))]
+
 mod common;
 
-use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Output;
 
 use common::Fixture;
@@ -103,7 +104,7 @@ fn bethesda_scan_prefers_plugins_txt_and_pairs_archives() {
 
 /// A `.wabbajack` whose single archive installs `archive/pc/mod/foo.archive`.
 #[cfg(feature = "cyberpunk")]
-fn cyberpunk_manifest(fx: &Fixture) -> PathBuf {
+fn cyberpunk_manifest(fx: &Fixture) -> std::path::PathBuf {
     let modlist = serde_json::json!({
         "Name": "Probe", "Author": "t", "Description": "t", "Game": "Cyberpunk2077", "Version": "1",
         "Archives": [{ "Hash": 1, "Name": "Foo-1-0.7z", "Size": 1 }],
@@ -117,7 +118,7 @@ fn cyberpunk_manifest(fx: &Fixture) -> PathBuf {
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
     zip.start_file("modlist", zip::write::SimpleFileOptions::default())
         .unwrap();
-    zip.write_all(modlist.to_string().as_bytes()).unwrap();
+    std::io::Write::write_all(&mut zip, modlist.to_string().as_bytes()).unwrap();
     zip.finish().unwrap();
     path
 }
