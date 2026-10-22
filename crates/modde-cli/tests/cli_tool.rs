@@ -355,3 +355,81 @@ fn rejects_unknown_tools_games_and_missing_installs() {
     );
     assert!(err(&tool(&fx, &["apply", "nope"])).contains("unknown tool: 'nope'"));
 }
+
+/// Write an executable `/bin/sh` script under the fixture root.
+fn script(fx: &Fixture, name: &str, body: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = fx.root().join(name);
+    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path.to_str().unwrap().to_string()
+}
+
+#[test]
+fn saved_executables_run_with_overwrite_capture() {
+    let (fx, install) = sandbox();
+    std::fs::create_dir_all(install.join("mods/captured")).unwrap();
+    ok(&fx
+        .cmd()
+        .args(["profile", "create", "main", "--game", GAME])
+        .output()
+        .unwrap());
+    // Shell builtins only: the script writes one file into the mod root.
+    let writer = script(
+        &fx,
+        "writer.sh",
+        "echo \"$* $FOO $WINEDLLOVERRIDES\" > mods/captured/out.txt",
+    );
+
+    ok(&tool(
+        &fx,
+        &[
+            "add-executable",
+            "writer",
+            &writer,
+            "--output-mod",
+            "captured_mod",
+            "--wine-dll-overrides",
+            "dinput8=n,b",
+            "--env",
+            "FOO=bar",
+            "--",
+            "first",
+        ],
+    ));
+    let run = ok(&tool(
+        &fx,
+        &[
+            "run-executable",
+            "writer",
+            "--profile",
+            "main",
+            "--",
+            "second",
+        ],
+    ));
+    assert!(run.contains("  FOO=<configured>"), "{run}");
+    assert!(run.contains("  WINEDLLOVERRIDES=dinput8=n,b"), "{run}");
+    assert!(
+        run.contains("Tool wrote 1 new file(s). Moving to output mod 'captured_mod':"),
+        "{run}"
+    );
+    assert!(!install.join("mods/captured/out.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(fx.data_dir().join("store/captured_mod/captured/out.txt")).unwrap(),
+        "first second bar dinput8=n,b\n"
+    );
+
+    // A tool that writes nothing leaves no output mod behind.
+    let quiet = script(&fx, "quiet.sh", "exit 3");
+    let out = ok(&tool(&fx, &["run", &quiet]));
+    assert!(
+        out.contains("Tool completed. No new files written to mod directory."),
+        "{out}"
+    );
+    assert!(!fx.data_dir().join("store/__overwrite__").exists());
+
+    let missing = err(&tool(&fx, &["run", "/nonexistent/tool"]));
+    assert!(missing.contains("failed to execute"), "{missing}");
+}
