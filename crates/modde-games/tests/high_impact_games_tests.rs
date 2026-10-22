@@ -347,3 +347,199 @@ fn oblivion_remastered_scanner_discovers_pak_groups_and_plugins() {
     assert!(ids.contains(&"pak/Visuals"));
     assert!(ids.contains(&"plugin/Quest"));
 }
+
+fn touch(path: &Path) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "x").unwrap();
+}
+
+#[test]
+fn plugin_metadata_describes_each_game() {
+    use modde_games::traits::{ContentCategory, ModSafety};
+
+    let install = Path::new("/games/common/Game");
+    let prefix = Path::new("/prefix");
+    let tmp = TempDir::new().unwrap();
+    // (plugin, Steam id, Nexus domain, archive extensions, save path tail, save-breaking file)
+    let games: [(&dyn GamePlugin, u32, &str, &[&str], &str, &str); 5] = [
+        (
+            &modde_games::gamebryo::FALLOUT_NEW_VEGAS,
+            22380,
+            "newvegas",
+            &["bsa"],
+            "Documents/My Games/FalloutNV/Saves",
+            "Mod.esp",
+        ),
+        (
+            &modde_games::gamebryo::OBLIVION,
+            22330,
+            "oblivion",
+            &["bsa"],
+            "Documents/My Games/Oblivion/Saves",
+            "Mod.esm",
+        ),
+        (
+            &modde_games::witcher3::WITCHER3,
+            292030,
+            "witcher3",
+            &["bundle", "cache"],
+            "Documents/The Witcher 3/gamesaves",
+            "content/scripts/a.ws",
+        ),
+        (
+            &modde_games::oblivion_remastered::OBLIVION_REMASTERED,
+            2623190,
+            "oblivionremastered",
+            &["pak", "ucas", "utoc"],
+            "Documents/My Games/Oblivion Remastered/Saves",
+            "Mod.pak",
+        ),
+        (
+            &modde_games::bg3::BALDURS_GATE3,
+            1086940,
+            "baldursgate3",
+            &["pak"],
+            "Baldur's Gate 3/PlayerProfiles/Public/Savegames",
+            "Mod.pak",
+        ),
+    ];
+
+    for (game, steam_id, domain, archives, save_tail, breaking) in games {
+        let id = game.game_id();
+        assert_eq!(game.steam_app_id_u32(), Some(steam_id), "{id}");
+        assert_eq!(game.nexus_game_domain(), Some(domain), "{id}");
+        assert_eq!(game.archive_extensions(), archives, "{id}");
+        assert!(game.supports_save_profiles(), "{id}");
+        assert!(game.save_directory().is_some(), "{id}");
+        assert_eq!(game.save_directory_at(install, None), None, "{id}");
+        assert!(
+            game.save_directory_at(install, Some(prefix))
+                .unwrap()
+                .ends_with(save_tail),
+            "{id}"
+        );
+        assert_eq!(
+            game.classify_extension(archives[0]),
+            ContentCategory::Archive,
+            "{id}"
+        );
+
+        let mod_dir = tmp.path().join(id);
+        touch(&mod_dir.join(breaking));
+        assert_eq!(game.classify_mod(&mod_dir), ModSafety::SaveBreaking, "{id}");
+        assert_eq!(
+            game.classify_mod(&tmp.path().join("missing")),
+            ModSafety::Unknown
+        );
+    }
+
+    let fnv = &modde_games::gamebryo::FALLOUT_NEW_VEGAS;
+    assert!(fnv.has_plugin_system());
+    assert!(fnv.ini_file_names().contains(&"Fallout.ini"));
+    assert_eq!(fnv.mod_directory(install), install.join("Data"));
+    let or = &modde_games::oblivion_remastered::OBLIVION_REMASTERED;
+    assert!(or.has_plugin_system());
+    assert_eq!(
+        or.mod_root(install).unwrap(),
+        install.join("OblivionRemastered/Content/Paks/~mods")
+    );
+}
+
+#[test]
+fn game_plugins_analyze_archives_and_proxy_dlls() {
+    let tmp = TempDir::new().unwrap();
+    let dir = |name: &str, files: &[&str]| {
+        let root = tmp.path().join(name);
+        std::fs::create_dir_all(&root).unwrap();
+        for file in files {
+            touch(&root.join(file));
+        }
+        root
+    };
+    let strip = |root: &str| InstallMethod::StripContentRoot {
+        root: root.to_string(),
+    };
+    let or = &modde_games::oblivion_remastered::OBLIVION_REMASTERED;
+    let bg3 = &modde_games::bg3::BALDURS_GATE3;
+    let fnv = &modde_games::gamebryo::FALLOUT_NEW_VEGAS;
+    let witcher = &modde_games::witcher3::WITCHER3;
+    let empty = dir("empty", &[]);
+
+    let pak = dir("pak", &["Mod.PAK"]);
+    assert_eq!(
+        or.analyze_mod_archive(&pak),
+        Some(InstallMethod::SingleFileSet)
+    );
+    assert_eq!(
+        bg3.analyze_mod_archive(&pak),
+        Some(InstallMethod::SingleFileSet)
+    );
+    let data = dir("data", &["Data/Mod.esp"]);
+    assert_eq!(or.analyze_mod_archive(&data), Some(strip("Data")));
+    assert_eq!(fnv.analyze_mod_archive(&data), Some(strip("Data")));
+    let mods = dir("mods", &["Mods/Mod.pak"]);
+    assert_eq!(bg3.analyze_mod_archive(&mods), Some(strip("Mods")));
+    for game in [or as &dyn GamePlugin, bg3, fnv, witcher] {
+        assert_eq!(game.analyze_mod_archive(&empty), None, "{}", game.game_id());
+    }
+
+    let overlay = dir("overlay", &["mods/modA/a.ws", "dlc/x/b.bundle"]);
+    assert_eq!(
+        witcher.analyze_mod_archive(&overlay),
+        Some(InstallMethod::MultiRootOverlay {
+            roots: vec!["mods".to_string(), "dlc".to_string()]
+        })
+    );
+    let wrapped = dir("wrapped", &["modFoo/content/a.ws"]);
+    assert_eq!(
+        witcher.analyze_mod_archive(&wrapped),
+        Some(InstallMethod::DirectoryMod {
+            directory_name: Some("modFoo".to_string())
+        })
+    );
+    assert!(witcher.recognizes_bare_layout(&wrapped.join("modFoo")));
+    assert!(!witcher.recognizes_bare_layout(&empty));
+    assert!(or.recognizes_bare_layout(&dir("bare-or", &["~mods/a.pak"])));
+    assert!(fnv.recognizes_bare_layout(&data));
+    assert!(bg3.recognizes_bare_layout(&mods));
+
+    let witcher_install = dir("witcher-install", &["bin/x64/dxgi.dll"]);
+    assert_eq!(
+        witcher.wine_dll_overrides(&witcher_install).as_slice(),
+        ["dxgi"]
+    );
+    let or_install = dir(
+        "or-install",
+        &["OblivionRemastered/Binaries/Win64/dwmapi.dll"],
+    );
+    assert_eq!(or.wine_dll_overrides(&or_install).as_slice(), ["dwmapi"]);
+    let staging = dir("staging", &["ModA/version.dll"]);
+    assert_eq!(
+        or.wine_dll_overrides_from_staging(&staging).as_slice(),
+        ["version"]
+    );
+    assert_eq!(
+        witcher.wine_dll_overrides_from_staging(&staging).as_slice(),
+        ["version"]
+    );
+}
+
+#[test]
+fn witcher3_deploys_rooted_and_plain_staging() {
+    let tmp = TempDir::new().unwrap();
+    let witcher = &modde_games::witcher3::WITCHER3;
+
+    let rooted = tmp.path().join("rooted");
+    touch(&rooted.join("mods/modA/content/a.ws"));
+    touch(&rooted.join("bin/config/b.xml"));
+    let install = tmp.path().join("install-rooted");
+    witcher.deploy_to_install(&rooted, &install).unwrap();
+    assert!(install.join("mods/modA/content/a.ws").exists());
+    assert!(install.join("bin/config/b.xml").exists());
+
+    let plain = tmp.path().join("plain");
+    touch(&plain.join("modB/content/c.ws"));
+    let install = tmp.path().join("install-plain");
+    witcher.deploy_to_install(&plain, &install).unwrap();
+    assert!(install.join("mods/modB/content/c.ws").exists());
+}
