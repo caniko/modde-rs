@@ -13,10 +13,10 @@ impl Modde {
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
                     let profile_name = profile_name.clone();
-                    self.status_message = format!(
+                    self.set_status(format!(
                         "{} '{mod_id}'...",
                         if enabled { "Enabling" } else { "Disabling" }
-                    );
+                    ));
                     return Task::perform(
                         toggle_mod_enabled(self.db.clone(), profile_name, mod_id.clone(), enabled),
                         move |result| Message::ProfileWriteDone {
@@ -77,7 +77,7 @@ impl Modde {
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
                     let profile_name = profile_name.clone();
-                    self.status_message = format!("Adding mod: {mod_name}...");
+                    self.set_status(format!("Adding mod: {mod_name}..."));
                     return Task::perform(
                         add_mod_to_profile(self.db.clone(), profile_name, mod_name.clone()),
                         move |result| Message::ProfileWriteDone {
@@ -89,14 +89,14 @@ impl Modde {
                         },
                     );
                 }
-                self.status_message = "No active profile — create one first".to_string();
+                self.set_status("No active profile — create one first".to_string());
             }
             Message::RemoveMod(index) => {
                 if let Some(ref profile_name) = self.active_profile {
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
                     let profile_name = profile_name.clone();
-                    self.status_message = "Removing mod...".to_string();
+                    self.set_status("Removing mod...".to_string());
                     return Task::perform(
                         remove_mod_from_profile(self.db.clone(), profile_name, index),
                         move |result| Message::ProfileWriteDone {

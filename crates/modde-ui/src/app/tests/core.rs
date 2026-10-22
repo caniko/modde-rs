@@ -455,3 +455,14 @@ fn button_hover_exit_after_display_clears_toast() {
     assert!(app.button_hover_toast.pending.is_none());
     assert!(app.button_hover_toast.visible.is_none());
 }
+
+#[test]
+fn status_severity_follows_the_last_write() {
+    let mut app = test_app();
+    let _ = app.update(Message::DeployComplete(Err("boom".to_string())));
+    assert!(app.status_is_error);
+    assert_eq!(app.status_message, "Deploy failed: boom");
+    let _ = app.update(Message::DeployComplete(Ok("Deployed".to_string())));
+    assert!(!app.status_is_error);
+    assert_eq!(app.status_message, "Deployed");
+}

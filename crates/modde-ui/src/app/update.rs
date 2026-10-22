@@ -135,6 +135,7 @@ impl Modde {
             active_profile: None,
             profiles: Vec::new(),
             status_message: "Ready".to_string(),
+            status_is_error: false,
             button_hover_toast: ButtonHoverToastState::default(),
             pending_tools_load_status_message: None,
             settings,
@@ -290,26 +291,26 @@ impl Modde {
             return self.update_inner(message);
         }
         if !self.library.launching.is_empty() {
-            self.status_message =
-                "Finish the game session before changing profiles, mods, runners or saves".into();
+            self.set_error(
+                "Finish the game session before changing profiles, mods, runners or saves",
+            );
             return Task::none();
         }
         let guard = match modde_core::library::mutation_lock() {
             Ok(guard) => guard,
             Err(error) => {
-                self.status_message = error.to_string();
+                self.set_error(error.to_string());
                 return Task::none();
             }
         };
         match modde_core::library::PendingSession::load_blocking() {
             Ok(None) => {}
             Ok(Some(_)) => {
-                self.status_message =
-                    "Finish or recover the Library session before changing game state".into();
+                self.set_error("Finish or recover the Library session before changing game state");
                 return Task::none();
             }
             Err(error) => {
-                self.status_message = error.to_string();
+                self.set_error(error.to_string());
                 return Task::none();
             }
         }

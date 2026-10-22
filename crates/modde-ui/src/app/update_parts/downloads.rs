@@ -24,7 +24,7 @@ impl Modde {
                 } else {
                     0.0
                 };
-                self.status_message = format!("Downloading {id}: {pct:.0}%");
+                self.set_status(format!("Downloading {id}: {pct:.0}%"));
             }
             Message::DownloadComplete { id } => {
                 if let Some(task_id) = self.download_lookup.get(&id).copied()
@@ -36,7 +36,7 @@ impl Modde {
                         hash: task.expected_hash.unwrap_or(0),
                     };
                 }
-                self.status_message = format!("Download complete: {id}");
+                self.set_status(format!("Download complete: {id}"));
             }
             Message::DownloadFailed { id, error } => {
                 if let Some(task_id) = self.download_lookup.get(&id).copied()
@@ -47,7 +47,7 @@ impl Modde {
                         error: error.clone(),
                     };
                 }
-                self.status_message = format!("Download failed ({id}): {error}");
+                self.set_error(format!("Download failed ({id}): {error}"));
             }
             _ => unreachable!("message routed to wrong update handler"),
         }

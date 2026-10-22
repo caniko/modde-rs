@@ -141,7 +141,7 @@ impl Modde {
                     String::new()
                 };
                 if source.is_empty() {
-                    self.status_message = "Enter or select a .wabbajack source first".to_string();
+                    self.set_status("Enter or select a .wabbajack source first".to_string());
                     return Task::none();
                 }
                 if let View::WabbajackInstaller(ref mut state) = self.active_view {
@@ -194,8 +194,9 @@ impl Modde {
                 let (path, profile_name, game_dir) =
                     if let View::WabbajackInstaller(ref mut state) = self.active_view {
                         let Some(path) = state.file_path.clone() else {
-                            self.status_message =
-                                "Select or download a .wabbajack file first".to_string();
+                            self.set_status(
+                                "Select or download a .wabbajack file first".to_string(),
+                            );
                             return Task::none();
                         };
                         state.readiness_loading = true;
@@ -212,7 +213,7 @@ impl Modde {
                             },
                         )
                     } else {
-                        self.status_message = "No Wabbajack installer view is active".to_string();
+                        self.set_status("No Wabbajack installer view is active".to_string());
                         return Task::none();
                     };
                 return Task::perform(
@@ -251,13 +252,14 @@ impl Modde {
             Message::WabbajackImportArchives => {
                 let manifest_path = if let View::WabbajackInstaller(ref state) = self.active_view {
                     let Some(path) = state.file_path.clone() else {
-                        self.status_message =
-                            "Select a .wabbajack file before importing archives".to_string();
+                        self.set_status(
+                            "Select a .wabbajack file before importing archives".to_string(),
+                        );
                         return Task::none();
                     };
                     path
                 } else {
-                    self.status_message = "No Wabbajack installer view is active".to_string();
+                    self.set_status("No Wabbajack installer view is active".to_string());
                     return Task::none();
                 };
                 if let View::WabbajackInstaller(ref mut state) = self.active_view {

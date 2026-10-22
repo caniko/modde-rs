@@ -1,5 +1,5 @@
 use crate::action_button::{ButtonAction, DescribedButtonExt};
-use crate::views::selectable_text::{danger, text};
+use crate::views::selectable_text::{base, danger, text};
 use iced::widget::{button, column, container, mouse_area, opaque, row, stack, text_input};
 use iced::{Element, Length, Theme};
 
@@ -177,7 +177,12 @@ impl Modde {
         )
         .on_press(Message::TitleBarDrag);
 
-        let status_bar = container(text(&self.status_message).size(12)).padding(5);
+        let status_bar = container(
+            text(&self.status_message)
+                .size(12)
+                .style(if self.status_is_error { danger } else { base }),
+        )
+        .padding(5);
 
         let update_banner = self
             .update_available

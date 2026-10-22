@@ -8,7 +8,7 @@ impl Modde {
     pub(super) fn handle_deploy_update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Deploy => {
-                self.status_message = "Deploying mods...".to_string();
+                self.set_status("Deploying mods...".to_string());
                 if let Some(ref profile) = self.loaded_profile {
                     let profile_name = profile.name.clone();
                     let game_id = profile.game_id.clone();
@@ -26,8 +26,8 @@ impl Modde {
                 }
             }
             Message::DeployComplete(result) => match result {
-                Ok(msg) => self.status_message = msg,
-                Err(e) => self.status_message = format!("Deploy failed: {e}"),
+                Ok(msg) => self.set_status(msg),
+                Err(e) => self.set_error(format!("Deploy failed: {e}")),
             },
             _ => unreachable!("message routed to wrong update handler"),
         }

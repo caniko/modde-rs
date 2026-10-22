@@ -18,7 +18,7 @@ impl Modde {
                             self.library.pending = pending;
                         }
                         Err(error) => {
-                            self.status_message = format!("Could not load recovery state: {error}");
+                            self.set_error(format!("Could not load recovery state: {error}"));
                         }
                     }
                     if self.library.entries.is_empty() && !self.library.loading {
@@ -31,8 +31,9 @@ impl Modde {
                         self.save_snapshots.clear();
                         self.selected_save_details = None;
                         self.current_fingerprint = None;
-                        self.status_message =
-                            "Save profiles are not supported for this game".to_string();
+                        self.set_status(
+                            "Save profiles are not supported for this game".to_string(),
+                        );
                         return Task::none();
                     }
                     return self.update(Message::LoadSaveHistory);
@@ -83,13 +84,13 @@ impl Modde {
                 let task = self.reload_profile_refresh_diagnostics();
                 self.sync_browse_game_to_current(true);
                 self.selected_save_details = None;
-                self.status_message = "Profile switched".to_string();
+                self.set_status("Profile switched".to_string());
                 return task;
             }
             Message::CreateProfile { name, game_id } => {
                 let name = name.trim().to_string();
                 if name.is_empty() {
-                    self.status_message = "Profile name is required".to_string();
+                    self.set_error("Profile name is required".to_string());
                     return Task::none();
                 }
                 let profile = modde_core::Profile {
@@ -104,7 +105,7 @@ impl Modde {
                 };
                 self.context_generation = self.context_generation.wrapping_add(1);
                 let generation = self.context_generation;
-                self.status_message = format!("Creating profile '{name}'...");
+                self.set_status(format!("Creating profile '{name}'..."));
                 return Task::perform(create_profile(self.db.clone(), profile), move |result| {
                     Message::ProfileWriteDone {
                         generation,
@@ -119,7 +120,7 @@ impl Modde {
             Message::DeleteProfile(name) => {
                 self.context_generation = self.context_generation.wrapping_add(1);
                 let generation = self.context_generation;
-                self.status_message = format!("Deleting profile '{name}'...");
+                self.set_status(format!("Deleting profile '{name}'..."));
                 return Task::perform(
                     delete_profile(self.db.clone(), name.clone()),
                     move |result| Message::ProfileWriteDone {
@@ -134,7 +135,7 @@ impl Modde {
                     let game_id = profile.game_id.clone();
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
-                    self.status_message = format!("Forking profile as '{new_name}'...");
+                    self.set_status(format!("Forking profile as '{new_name}'..."));
                     return Task::perform(
                         fork_profile(
                             self.db.clone(),
@@ -181,7 +182,7 @@ impl Modde {
                             _ => {}
                         }
                         if let Some(status) = outcome.status_message {
-                            self.status_message = status;
+                            self.set_status(status);
                         }
                         if outcome.reload {
                             return match kind {
@@ -199,7 +200,7 @@ impl Modde {
                         }
                     }
                     Err(err) => {
-                        self.status_message = match kind {
+                        self.set_error(match kind {
                             ProfileWriteKind::Create { .. } => {
                                 format!("Failed to create profile: {err}")
                             }
@@ -223,7 +224,7 @@ impl Modde {
                             ProfileWriteKind::Unlock { .. } => {
                                 format!("Failed to unpin mod: {err}")
                             }
-                        };
+                        });
                     }
                 }
             }

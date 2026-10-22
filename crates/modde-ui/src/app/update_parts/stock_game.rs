@@ -9,7 +9,7 @@ impl Modde {
         match message {
             // ── Stock game ───────────────────────────────────────
             Message::CreateStockSnapshot => {
-                self.status_message = "Creating stock game snapshot...".to_string();
+                self.set_status("Creating stock game snapshot...".to_string());
                 if let Some(ref profile) = self.loaded_profile {
                     let game_id = profile.game_id.clone();
                     return Task::perform(
@@ -36,17 +36,17 @@ impl Modde {
                         Message::StockSnapshotCreated,
                     );
                 }
-                self.status_message = "No active profile".to_string();
+                self.set_status("No active profile".to_string());
             }
             Message::StockSnapshotCreated(result) => match result {
                 Ok(msg) => {
                     self.stock_snapshot_exists = true;
-                    self.status_message = msg;
+                    self.set_status(msg);
                 }
-                Err(e) => self.status_message = format!("Snapshot failed: {e}"),
+                Err(e) => self.set_error(format!("Snapshot failed: {e}")),
             },
             Message::VerifyStockSnapshot => {
-                self.status_message = "Verifying stock snapshot...".to_string();
+                self.set_status("Verifying stock snapshot...".to_string());
                 if let Some(ref profile) = self.loaded_profile {
                     let game_id = profile.game_id.clone();
                     return Task::perform(
@@ -77,8 +77,8 @@ impl Modde {
                 }
             }
             Message::StockVerifyResult(result) => match result {
-                Ok(msg) => self.status_message = msg,
-                Err(e) => self.status_message = format!("Verify failed: {e}"),
+                Ok(msg) => self.set_status(msg),
+                Err(e) => self.set_error(format!("Verify failed: {e}")),
             },
             _ => unreachable!("message routed to wrong update handler"),
         }

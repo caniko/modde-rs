@@ -8,19 +8,19 @@ impl Modde {
     pub(super) fn handle_tools_update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::LoadTools => {
-                self.status_message = "Loading tools...".to_string();
+                self.set_status("Loading tools...".to_string());
                 return self.start_tools_load();
             }
             Message::RefreshTools => {
-                self.status_message = "Loading tools...".to_string();
+                self.set_status("Loading tools...".to_string());
                 return self.start_tools_load();
             }
             Message::LoadExecutables => {
-                self.status_message = "Loading executables...".to_string();
+                self.set_status("Loading executables...".to_string());
                 return self.start_executables_load();
             }
             Message::RefreshExecutables => {
-                self.status_message = "Loading executables...".to_string();
+                self.set_status("Loading executables...".to_string());
                 return self.start_executables_load();
             }
             Message::ToolsLoaded { generation, result } => {
@@ -32,7 +32,7 @@ impl Modde {
                     Ok(snapshot) => {
                         let count = snapshot.entries.len();
                         self.apply_tool_snapshot(snapshot);
-                        self.status_message =
+                        let message =
                             if let Some(status) = self.pending_tools_load_status_message.take() {
                                 status
                             } else if count == 0 {
@@ -40,11 +40,12 @@ impl Modde {
                             } else {
                                 format!("Loaded {count} tool(s)")
                             };
+                        self.set_status(message);
                     }
                     Err(err) => {
                         self.pending_tools_load_status_message = None;
                         self.tool_state.load_error = Some(err.clone());
-                        self.status_message = format!("Failed to load tools: {err}");
+                        self.set_error(format!("Failed to load tools: {err}"));
                     }
                 }
             }
@@ -54,12 +55,12 @@ impl Modde {
                         self.tool_state.tool_option_catalog = option_catalog;
                     }
                     self.tool_state.active_tool_id = Some(tool_id);
-                    self.status_message = result.status_message;
+                    self.set_status(result.status_message);
                     self.pending_tools_load_status_message = Some(self.status_message.clone());
                     return self.start_tools_load();
                 }
                 Err(err) => {
-                    self.status_message = format!("Failed to update tool setting: {err}");
+                    self.set_error(format!("Failed to update tool setting: {err}"));
                 }
             },
             Message::ExecutablesLoaded { generation, result } => {
@@ -72,17 +73,17 @@ impl Modde {
                         let count = executables.len();
                         self.tool_state.executables = executables;
                         self.tool_state.executables_load_error = None;
-                        self.status_message = format!("Loaded {count} executable(s)");
+                        self.set_status(format!("Loaded {count} executable(s)"));
                     }
                     Err(err) => {
                         self.tool_state.executables_load_error = Some(err.clone());
-                        self.status_message = format!("Failed to load executables: {err}");
+                        self.set_error(format!("Failed to load executables: {err}"));
                     }
                 }
             }
             Message::RefreshOptiScalerReleases => {
                 self.tool_state.optiscaler_releases_loading = true;
-                self.status_message = "Loading OptiScaler releases...".to_string();
+                self.set_status("Loading OptiScaler releases...".to_string());
                 return Task::perform(
                     load_tool_releases("optiscaler".to_string()),
                     Message::OptiScalerReleasesLoaded,
@@ -93,13 +94,14 @@ impl Modde {
                 match result {
                     Ok(releases) => {
                         let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                            self.status_message =
-                                "Select a game before loading OptiScaler releases".to_string();
+                            self.set_status(
+                                "Select a game before loading OptiScaler releases".to_string(),
+                            );
                             return Task::none();
                         };
                         self.tool_state.optiscaler_releases = releases;
                         self.tool_state.active_tool_id = Some("optiscaler".to_string());
-                        self.status_message = "Loading OptiScaler release settings...".to_string();
+                        self.set_status("Loading OptiScaler release settings...".to_string());
                         return Task::perform(
                             save_optiscaler_release_selection_for_game(
                                 self.db.clone(),
@@ -115,16 +117,16 @@ impl Modde {
                         );
                     }
                     Err(err) => {
-                        self.status_message = format!("Failed to load OptiScaler releases: {err}");
+                        self.set_error(format!("Failed to load OptiScaler releases: {err}"));
                     }
                 }
             }
             Message::InstallOptiScalerRelease => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before installing OptiScaler".to_string();
+                    self.set_status("Select a game before installing OptiScaler".to_string());
                     return Task::none();
                 };
-                self.status_message = "Installing OptiScaler release...".to_string();
+                self.set_status("Installing OptiScaler release...".to_string());
                 return Task::perform(
                     install_selected_tool_release(
                         self.db.clone(),
@@ -137,16 +139,16 @@ impl Modde {
             Message::OptiScalerReleaseInstalled(result) => match result {
                 Ok(message) => {
                     self.tool_state.active_tool_id = Some("optiscaler".to_string());
-                    self.status_message = message;
+                    self.set_status(message);
                     return self.start_tools_load();
                 }
                 Err(err) => {
-                    self.status_message = format!("Failed to install OptiScaler: {err}");
+                    self.set_error(format!("Failed to install OptiScaler: {err}"));
                 }
             },
             Message::RefreshProtonVersions => {
                 self.tool_state.proton_versions_loading = true;
-                self.status_message = "Loading Proton versions...".to_string();
+                self.set_status("Loading Proton versions...".to_string());
                 return Task::perform(load_proton_versions(), Message::ProtonVersionsLoaded);
             }
             Message::ProtonVersionsLoaded(result) => {
@@ -154,8 +156,9 @@ impl Modde {
                 match result {
                     Ok(versions) => {
                         let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                            self.status_message =
-                                "Select a game before loading Proton versions".to_string();
+                            self.set_status(
+                                "Select a game before loading Proton versions".to_string(),
+                            );
                             return Task::none();
                         };
                         let versions = if versions.is_empty() {
@@ -176,7 +179,7 @@ impl Modde {
                             vec!["true".to_string()],
                         );
                         self.tool_state.active_tool_id = Some("proton".to_string());
-                        self.status_message = "Loading Proton version settings...".to_string();
+                        self.set_status("Loading Proton version settings...".to_string());
                         return Task::perform(
                             save_proton_selected_version_for_game(
                                 self.db.clone(),
@@ -191,16 +194,16 @@ impl Modde {
                         );
                     }
                     Err(err) => {
-                        self.status_message = format!("Failed to load Proton versions: {err}");
+                        self.set_error(format!("Failed to load Proton versions: {err}"));
                     }
                 }
             }
             Message::InstallProtonVersion => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before installing Proton".to_string();
+                    self.set_status("Select a game before installing Proton".to_string());
                     return Task::none();
                 };
-                self.status_message = "Installing Proton with protonup-rs...".to_string();
+                self.set_status("Installing Proton with protonup-rs...".to_string());
                 return Task::perform(
                     install_selected_proton_version(self.db.clone(), game_id),
                     Message::ProtonVersionInstalled,
@@ -209,11 +212,11 @@ impl Modde {
             Message::ProtonVersionInstalled(result) => match result {
                 Ok(message) => {
                     self.tool_state.active_tool_id = Some("proton".to_string());
-                    self.status_message = message;
+                    self.set_status(message);
                     return self.start_tools_load();
                 }
                 Err(err) => {
-                    self.status_message = format!("Failed to install Proton: {err}");
+                    self.set_error(format!("Failed to install Proton: {err}"));
                 }
             },
             Message::SelectToolTab(tool_id) => {
@@ -231,7 +234,7 @@ impl Modde {
                 self.tool_state.active_tool_id = Some(tool_id);
                 if should_load_optiscaler {
                     self.tool_state.optiscaler_releases_loading = true;
-                    self.status_message = "Loading OptiScaler releases...".to_string();
+                    self.set_status("Loading OptiScaler releases...".to_string());
                     return Task::perform(
                         load_tool_releases("optiscaler".to_string()),
                         Message::OptiScalerReleasesLoaded,
@@ -239,7 +242,7 @@ impl Modde {
                 }
                 if should_load_proton {
                     self.tool_state.proton_versions_loading = true;
-                    self.status_message = "Loading Proton versions...".to_string();
+                    self.set_status("Loading Proton versions...".to_string());
                     return Task::perform(load_proton_versions(), Message::ProtonVersionsLoaded);
                 }
             }
@@ -249,16 +252,16 @@ impl Modde {
                 value,
             } => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before configuring tools".to_string();
+                    self.set_status("Select a game before configuring tools".to_string());
                     return Task::none();
                 };
                 let Some(tool) = modde_games::tools::resolve_tool(&tool_id) else {
-                    self.status_message = format!("Unknown tool: {tool_id}");
+                    self.set_status(format!("Unknown tool: {tool_id}"));
                     return Task::none();
                 };
                 let display_name = tool.display_name().to_string();
                 self.tool_state.active_tool_id = Some(tool_id.clone());
-                self.status_message = format!("Updating {display_name} setting...");
+                self.set_status(format!("Updating {display_name} setting..."));
                 return Task::perform(
                     save_tool_setting_for_game(
                         self.db.clone(),
@@ -278,20 +281,20 @@ impl Modde {
             }
             Message::ToggleTool { tool_id, enabled } => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before toggling tools".to_string();
+                    self.set_status("Select a game before toggling tools".to_string());
                     return Task::none();
                 };
                 let Some(tool) = modde_games::tools::resolve_tool(&tool_id) else {
-                    self.status_message = format!("Unknown tool: {tool_id}");
+                    self.set_status(format!("Unknown tool: {tool_id}"));
                     return Task::none();
                 };
                 let display_name = tool.display_name().to_string();
                 self.tool_state.active_tool_id = Some(tool_id.clone());
-                self.status_message = format!(
+                self.set_status(format!(
                     "{} {}...",
                     if enabled { "Enabling" } else { "Disabling" },
                     display_name
-                );
+                ));
                 return Task::perform(
                     toggle_tool_for_game(
                         self.db.clone(),
@@ -312,20 +315,20 @@ impl Modde {
             Message::ActivateOptiScaler => {
                 let id = "optiscaler".to_string();
                 if self.tool_state.is_tool_busy(&id) {
-                    self.status_message = "OptiScaler operation already in progress".to_string();
+                    self.set_status("OptiScaler operation already in progress".to_string());
                     return Task::none();
                 }
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before activating OptiScaler".to_string();
+                    self.set_status("Select a game before activating OptiScaler".to_string());
                     return Task::none();
                 };
                 let Some(game_dir) = self.current_game_dir() else {
-                    self.status_message = "Game install path is not configured".to_string();
+                    self.set_status("Game install path is not configured".to_string());
                     return Task::none();
                 };
                 let context = self.current_tool_game_context();
                 self.tool_state.active_operations.insert(id.clone());
-                self.status_message = "Activating OptiScaler...".to_string();
+                self.set_status("Activating OptiScaler...".to_string());
                 let db = self.db.clone();
                 return Task::perform(
                     apply_tool_for_game(db, game_id, game_dir, id.clone(), context),
@@ -338,20 +341,19 @@ impl Modde {
             Message::DeactivateOptiScaler => {
                 let id = "optiscaler".to_string();
                 if self.tool_state.is_tool_busy(&id) {
-                    self.status_message = "OptiScaler operation already in progress".to_string();
+                    self.set_status("OptiScaler operation already in progress".to_string());
                     return Task::none();
                 }
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message =
-                        "Select a game before deactivating OptiScaler".to_string();
+                    self.set_status("Select a game before deactivating OptiScaler".to_string());
                     return Task::none();
                 };
                 let Some(game_dir) = self.current_game_dir() else {
-                    self.status_message = "Game install path is not configured".to_string();
+                    self.set_status("Game install path is not configured".to_string());
                     return Task::none();
                 };
                 self.tool_state.active_operations.insert(id.clone());
-                self.status_message = "Deactivating OptiScaler...".to_string();
+                self.set_status("Deactivating OptiScaler...".to_string());
                 let db = self.db.clone();
                 return Task::perform(
                     deactivate_optiscaler_for_game(db, game_id, game_dir),
@@ -363,11 +365,10 @@ impl Modde {
             }
             Message::RestoreToolSettings { tool_id, node_id } => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message =
-                        "Select a game before restoring tool settings".to_string();
+                    self.set_status("Select a game before restoring tool settings".to_string());
                     return Task::none();
                 };
-                self.status_message = "Restoring tool settings...".to_string();
+                self.set_status("Restoring tool settings...".to_string());
                 let db = self.db.clone();
                 return Task::perform(
                     restore_tool_settings_for_game(db, game_id, tool_id.clone(), node_id),
@@ -380,35 +381,35 @@ impl Modde {
             Message::ToolSettingsRestored { tool_id, result } => match result {
                 Ok(message) => {
                     self.tool_state.active_tool_id = Some(tool_id);
-                    self.status_message = message;
+                    self.set_status(message);
                     if self.tool_load_request().is_some() {
                         return self.start_tools_load();
                     }
                 }
                 Err(err) => {
-                    self.status_message = format!("Failed to restore tool settings: {err}");
+                    self.set_error(format!("Failed to restore tool settings: {err}"));
                 }
             },
             Message::ApplyTool(id) => {
                 if self.tool_state.is_tool_busy(&id) {
-                    self.status_message = format!("{id} operation already in progress");
+                    self.set_status(format!("{id} operation already in progress"));
                     return Task::none();
                 }
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before applying tools".to_string();
+                    self.set_status("Select a game before applying tools".to_string());
                     return Task::none();
                 };
                 let Some(game_dir) = self.current_game_dir() else {
-                    self.status_message = "Game install path is not configured".to_string();
+                    self.set_status("Game install path is not configured".to_string());
                     return Task::none();
                 };
                 let Some(tool) = modde_games::tools::resolve_tool(&id) else {
-                    self.status_message = format!("Unknown tool: {id}");
+                    self.set_status(format!("Unknown tool: {id}"));
                     return Task::none();
                 };
                 let context = self.current_tool_game_context();
                 self.tool_state.active_operations.insert(id.clone());
-                self.status_message = format!("Applying {}...", tool.display_name());
+                self.set_status(format!("Applying {}...", tool.display_name()));
                 let db = self.db.clone();
                 return Task::perform(
                     apply_tool_for_game(db, game_id, game_dir, id.clone(), context),
@@ -420,23 +421,23 @@ impl Modde {
             }
             Message::RevertTool(id) => {
                 if self.tool_state.is_tool_busy(&id) {
-                    self.status_message = format!("{id} operation already in progress");
+                    self.set_status(format!("{id} operation already in progress"));
                     return Task::none();
                 }
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before reverting tools".to_string();
+                    self.set_status("Select a game before reverting tools".to_string());
                     return Task::none();
                 };
                 let Some(game_dir) = self.current_game_dir() else {
-                    self.status_message = "Game install path is not configured".to_string();
+                    self.set_status("Game install path is not configured".to_string());
                     return Task::none();
                 };
                 let Some(tool) = modde_games::tools::resolve_tool(&id) else {
-                    self.status_message = format!("Unknown tool: {id}");
+                    self.set_status(format!("Unknown tool: {id}"));
                     return Task::none();
                 };
                 self.tool_state.active_operations.insert(id.clone());
-                self.status_message = format!("Reverting {}...", tool.display_name());
+                self.set_status(format!("Reverting {}...", tool.display_name()));
                 let db = self.db.clone();
                 return Task::perform(
                     revert_tool_for_game(db, game_id, game_dir, id.clone()),
@@ -455,16 +456,16 @@ impl Modde {
                             .validation_message
                             .map(|message| format!("; {message}"))
                             .unwrap_or_default();
-                        self.status_message = format!(
+                        self.set_status(format!(
                             "Applied {} ({} file(s)){validation}",
                             result.display_name, result.applied_file_count
-                        );
+                        ));
                         if self.tool_load_request().is_some() {
                             return self.start_tools_load();
                         }
                     }
                     Err(err) => {
-                        self.status_message = format!("Failed to apply tool: {err}");
+                        self.set_error(format!("Failed to apply tool: {err}"));
                     }
                 }
             }
@@ -473,13 +474,13 @@ impl Modde {
                 match result {
                     Ok(result) => {
                         self.tool_state.active_tool_id = Some(tool_id);
-                        self.status_message = format!("Reverted {}", result.display_name);
+                        self.set_status(format!("Reverted {}", result.display_name));
                         if self.tool_load_request().is_some() {
                             return self.start_tools_load();
                         }
                     }
                     Err(err) => {
-                        self.status_message = format!("Failed to revert tool: {err}");
+                        self.set_error(format!("Failed to revert tool: {err}"));
                     }
                 }
             }

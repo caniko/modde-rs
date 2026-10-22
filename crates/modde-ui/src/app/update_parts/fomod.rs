@@ -16,14 +16,14 @@ impl Modde {
                 let xml = match std::fs::read_to_string(&config_path) {
                     Ok(xml) => xml,
                     Err(e) => {
-                        self.status_message = format!("Failed to read ModuleConfig.xml: {e}");
+                        self.set_error(format!("Failed to read ModuleConfig.xml: {e}"));
                         return Task::none();
                     }
                 };
                 let config = match fomod_oxide::ModuleConfig::parse(&xml) {
                     Ok(c) => c,
                     Err(e) => {
-                        self.status_message = format!("Failed to parse ModuleConfig.xml: {e}");
+                        self.set_error(format!("Failed to parse ModuleConfig.xml: {e}"));
                         return Task::none();
                     }
                 };
@@ -43,7 +43,7 @@ impl Modde {
                 self.refresh_fomod_visible_steps();
                 self.refresh_fomod_conflicts();
                 self.active_view = View::FOMODWizard(FOMODWizardState::new());
-                self.status_message = "FOMOD wizard started".to_string();
+                self.set_status("FOMOD wizard started".to_string());
             }
             Message::FOMODChoice {
                 step,
@@ -105,10 +105,11 @@ impl Modde {
                     })();
                     match &result {
                         Ok(()) => {
-                            self.status_message =
-                                "FOMOD installation completed successfully".to_string();
+                            self.set_status(
+                                "FOMOD installation completed successfully".to_string(),
+                            );
                         }
-                        Err(e) => self.status_message = format!("FOMOD installation failed: {e}"),
+                        Err(e) => self.set_error(format!("FOMOD installation failed: {e}")),
                     }
                     self.reset_fomod();
                     self.active_view = View::ModList;
@@ -128,7 +129,7 @@ impl Modde {
             Message::FOMODCancel => {
                 self.reset_fomod();
                 self.active_view = View::ModList;
-                self.status_message = "FOMOD installation cancelled".to_string();
+                self.set_status("FOMOD installation cancelled".to_string());
             }
             Message::FOMODUndo => {
                 let rolled_back = self
@@ -142,12 +143,12 @@ impl Modde {
                     }
                     self.refresh_fomod_visible_steps();
                     self.refresh_fomod_conflicts();
-                    self.status_message = "Undid last FOMOD selection".to_string();
+                    self.set_status("Undid last FOMOD selection".to_string());
                 }
             }
             Message::FOMODInstallComplete(result) => match result {
-                Ok(()) => self.status_message = "FOMOD installation complete!".to_string(),
-                Err(e) => self.status_message = format!("FOMOD installation failed: {e}"),
+                Ok(()) => self.set_status("FOMOD installation complete!".to_string()),
+                Err(e) => self.set_error(format!("FOMOD installation failed: {e}")),
             },
             _ => unreachable!("message routed to wrong update handler"),
         }

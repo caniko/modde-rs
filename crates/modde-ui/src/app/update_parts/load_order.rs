@@ -36,7 +36,7 @@ impl Modde {
                 self.context_generation = self.context_generation.wrapping_add(1);
                 let generation = self.context_generation;
                 let profile_name = profile_name.clone();
-                self.status_message = format!("Pinning '{mod_id}'...");
+                self.set_status(format!("Pinning '{mod_id}'..."));
                 return Task::perform(
                     set_mod_lock(self.db.clone(), profile_name, mod_id.clone(), true),
                     move |result| Message::ProfileWriteDone {
@@ -55,7 +55,7 @@ impl Modde {
                 self.context_generation = self.context_generation.wrapping_add(1);
                 let generation = self.context_generation;
                 let profile_name = profile_name.clone();
-                self.status_message = format!("Unpinning '{mod_id}'...");
+                self.set_status(format!("Unpinning '{mod_id}'..."));
                 return Task::perform(
                     set_mod_lock(self.db.clone(), profile_name, mod_id.clone(), false),
                     move |result| Message::ProfileWriteDone {

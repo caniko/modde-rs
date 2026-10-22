@@ -28,8 +28,9 @@ impl Modde {
                     if !Self::game_supports_save_profiles(game_id.as_str()) {
                         self.save_snapshots.clear();
                         self.current_fingerprint = None;
-                        self.status_message =
-                            "Save profiles are not supported for this game".to_string();
+                        self.set_status(
+                            "Save profiles are not supported for this game".to_string(),
+                        );
                         return Task::none();
                     }
                     let profile_name = profile.name.clone();
@@ -37,7 +38,7 @@ impl Modde {
                         Ok(context) => context,
                         Err(error) => {
                             self.save_snapshots.clear();
-                            self.status_message = error;
+                            self.set_error(error);
                             return Task::none();
                         }
                     };
@@ -46,7 +47,7 @@ impl Modde {
                         Ok(history) => self.save_snapshots = history,
                         Err(e) => {
                             self.save_snapshots = Vec::new();
-                            self.status_message = format!("Could not load save history: {e}");
+                            self.set_error(format!("Could not load save history: {e}"));
                         }
                     }
                 }
@@ -67,7 +68,7 @@ impl Modde {
                         let context = match self.installation_saves(&profile.game_id) {
                             Ok(context) => context,
                             Err(error) => {
-                                self.status_message = error;
+                                self.set_error(error);
                                 return Task::none();
                             }
                         };
@@ -95,7 +96,7 @@ impl Modde {
                         )) {
                             Ok(context) => context,
                             Err(error) => {
-                                self.status_message = error.to_string();
+                                self.set_error(error.to_string());
                                 return Task::none();
                             }
                         };
@@ -104,11 +105,11 @@ impl Modde {
                         {
                             Ok(Some((_, active))) if active == profile_name => {}
                             Ok(_) => {
-                                self.status_message = "Activate this profile for the selected installation before restoring its saves".into();
+                                self.set_status("Activate this profile for the selected installation before restoring its saves");
                                 return Task::none();
                             }
                             Err(error) => {
-                                self.status_message = error.to_string();
+                                self.set_error(error.to_string());
                                 return Task::none();
                             }
                         }
@@ -120,16 +121,16 @@ impl Modde {
                             self.current_fingerprint.as_ref(),
                         )) {
                             Ok(count) => {
-                                self.status_message = format!("Restored {count} save file(s)");
+                                self.set_status(format!("Restored {count} save file(s)"));
                             }
-                            Err(e) => self.status_message = format!("Restore failed: {e}"),
+                            Err(e) => self.set_error(format!("Restore failed: {e}")),
                         }
                     } else if Self::game_supports_save_profiles(game_id.as_str()) {
-                        self.status_message =
-                            "Cannot detect save directory for this game".to_string();
+                        self.set_error("Cannot detect save directory for this game".to_string());
                     } else {
-                        self.status_message =
-                            "Save profiles are not supported for this game".to_string();
+                        self.set_status(
+                            "Save profiles are not supported for this game".to_string(),
+                        );
                     }
                 }
             }
@@ -159,7 +160,7 @@ impl Modde {
                         self.diagnostics_state = crate::views::diagnostics::DiagnosticsState::Error(
                             format!("Diagnostics failed: {err}"),
                         );
-                        self.status_message = format!("Diagnostics failed: {err}");
+                        self.set_error(format!("Diagnostics failed: {err}"));
                     }
                 }
             }

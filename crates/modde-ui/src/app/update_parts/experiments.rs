@@ -17,7 +17,7 @@ impl Modde {
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
                     let current_depth = self.experiment_depth;
-                    self.status_message = "Starting experiment...".to_string();
+                    self.set_status("Starting experiment...".to_string());
                     return Task::perform(
                         run_experiment_write(
                             self.db.clone(),
@@ -41,7 +41,7 @@ impl Modde {
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
                     let current_depth = self.experiment_depth;
-                    self.status_message = "Rolling back experiment...".to_string();
+                    self.set_status("Rolling back experiment...".to_string());
                     return Task::perform(
                         run_experiment_write(
                             self.db.clone(),
@@ -65,7 +65,7 @@ impl Modde {
                     self.context_generation = self.context_generation.wrapping_add(1);
                     let generation = self.context_generation;
                     let current_depth = self.experiment_depth;
-                    self.status_message = "Committing experiment...".to_string();
+                    self.set_status("Committing experiment...".to_string());
                     return Task::perform(
                         run_experiment_write(
                             self.db.clone(),
@@ -101,17 +101,17 @@ impl Modde {
                         } else if matches!(kind, ExperimentWriteKind::Commit) {
                             self.experiment_depth = 0;
                         }
-                        self.status_message = outcome.status_message;
+                        self.set_status(outcome.status_message);
                         if outcome.reload {
                             return self.reload_profile();
                         }
                     }
                     Err(err) => {
-                        self.status_message = match kind {
+                        self.set_error(match kind {
                             ExperimentWriteKind::Try => format!("Try failed: {err}"),
                             ExperimentWriteKind::Rollback => format!("Rollback failed: {err}"),
                             ExperimentWriteKind::Commit => format!("Commit failed: {err}"),
-                        };
+                        });
                     }
                 }
             }

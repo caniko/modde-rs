@@ -18,12 +18,12 @@ impl Modde {
             }
             Message::SubmitNewProfileDialog => {
                 let Some(game_id) = self.selected_game.clone() else {
-                    self.status_message = "Select a game before creating a profile".to_string();
+                    self.set_error("Select a game before creating a profile".to_string());
                     return Task::none();
                 };
                 let name = self.new_profile_name.trim().to_string();
                 if name.is_empty() {
-                    self.status_message = "Profile name is required".to_string();
+                    self.set_error("Profile name is required".to_string());
                     return Task::none();
                 }
                 return self.update(Message::CreateProfile { name, game_id });

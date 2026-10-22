@@ -65,7 +65,7 @@ impl Modde {
             }
             Message::SaveExecutable => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before saving executables".to_string();
+                    self.set_status("Select a game before saving executables".to_string());
                     return Task::none();
                 };
                 let row = match executable_draft_to_row(&game_id, &self.tool_state.executable_draft)
@@ -73,11 +73,11 @@ impl Modde {
                     Ok(row) => row,
                     Err(err) => {
                         self.tool_state.executable_error = Some(err.clone());
-                        self.status_message = format!("Executable not saved: {err}");
+                        self.set_error(format!("Executable not saved: {err}"));
                         return Task::none();
                     }
                 };
-                self.status_message = format!("Saving executable '{}'...", row.name);
+                self.set_status(format!("Saving executable '{}'...", row.name));
                 return Task::perform(
                     save_executable_for_game(self.db.clone(), row),
                     Message::ExecutableSaved,
@@ -85,7 +85,7 @@ impl Modde {
             }
             Message::ExecutableSaved(result) => match result {
                 Ok(message) => {
-                    self.status_message = message;
+                    self.set_status(message);
                     self.tool_state.executable_error = None;
                     self.tool_state.executable_draft = ExecutableDraft::default();
                     self.tool_state.executable_editor_open = false;
@@ -93,12 +93,12 @@ impl Modde {
                 }
                 Err(err) => {
                     self.tool_state.executable_error = Some(err.clone());
-                    self.status_message = format!("Executable not saved: {err}");
+                    self.set_error(format!("Executable not saved: {err}"));
                 }
             },
             Message::RemoveExecutable(name) => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before removing executables".to_string();
+                    self.set_status("Select a game before removing executables".to_string());
                     return Task::none();
                 };
                 self.tool_state
@@ -117,28 +117,28 @@ impl Modde {
                 self.tool_state.active_executable_operations.remove(&name);
                 match result {
                     Ok(message) => {
-                        self.status_message = message;
+                        self.set_status(message);
                         return self.refresh_executables_or_tools();
                     }
                     Err(err) => {
                         self.tool_state.executable_error = Some(err.clone());
-                        self.status_message = format!("Executable not removed: {err}");
+                        self.set_error(format!("Executable not removed: {err}"));
                     }
                 }
             }
             Message::RunExecutable(name) => {
                 if self.tool_state.is_executable_busy(&name) {
-                    self.status_message = format!("Executable '{name}' is already running");
+                    self.set_status(format!("Executable '{name}' is already running"));
                     return Task::none();
                 }
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before running executables".to_string();
+                    self.set_status("Select a game before running executables".to_string());
                     return Task::none();
                 };
                 self.tool_state
                     .active_executable_operations
                     .insert(name.clone());
-                self.status_message = format!("Running executable '{name}'...");
+                self.set_status(format!("Running executable '{name}'..."));
                 let profile = self.active_profile.clone();
                 let db = self.db.clone();
                 return Task::perform(
@@ -153,12 +153,12 @@ impl Modde {
                 self.tool_state.active_executable_operations.remove(&name);
                 match result {
                     Ok(message) => {
-                        self.status_message = message;
+                        self.set_status(message);
                         return self.refresh_executables_or_tools();
                     }
                     Err(err) => {
                         self.tool_state.executable_error = Some(err.clone());
-                        self.status_message = format!("Executable failed: {err}");
+                        self.set_error(format!("Executable failed: {err}"));
                     }
                 }
             }
@@ -200,16 +200,16 @@ impl Modde {
             }
             Message::AdoptOptiScaler => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before adopting OptiScaler".to_string();
+                    self.set_error("Select a game before adopting OptiScaler".to_string());
                     return Task::none();
                 };
                 let Some(game_dir) = self.current_game_dir() else {
-                    self.status_message = "Game install path is not configured".to_string();
+                    self.set_status("Game install path is not configured".to_string());
                     return Task::none();
                 };
                 let context = self.current_tool_game_context();
                 self.tool_state.active_tool_id = Some("optiscaler".to_string());
-                self.status_message = "Adopting OptiScaler...".to_string();
+                self.set_status("Adopting OptiScaler...".to_string());
                 return Task::perform(
                     adopt_optiscaler_for_game(self.db.clone(), game_id, game_dir, context),
                     |result| Message::ToolSettingWritten {
@@ -220,11 +220,11 @@ impl Modde {
             }
             Message::RestoreOptiScalerBackup => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before restoring OptiScaler".to_string();
+                    self.set_status("Select a game before restoring OptiScaler".to_string());
                     return Task::none();
                 };
                 let Some(game_dir) = self.current_game_dir() else {
-                    self.status_message = "Game install path is not configured".to_string();
+                    self.set_status("Game install path is not configured".to_string());
                     return Task::none();
                 };
                 match modde_games::tools::optiscaler::restore_latest_optiscaler_backup(
@@ -232,23 +232,22 @@ impl Modde {
                 ) {
                     Ok(path) => {
                         self.tool_state.active_tool_id = Some("optiscaler".to_string());
-                        self.status_message =
-                            format!("Restored OptiScaler backup {}", path.display());
+                        self.set_status(format!("Restored OptiScaler backup {}", path.display()));
                         self.pending_tools_load_status_message = Some(self.status_message.clone());
                         return self.start_tools_load();
                     }
                     Err(err) => {
-                        self.status_message = format!("Failed to restore OptiScaler: {err}");
+                        self.set_error(format!("Failed to restore OptiScaler: {err}"));
                     }
                 }
             }
             Message::ResetOptiScalerConfig => {
                 let Some(game_id) = self.current_game_id().map(str::to_string) else {
-                    self.status_message = "Select a game before resetting OptiScaler".to_string();
+                    self.set_status("Select a game before resetting OptiScaler".to_string());
                     return Task::none();
                 };
                 self.tool_state.active_tool_id = Some("optiscaler".to_string());
-                self.status_message = "Resetting OptiScaler config...".to_string();
+                self.set_status("Resetting OptiScaler config...".to_string());
                 return Task::perform(
                     reset_optiscaler_config_for_game(self.db.clone(), game_id),
                     |result| Message::ToolSettingWritten {
@@ -260,7 +259,7 @@ impl Modde {
             // Downloads
             Message::PauseDownload(id) => {
                 self.download_queue.pause(id);
-                self.status_message = "Download paused".to_string();
+                self.set_status("Download paused".to_string());
             }
             Message::ResumeDownload(id) => {
                 self.download_queue.resume(id);
@@ -271,12 +270,12 @@ impl Modde {
                     };
                     task.meta.status = "downloading".to_string();
                 }
-                self.status_message = "Download resumed".to_string();
+                self.set_status("Download resumed".to_string());
             }
             Message::CancelDownload(id) => {
                 self.download_lookup.retain(|_, value| *value != id);
                 self.download_queue.cancel(id);
-                self.status_message = "Download cancelled".to_string();
+                self.set_status("Download cancelled".to_string());
             }
 
             // Overwrite management
@@ -284,7 +283,7 @@ impl Modde {
                 if let Some(profile) = &self.loaded_profile {
                     let _ = std::fs::remove_dir_all(&profile.overrides);
                     let _ = std::fs::create_dir_all(&profile.overrides);
-                    self.status_message = "Overrides cleared".to_string();
+                    self.set_status("Overrides cleared".to_string());
                 }
             }
             Message::MoveOverwriteToMod(mod_name) => {
@@ -302,7 +301,7 @@ impl Modde {
                                 let _ = std::fs::rename(src, &dst);
                             }
                         }
-                        self.status_message = format!("Moved overrides to mod '{mod_name}'");
+                        self.set_status(format!("Moved overrides to mod '{mod_name}'"));
                     }
                 }
             }

@@ -12,7 +12,7 @@ impl Modde {
             // restarting or switching profiles.
             Message::ExternalRefresh => {
                 let task = self.reload_profile();
-                self.status_message = "Refreshed from external change".to_string();
+                self.set_status("Refreshed from external change".to_string());
                 return Task::batch([task, self.start_library_load()]);
             }
             Message::ProfileContextLoaded { generation, result } => {
@@ -31,7 +31,7 @@ impl Modde {
                     }
                     Err(err) => {
                         self.tool_state.loading = false;
-                        self.status_message = format!("Failed to load profile: {err}");
+                        self.set_error(format!("Failed to load profile: {err}"));
                     }
                 }
             }
@@ -48,7 +48,7 @@ impl Modde {
                     Err(err) => {
                         self.data_tab_conflicts.clear();
                         self.data_tab_state.missing_store_mod_count = 0;
-                        self.status_message = err;
+                        self.set_status(err);
                     }
                 }
             }

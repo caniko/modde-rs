@@ -20,8 +20,9 @@ impl Modde {
                         (String::new(), String::new(), String::new(), String::new())
                     };
                 if source.is_empty() || profile.is_empty() || game.is_empty() {
-                    self.status_message =
-                        "Wabbajack source, HM profile, and game are required".to_string();
+                    self.set_status(
+                        "Wabbajack source, HM profile, and game are required".to_string(),
+                    );
                     return Task::none();
                 }
                 return Task::perform(
@@ -61,8 +62,9 @@ impl Modde {
                 if let View::WabbajackInstaller(ref state) = self.active_view
                     && !state.hm_snippet.is_empty()
                 {
-                    self.status_message = "Copied Home Manager snippet".to_string();
-                    return iced::clipboard::write(state.hm_snippet.clone());
+                    let snippet = state.hm_snippet.clone();
+                    self.set_status("Copied Home Manager snippet");
+                    return iced::clipboard::write(snippet);
                 }
             }
             Message::WabbajackSaveHmSnippet => {
@@ -72,7 +74,7 @@ impl Modde {
                     String::new()
                 };
                 if snippet.is_empty() {
-                    self.status_message = "Generate a Home Manager snippet first".to_string();
+                    self.set_status("Generate a Home Manager snippet first".to_string());
                     return Task::none();
                 }
                 return Task::perform(
@@ -108,7 +110,7 @@ impl Modde {
             }
             Message::WabbajackOpenUrl(url) => {
                 if let Err(e) = open::that(&url) {
-                    self.status_message = format!("Failed to open {url}: {e}");
+                    self.set_error(format!("Failed to open {url}: {e}"));
                 }
             }
             Message::OpenWabbajackFile => {
@@ -155,7 +157,7 @@ impl Modde {
                     }
                     should_recheck = true;
                 }
-                self.status_message = format!("Wabbajack file loaded: {}", path.display());
+                self.set_status(format!("Wabbajack file loaded: {}", path.display()));
                 if should_recheck {
                     return self.update(Message::WabbajackCheckReadiness);
                 }
@@ -171,12 +173,12 @@ impl Modde {
                 let (path, profile_name, game_dir) =
                     if let View::WabbajackInstaller(ref mut state) = self.active_view {
                         if let Some(blocker) = state.install_blocker() {
-                            self.status_message = blocker.clone();
-                            state.status = blocker;
+                            state.status = blocker.clone();
+                            self.set_status(blocker);
                             return Task::none();
                         }
                         let Some(path) = state.file_path.clone() else {
-                            self.status_message = "No wabbajack file selected".to_string();
+                            self.set_status("No wabbajack file selected".to_string());
                             return Task::none();
                         };
                         state.status = "Starting installation...".to_string();
@@ -197,7 +199,7 @@ impl Modde {
                             },
                         )
                     } else {
-                        self.status_message = "No wabbajack file selected".to_string();
+                        self.set_status("No wabbajack file selected".to_string());
                         return Task::none();
                     };
                 let db = self.db.clone();
@@ -224,15 +226,16 @@ impl Modde {
                                 state.install_current_item.clear();
                                 state.status = summary.status_message.clone();
                                 state.log_lines.push(summary.status_message.clone());
-                                self.status_message = summary.status_message;
+                                self.set_status(summary.status_message);
                                 return self.reload_profile();
                             }
                             Err(error) => {
                                 state.install_phase = "Failed".to_string();
                                 state.install_current_item.clear();
                                 state.status = format!("Install failed: {error}");
-                                state.log_lines.push(state.status.clone());
-                                self.status_message = state.status.clone();
+                                let message = state.status.clone();
+                                state.log_lines.push(message.clone());
+                                self.set_error(message);
                             }
                         }
                     }
@@ -248,15 +251,16 @@ impl Modde {
                             state.install_current_item.clear();
                             state.status = summary.clone();
                             state.log_lines.extend(lines);
-                            self.status_message = summary;
+                            self.set_status(summary);
                             return self.reload_profile();
                         }
                         Err(e) => {
                             state.install_phase = "Failed".to_string();
                             state.install_current_item.clear();
                             state.status = format!("Install failed: {e}");
-                            state.log_lines.push(state.status.clone());
-                            self.status_message = state.status.clone();
+                            let message = state.status.clone();
+                            state.log_lines.push(message.clone());
+                            self.set_error(message);
                         }
                     }
                 }

@@ -248,6 +248,7 @@ fn base_demo_app(opts: &ShotOptions) -> Modde {
         active_profile: None,
         profiles: Vec::new(),
         status_message: "Ready".to_string(),
+        status_is_error: false,
         button_hover_toast: ButtonHoverToastState::default(),
         pending_tools_load_status_message: None,
         settings: modde_core::settings::AppSettings::default(),

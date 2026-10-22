@@ -37,7 +37,7 @@ impl Modde {
                 if !path.is_dir() {
                     self.game_path_dialog_error =
                         Some(format!("Not a directory: {}", path.display()));
-                    self.status_message = "Select a valid game directory".to_string();
+                    self.set_status("Select a valid game directory".to_string());
                     return Task::none();
                 }
                 self.settings
@@ -51,7 +51,7 @@ impl Modde {
                 self.game_path_dialog_error = None;
                 let task = self.switch_game_context(&game_id);
                 self.save_settings();
-                self.status_message = format!("Active game set to {game_id}");
+                self.set_status(format!("Active game set to {game_id}"));
                 return task;
             }
             Message::CancelGamePathDialog => {
@@ -64,7 +64,7 @@ impl Modde {
                 self.settings.selected_game = previous.clone();
                 let task = if let Some(game_id) = previous {
                     let task = self.switch_game_context(&game_id);
-                    self.status_message = format!("Active game remains {game_id}");
+                    self.set_status(format!("Active game remains {game_id}"));
                     task
                 } else {
                     self.clear_game_scoped_state();
@@ -72,7 +72,7 @@ impl Modde {
                     self.active_profile = None;
                     self.loaded_profile = None;
                     self.mod_id_filter_keys.clear();
-                    self.status_message = "Game selection cancelled".to_string();
+                    self.set_status("Game selection cancelled".to_string());
                     Task::none()
                 };
                 self.save_settings();
@@ -149,7 +149,7 @@ impl Modde {
                     Ok(spec) => spec,
                     Err(error) => {
                         self.add_custom_game.error = Some(error.clone());
-                        self.status_message = error;
+                        self.set_error(error);
                         return Task::none();
                     }
                 };
@@ -163,13 +163,12 @@ impl Modde {
                         self.add_custom_game = AddCustomGameState::default();
                         let previous_game = self.selected_game.clone();
                         let task = self.accept_game_selection(spec.id.clone(), previous_game);
-                        self.status_message =
-                            format!("Registered custom game '{}'", spec.display_name);
+                        self.set_status(format!("Registered custom game '{}'", spec.display_name));
                         return task;
                     }
                     Err(error) => {
                         self.add_custom_game.error = Some(error.to_string());
-                        self.status_message = format!("Custom game not saved: {error}");
+                        self.set_error(format!("Custom game not saved: {error}"));
                     }
                 }
             }
@@ -204,11 +203,11 @@ impl Modde {
                         Task::none()
                     };
                     self.save_settings();
-                    self.status_message = format!("Removed custom game '{id}'");
+                    self.set_status(format!("Removed custom game '{id}'"));
                     return task;
                 }
                 Err(error) => {
-                    self.status_message = format!("Custom game not removed: {error}");
+                    self.set_error(format!("Custom game not removed: {error}"));
                 }
             },
             _ => unreachable!("message routed to wrong update handler"),

@@ -114,6 +114,8 @@ pub struct Modde {
     pub active_profile: Option<String>,
     pub profiles: Vec<modde_core::profile::ProfileSummary>,
     pub status_message: String,
+    /// Render `status_message` in the danger colour. Set via `set_error`.
+    pub status_is_error: bool,
     pub button_hover_toast: ButtonHoverToastState,
     pub pending_tools_load_status_message: Option<String>,
     pub settings: AppSettings,

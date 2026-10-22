@@ -15,8 +15,7 @@ impl Modde {
     pub(super) fn handle_library_update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::LibraryDiagnosticsDone(result) => {
-                self.status_message =
-                    result.unwrap_or_else(|error| format!("Diagnostics: {error}"));
+                self.set_error(result.unwrap_or_else(|error| format!("Diagnostics: {error}")));
             }
             Message::LibraryOpenLogs => {
                 let directory = modde_core::paths::modde_data_dir().join("logs");
@@ -201,9 +200,9 @@ impl Modde {
                         }
                         self.library.replace_draft(Some(draft));
                         self.library.editing = true;
-                        self.status_message = "Imported draft. Review and save to apply it.".into();
+                        self.set_status("Imported draft. Review and save to apply it.");
                     }
-                    Err(error) => self.status_message = error,
+                    Err(error) => self.set_error(error),
                     _ => {}
                 }
             }
@@ -214,7 +213,7 @@ impl Modde {
                 let settings = match draft.settings() {
                     Ok(settings) => settings,
                     Err(error) => {
-                        self.status_message = error;
+                        self.set_error(error);
                         return Task::none();
                     }
                 };
@@ -254,8 +253,7 @@ impl Modde {
                     return Task::none();
                 };
                 if self.library.launch_settings_dirty(&id) {
-                    self.status_message =
-                        "Save launch settings before setting up the store wrapper".into();
+                    self.set_status("Save launch settings before setting up the store wrapper");
                     return Task::none();
                 }
                 self.library.saving = true;
@@ -294,7 +292,7 @@ impl Modde {
                             }
                             self.library.replace_draft(Some(draft));
                         }
-                        self.status_message = note.clone();
+                        self.set_status(note.clone());
                         let value = note
                             .strip_prefix("Paste into this game's Steam Launch Options: ")
                             .unwrap_or(&note)
@@ -302,10 +300,10 @@ impl Modde {
                         // Supersede an in-flight pre-hook catalogue load before
                         // it can replace the settings we just read from disk.
                         let refresh = self.start_library_load();
-                        self.status_message = note;
+                        self.set_status(note);
                         return Task::batch([iced::clipboard::write(value), refresh]);
                     }
-                    Err(error) => self.status_message = error,
+                    Err(error) => self.set_error(error),
                 }
             }
             Message::LibraryProfilesLoaded { id, result } => {
@@ -315,7 +313,7 @@ impl Modde {
                     match result {
                         Ok(names) => draft.profiles = names,
                         Err(error) => {
-                            self.status_message = format!("Could not load profiles: {error}");
+                            self.set_error(format!("Could not load profiles: {error}"));
                         }
                     }
                 }
@@ -357,12 +355,11 @@ impl Modde {
                 };
                 let settings = self.library.preferences.launch_for(&draft.id);
                 if draft.settings().ok().as_ref() != Some(&settings) {
-                    self.status_message = "Save launch settings before adopting saves".into();
+                    self.set_error("Save launch settings before adopting saves");
                     return Task::none();
                 }
                 let Some(profile) = settings.profile else {
-                    self.status_message =
-                        "Choose and save a mod profile before adopting saves".into();
+                    self.set_error("Choose and save a mod profile before adopting saves");
                     return Task::none();
                 };
                 let id = draft.id.clone();
@@ -407,7 +404,7 @@ impl Modde {
                 self.library.steam.running = false;
                 match result {
                     Ok(_) => return self.start_library_load(),
-                    Err(error) => self.status_message = format!("Steam sync failed: {error}"),
+                    Err(error) => self.set_error(format!("Steam sync failed: {error}")),
                 }
             }
             Message::LibraryLaunchFieldChanged(field, value) => {
@@ -438,7 +435,7 @@ impl Modde {
                 let settings = match draft.settings() {
                     Ok(settings) => settings,
                     Err(error) => {
-                        self.status_message = error;
+                        self.set_error(error);
                         return Task::none();
                     }
                 };
@@ -506,7 +503,7 @@ impl Modde {
                 self.library.saving = false;
                 match result {
                     Ok(()) => return self.start_library_load(),
-                    Err(error) => self.status_message = format!("Settings not saved: {error}"),
+                    Err(error) => self.set_error(format!("Settings not saved: {error}")),
                 }
             }
             Message::LibraryInstall(id) => {
@@ -649,13 +646,10 @@ impl Modde {
                                 }));
                         }
                         self.library.entries = loaded.entries;
-                        if self.status_message == "Loading library..." {
-                            self.status_message = "Library refreshed".to_string();
-                        }
                     }
                     Err(err) => {
                         self.library.load_error = Some(err.clone());
-                        self.status_message = format!("Library refresh failed: {err}");
+                        self.set_error(format!("Library refresh failed: {err}"));
                     }
                 }
             }
@@ -671,13 +665,13 @@ impl Modde {
                     Err(error) => self.library.load_error = Some(error.to_string()),
                 }
                 match result {
-                    Ok(note) => self.status_message = note,
-                    Err(err) => self.status_message = format!("Launch failed: {err}"),
+                    Ok(note) => self.set_status(note),
+                    Err(err) => self.set_error(format!("Launch failed: {err}")),
                 }
             }
             Message::LibraryManageGame(game_id) => {
                 if !self.library.launching.is_empty() || self.library.pending.is_some() {
-                    self.status_message = "Finish the game session before changing mods".into();
+                    self.set_error("Finish the game session before changing mods");
                     return Task::none();
                 }
                 let previous_game = self.selected_game.clone();
@@ -706,7 +700,6 @@ impl Modde {
         self.library.generation = self.library.generation.wrapping_add(1);
         let generation = self.library.generation;
         let session_revision = self.library.coordination.revision;
-        self.status_message = "Loading library...".to_string();
         let settings = self.settings.clone();
         let manager_bin = manager_binary();
         let manager_config = manager_config_path();
@@ -729,14 +722,14 @@ impl Modde {
 
     fn start_library_launch(&mut self, id: String, hd: bool) -> Task<Message> {
         if self.library.launch_settings_dirty(&id) {
-            self.status_message = "Save the launch settings before Play".into();
+            self.set_status("Save the launch settings before Play");
             return Task::none();
         }
         if !self.library.launching.is_empty()
             || self.library.pending.is_some()
             || self.library.saving
         {
-            self.status_message = "A session or settings save is already in progress".to_string();
+            self.set_status("A session or settings save is already in progress".to_string());
             return Task::none();
         }
         let Some(entry) = self
@@ -746,21 +739,23 @@ impl Modde {
             .find(|entry| entry.id == id)
             .cloned()
         else {
-            self.status_message = "Selected library entry is no longer available".to_string();
+            self.set_status("Selected library entry is no longer available".to_string());
             return Task::none();
         };
         if !entry.launchable {
-            self.status_message = entry
-                .unavailability_reason
-                .clone()
-                .unwrap_or_else(|| "Launch not configured".to_string());
+            self.set_status(
+                entry
+                    .unavailability_reason
+                    .clone()
+                    .unwrap_or_else(|| "Launch not configured".to_string()),
+            );
             return Task::none();
         }
         self.library.launching.insert(id.clone());
         self.library.draft_revision = self.library.draft_revision.wrapping_add(1);
         self.library.selected_id = Some(id.clone());
         let mode_note = if hd { " (HD)" } else { "" };
-        self.status_message = format!("Launching {}{}...", entry.display_name, mode_note);
+        self.set_status(format!("Launching {}{}...", entry.display_name, mode_note));
         match entry.kind {
             crate::views::library::LibraryEntryKind::Game { game } => Task::perform(
                 async move {
@@ -783,8 +778,7 @@ impl Modde {
                     .or_else(manager_config_path)
                 else {
                     self.library.launching.remove(&id);
-                    self.status_message =
-                        "Manager config is not set (MODDE_MANAGER_CONFIG)".to_string();
+                    self.set_status("Manager config is not set (MODDE_MANAGER_CONFIG)".to_string());
                     return Task::none();
                 };
                 Task::perform(

@@ -19,11 +19,11 @@ impl Modde {
                 match modde_sources::nexus::auth::write_config_api_key(&self.nexus_api_key_draft) {
                     Ok(()) => {
                         self.refresh_nexus_api_key_state();
-                        self.status_message = "Nexus API key saved to modde config".to_string();
+                        self.set_status("Nexus API key saved to modde config".to_string());
                         self.nexus_status = None;
                     }
                     Err(e) => {
-                        self.status_message = format!("Nexus key not saved: {e}");
+                        self.set_error(format!("Nexus key not saved: {e}"));
                         self.nexus_status = Some(NexusAuthStatus::Invalid(e.to_string()));
                     }
                 }
@@ -32,11 +32,11 @@ impl Modde {
                 match modde_sources::nexus::auth::delete_config_api_key() {
                     Ok(()) => {
                         self.refresh_nexus_api_key_state();
-                        self.status_message = "Removed modde Nexus API key config".to_string();
+                        self.set_status("Removed modde Nexus API key config".to_string());
                         self.nexus_status = None;
                     }
                     Err(e) => {
-                        self.status_message = format!("Failed to remove modde Nexus key: {e}");
+                        self.set_error(format!("Failed to remove modde Nexus key: {e}"));
                         self.nexus_status = Some(NexusAuthStatus::Invalid(e.to_string()));
                     }
                 }
@@ -50,11 +50,11 @@ impl Modde {
                 } else {
                     self.detected_games.remove(&game_id);
                 }
-                self.status_message = format!("Game path set for {game_id}");
+                self.set_status(format!("Game path set for {game_id}"));
                 self.save_settings();
             }
             Message::SetDownloadDir(path) => {
-                self.status_message = format!("Download directory set to {}", path.display());
+                self.set_status(format!("Download directory set to {}", path.display()));
                 self.settings.download_dir = Some(path);
                 self.save_settings();
             }
@@ -94,7 +94,7 @@ impl Modde {
             Message::SetTheme(name) => {
                 self.theme_name = name.clone();
                 self.settings.theme = name;
-                self.status_message = "Theme updated".to_string();
+                self.set_status("Theme updated".to_string());
                 self.save_settings();
             }
             Message::ValidateNexusKey => {
@@ -132,11 +132,11 @@ impl Modde {
                         username: username.clone(),
                         is_premium,
                     });
-                    self.status_message = format!("Nexus: logged in as {username}");
+                    self.set_status(format!("Nexus: logged in as {username}"));
                 }
                 Err(e) => {
                     self.nexus_status = Some(NexusAuthStatus::Invalid(e.clone()));
-                    self.status_message = format!("Nexus key invalid: {e}");
+                    self.set_error(format!("Nexus key invalid: {e}"));
                 }
             },
             _ => unreachable!("message routed to wrong update handler"),

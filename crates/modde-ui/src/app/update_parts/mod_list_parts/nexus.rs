@@ -206,7 +206,7 @@ impl Modde {
                     // verify exactly what's being passed to the browser
                     // (useful for diagnosing case-sensitivity issues with
                     // historical capitalized DB records).
-                    self.status_message = format!("Opening: {url}");
+                    self.set_status(format!("Opening: {url}"));
                     tracing::info!(url = %url, "opening mod page in browser");
                     // Spawn on blocking pool — `open::that` forks xdg-open
                     // and usually returns quickly, but we don't want any
@@ -290,11 +290,11 @@ impl Modde {
                 match result {
                     Ok(()) => {
                         // Optimistic state already matches — nothing to do.
-                        self.status_message = if new_status == "Endorsed" {
+                        self.set_status(if new_status == "Endorsed" {
                             "Endorsed on Nexus".to_string()
                         } else {
                             "Endorsement withdrawn".to_string()
-                        };
+                        });
                     }
                     Err(e) => {
                         // Roll back the optimistic update.
@@ -309,7 +309,7 @@ impl Modde {
                         } else {
                             s.endorsement_count = s.endorsement_count.saturating_add(1);
                         }
-                        self.status_message = format!("Endorse failed: {e}");
+                        self.set_error(format!("Endorse failed: {e}"));
                     }
                 }
             }
@@ -367,16 +367,16 @@ impl Modde {
                 s.action_pending = false;
                 match result {
                     Ok(()) => {
-                        self.status_message = if new_tracked {
+                        self.set_status(if new_tracked {
                             "Now tracking on Nexus".to_string()
                         } else {
                             "Stopped tracking".to_string()
-                        };
+                        });
                     }
                     Err(e) => {
                         // Roll back the optimistic flip.
                         s.is_tracked = Some(!new_tracked);
-                        self.status_message = format!("Track toggle failed: {e}");
+                        self.set_error(format!("Track toggle failed: {e}"));
                     }
                 }
             }

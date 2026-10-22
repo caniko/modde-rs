@@ -20,7 +20,7 @@ impl Modde {
 
     pub(crate) fn start_diagnostics_load(&mut self) -> Task<Message> {
         let Some(profile) = self.loaded_profile.clone() else {
-            self.status_message = "Select a profile before running diagnostics".to_string();
+            self.set_status("Select a profile before running diagnostics".to_string());
             self.diagnostics_state = crate::views::diagnostics::DiagnosticsState::Error(
                 "Select a profile before running diagnostics.".to_string(),
             );
@@ -29,7 +29,7 @@ impl Modde {
         self.diagnostics_generation = self.diagnostics_generation.wrapping_add(1);
         let generation = self.diagnostics_generation;
         self.diagnostics_state = crate::views::diagnostics::DiagnosticsState::Running;
-        self.status_message = "Running diagnostics...".to_string();
+        self.set_status("Running diagnostics...".to_string());
         Task::perform(load_diagnostics(self.db.clone(), profile), move |result| {
             Message::DiagnosticsComputed { generation, result }
         })
@@ -37,21 +37,21 @@ impl Modde {
 
     pub(crate) fn start_crash_log_analysis(&mut self) -> Task<Message> {
         let Some(profile) = self.loaded_profile.clone() else {
-            self.status_message = "Select a profile before analyzing crash logs".to_string();
+            self.set_status("Select a profile before analyzing crash logs".to_string());
             self.diagnostics_state = crate::views::diagnostics::DiagnosticsState::Error(
                 "Select a profile before analyzing crash logs.".to_string(),
             );
             return Task::none();
         };
-        let path = self.crash_log_path_draft.trim();
+        let path = self.crash_log_path_draft.trim().to_string();
         if path.is_empty() {
-            self.status_message = "Enter a crash log path first".to_string();
+            self.set_status("Enter a crash log path first".to_string());
             return Task::none();
         }
         self.diagnostics_generation = self.diagnostics_generation.wrapping_add(1);
         let generation = self.diagnostics_generation;
         self.diagnostics_state = crate::views::diagnostics::DiagnosticsState::Running;
-        self.status_message = "Analyzing crash log...".to_string();
+        self.set_status("Analyzing crash log...".to_string());
         Task::perform(
             load_diagnostics_with_crash(self.db.clone(), profile, std::path::PathBuf::from(path)),
             move |result| Message::DiagnosticsComputed { generation, result },
@@ -65,13 +65,14 @@ impl Modde {
         self.data_tab_conflicts = computed.data_tab_conflicts;
         self.diagnostics_state =
             crate::views::diagnostics::DiagnosticsState::Complete(computed.report);
-        self.status_message = if diagnostic_count == 0 && broken_count == 0 {
+        let message = if diagnostic_count == 0 && broken_count == 0 {
             "Diagnostics complete: no issues found".to_string()
         } else {
             format!(
                 "Diagnostics complete: {diagnostic_count} issue(s), {broken_count} broken symlink(s)"
             )
         };
+        self.set_status(message);
     }
 
     pub(crate) fn verify_staging_integrity(
@@ -114,7 +115,7 @@ impl Modde {
             self.tool_state.game_dir_configured = false;
             self.tool_state.loading = false;
             self.tool_state.load_error = None;
-            self.status_message = "Select a game before loading tools".to_string();
+            self.set_status("Select a game before loading tools".to_string());
             return Task::none();
         };
         self.tool_state.load_generation = self.tool_state.load_generation.wrapping_add(1);
@@ -185,7 +186,7 @@ impl Modde {
             self.tool_state.game_label = None;
             self.tool_state.executables_loading = false;
             self.tool_state.executables_load_error = None;
-            self.status_message = "Select a game before loading executables".to_string();
+            self.set_status("Select a game before loading executables".to_string());
             return Task::none();
         };
         self.tool_state.game_label = self

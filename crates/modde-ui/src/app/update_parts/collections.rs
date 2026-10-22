@@ -14,7 +14,7 @@ impl Modde {
                     self.collections = Vec::new();
                     return Task::none();
                 }
-                self.status_message = "Searching collections...".to_string();
+                self.set_status("Searching collections...".to_string());
                 return Task::perform(
                     async move { Ok::<Vec<CollectionManifest>, anyhow::Error>(Vec::new()) },
                     |result| match result {
@@ -24,7 +24,7 @@ impl Modde {
                 );
             }
             Message::InstallCollection { slug, version } => {
-                self.status_message = format!("Installing collection {slug} v{version}...");
+                self.set_status(format!("Installing collection {slug} v{version}..."));
             }
             _ => unreachable!("message routed to wrong update handler"),
         }

@@ -99,7 +99,7 @@ impl Modde {
             } => match result {
                 Ok(msg) => {
                     self.browse_nexus.install_status = Some(msg.clone());
-                    self.status_message = msg;
+                    self.set_status(msg);
                     if let Some(task_id) = self.download_lookup.get(&download_key).copied()
                         && let Some(task) = self.download_queue.get_mut(task_id)
                     {
@@ -113,7 +113,7 @@ impl Modde {
                 }
                 Err(e) => {
                     self.browse_nexus.install_status = Some(format!("Install failed: {e}"));
-                    self.status_message = format!("Install failed: {e}");
+                    self.set_error(format!("Install failed: {e}"));
                     if let Some(task_id) = self.download_lookup.get(&download_key).copied()
                         && let Some(task) = self.download_queue.get_mut(task_id)
                     {

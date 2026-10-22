@@ -4,6 +4,18 @@
 use super::*;
 
 impl Modde {
+    /// Show a neutral status line.
+    pub(crate) fn set_status(&mut self, message: impl Into<String>) {
+        self.status_message = message.into();
+        self.status_is_error = false;
+    }
+
+    /// Show a status line in the danger colour.
+    pub(crate) fn set_error(&mut self, message: impl Into<String>) {
+        self.status_message = message.into();
+        self.status_is_error = true;
+    }
+
     pub fn settings_state(&self) -> SettingsState {
         SettingsState {
             nexus_api_key_draft: self.nexus_api_key_draft.clone(),
@@ -280,7 +292,7 @@ impl Modde {
                 self.pending_game_path_game_id = Some(game_id.clone());
                 self.previous_game_before_path_dialog = previous_game;
                 self.game_path_dialog_error = None;
-                self.status_message = format!("Set the game directory for {game_id}");
+                self.set_status(format!("Set the game directory for {game_id}"));
                 self.save_settings();
                 return Task::none();
             }
@@ -293,7 +305,7 @@ impl Modde {
         let task = self.switch_game_context(&game_id);
         self.sync_browse_game_to_current(true);
         self.save_settings();
-        self.status_message = format!("Active game set to {game_id}");
+        self.set_status(format!("Active game set to {game_id}"));
         task
     }
 
