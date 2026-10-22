@@ -105,3 +105,69 @@ async fn archive_batch_record_writes_json_line() {
     assert_eq!(record.archive_hash, "0000000000000001");
     assert_eq!(record.extracted_patch_source_bytes, 7);
 }
+
+fn heartbeats(dir: &Path) -> Vec<HeartbeatRecord> {
+    std::fs::read_to_string(dir.join("heartbeat.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+#[tokio::test]
+async fn heartbeats_track_active_work_until_guards_drop() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("nested");
+    let diagnostics = WabbajackDiagnostics::new(WabbajackDiagnosticsOptions {
+        dir: dir.clone(),
+        interval: Duration::from_millis(5),
+        stall_warn: Duration::ZERO,
+        stall_abort: Duration::from_mins(2),
+    })
+    .await
+    .unwrap();
+
+    let batch = diagnostics.start_archive_batch(0xabc, 2, 1, 100);
+    let patch = diagnostics.start_patch("Data/x.esp", "p1", 10, 20);
+    diagnostics.write_heartbeat(0).await.unwrap();
+    drop((patch, batch));
+    diagnostics.record_progress(ProgressEvent::ArchiveBatchComplete);
+    diagnostics.record_progress(ProgressEvent::CreateBsaComplete);
+    diagnostics.write_heartbeat(0).await.unwrap();
+
+    let records = heartbeats(&dir);
+    assert_eq!(
+        records[0].active_archive_batches[0].archive_hash,
+        "0000000000000abc"
+    );
+    assert_eq!(records[0].active_patches[0].patch_id, "p1");
+    assert!(matches!(
+        (
+            records[1].active_archive_batches.as_slice(),
+            records[1].active_patches.as_slice()
+        ),
+        ([], [])
+    ));
+    assert_eq!(
+        (
+            records[1].progress_events,
+            records[1].completed_archive_batches,
+            records[1].completed_create_bsa
+        ),
+        (2, 1, 1)
+    );
+
+    let heartbeat = diagnostics.spawn_heartbeat(Arc::new(|| 7));
+    for _ in 0..500 {
+        if heartbeats(&dir).len() >= 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    heartbeat.abort();
+    assert_eq!(heartbeats(&dir)[2].byte_cache_used, 7);
+
+    diagnostics.check_abort().unwrap();
+    diagnostics.inner.abort.store(true, Ordering::Relaxed);
+    assert!(diagnostics.check_abort().is_err());
+}
