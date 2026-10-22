@@ -365,7 +365,7 @@ for SBOM scanning and the full signing-key policy.
 
 ### `error: cannot find flake 'github:caniko/modde-rs'`
 
-`codeberg:` is a flake-registry shorthand. On older Nix or a trimmed registry, use
+`github:` is a flake-registry shorthand. On older Nix or a trimmed registry, use
 the explicit Git URL and make sure flakes are enabled:
 
 ```bash

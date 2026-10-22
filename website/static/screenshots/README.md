@@ -15,6 +15,7 @@ Served at `https://modde.tartanoglu.com/screenshots/` and referenced by the land
 by `dist/com.tartanoglu.modde.metainfo.xml` (Flathub/AppStream). Regenerate
 whenever the UI changes:
 
+- `library.png` — the owned-game Library (start screen)
 - `mod-list.png` — active profile's mod list
 - `downloads.png` — download queue (`downloads` screen)
 - `fomod-wizard.png` — FOMOD installer wizard

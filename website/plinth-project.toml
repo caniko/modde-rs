@@ -1,6 +1,6 @@
 [site]
 title = "modde"
-description = "Cross-platform game mod manager for Linux, macOS, and Windows."
+description = "Linux-first game mod manager, with experimental macOS and Windows builds."
 base_url = "/"
 footer_note = "modde is open-source software licensed under GPL-3.0."
 primary_person = "caniko"
@@ -66,6 +66,10 @@ source = "static/logo.png"
 target = "logo.png"
 
 [[assets]]
+source = "static/screenshots/library.png"
+target = "screenshots/library.png"
+
+[[assets]]
 source = "static/screenshots/mod-list.png"
 target = "screenshots/mod-list.png"
 
@@ -80,14 +84,14 @@ target = "screenshots/fomod-wizard.png"
 [[pages]]
 slug = "index"
 title = "modde"
-description = "Cross-platform game mod manager for Linux, macOS, and Windows."
+description = "Linux-first game mod manager, with experimental macOS and Windows builds."
 
 [[pages.sections]]
 type = "hero"
 logo_src = "/logo.svg"
 title = "modde"
-tagline = "A cross-platform game mod manager"
-subtitle = "Install Wabbajack modlists, Nexus Collections, and individual mods with a clean game directory on Linux, macOS, and Windows."
+tagline = "A Linux-first game mod manager"
+subtitle = "Install Wabbajack modlists, Nexus Collections, and individual mods with a clean game directory. Linux is the supported target; macOS and Windows builds are experimental."
 person = "caniko"
 
 [[pages.sections.ctas]]
@@ -101,10 +105,11 @@ href = "/docs/"
 
 [[pages.sections]]
 type = "feature_grid"
+heading = "What modde does"
 
 [[pages.sections.features]]
-title = "Cross-platform"
-description = "First-class on Linux, macOS, and Windows. The CLI and desktop app run natively on every platform."
+title = "Linux-first"
+description = "Built for Linux: Steam/Proton and Heroic detection, symlink-farm deployment, and declarative Nix profiles. macOS and Windows builds are experimental."
 
 [[pages.sections.features]]
 title = "Wabbajack on any OS"
@@ -149,57 +154,62 @@ person = "caniko"
 type = "install"
 id = "install"
 heading = "Install"
-intro = "Pick the route that matches how you already manage software. Each card shows one default path; the full guide covers verification and alternatives."
+intro = "Nix and Home Manager are the live install route today; Cargo and source builds work too. The packaged channels below are staged release wiring and go live once their release smoke checks pass."
 guide_href = "/docs/getting-started/installation.html"
 
 [[pages.sections.primary_routes]]
-label = "Linux desktop"
-audience = "GUI users"
-href = "/docs/getting-started/installation.html#flatpak"
-command = "flatpak install flathub com.tartanoglu.modde"
+label = "Nix / Home Manager"
+audience = "Linux, declarative"
+href = "/docs/getting-started/installation.html#nix"
+command = "nix run github:caniko/modde-rs"
 recommended = true
 
 [[pages.sections.primary_routes]]
-label = "Linux native packages"
-audience = "Distro packages"
-href = "/docs/getting-started/installation.html#linux"
-command = "yay -S modde-bin"
-
-[[pages.sections.primary_routes]]
-label = "macOS"
-audience = "Homebrew"
-href = "/docs/getting-started/installation.html#homebrew"
-command = "brew install modde"
-
-[[pages.sections.primary_routes]]
-label = "Windows"
-audience = "Package manager"
-href = "/docs/getting-started/installation.html#winget"
-command = "winget install Caniko.Modde"
-
-[[pages.sections.secondary_routes]]
-label = "Nix / Home Manager"
-audience = "Declarative"
-href = "/docs/getting-started/installation.html#nix"
-command = "nix run github:caniko/modde-rs"
-
-[[pages.sections.secondary_routes]]
 label = "Cargo CLI"
 audience = "Rust users"
 href = "/docs/getting-started/installation.html#cargo"
 command = "cargo install modde"
 
-[[pages.sections.secondary_routes]]
+[[pages.sections.primary_routes]]
 label = "Build from source"
 audience = "Developers"
 href = "/docs/getting-started/installation.html#build-from-source"
 command = "git clone https://github.com/caniko/modde-rs"
+
+[[pages.sections.secondary_routes]]
+label = "Flatpak"
+audience = "Staged, not yet live"
+href = "/docs/getting-started/installation.html#flatpak"
+command = "flatpak install flathub com.tartanoglu.modde"
+
+[[pages.sections.secondary_routes]]
+label = "Arch (AUR)"
+audience = "Staged, not yet live"
+href = "/docs/getting-started/installation.html#linux"
+command = "yay -S modde-bin"
+
+[[pages.sections.secondary_routes]]
+label = "macOS (Homebrew)"
+audience = "Staged, not yet live"
+href = "/docs/getting-started/installation.html#homebrew"
+command = "brew install modde"
+
+[[pages.sections.secondary_routes]]
+label = "Windows (winget)"
+audience = "Staged, not yet live"
+href = "/docs/getting-started/installation.html#winget"
+command = "winget install Caniko.Modde"
 
 [[pages.sections]]
 type = "screenshot_grid"
 id = "screenshots"
 heading = "Screenshots"
 intro = "Screenshots are generated headlessly and reproducibly from the app itself."
+
+[[pages.sections.screenshots]]
+src = "/screenshots/library.png"
+alt = "The Library screen listing installed games"
+caption = "Library - installed games from Steam and Heroic, ready to manage or play"
 
 [[pages.sections.screenshots]]
 src = "/screenshots/mod-list.png"
@@ -246,6 +256,7 @@ href = "/docs/"
 [[pages.sections]]
 type = "feature_grid"
 id = "modde-only"
+heading = "Only in modde"
 
 [[pages.sections.features]]
 title = "Git-backed save vaults"

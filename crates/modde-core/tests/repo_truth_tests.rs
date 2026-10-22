@@ -213,4 +213,16 @@ fn public_installation_docs_do_not_market_staged_channels_as_live() {
         "Only the Nix flake, home-manager module, and the Attic cache are live",
         "contributing distribution table",
     );
+
+    let site = read_repo_file("website/plinth-project.toml");
+    assert_contains(
+        &site,
+        "[[pages.sections.primary_routes]]\nlabel = \"Nix / Home Manager\"",
+        "landing page lists the live route first",
+    );
+    assert_contains(
+        &site,
+        "command = \"nix run github:caniko/modde-rs\"\nrecommended = true",
+        "landing page recommends the live route",
+    );
 }

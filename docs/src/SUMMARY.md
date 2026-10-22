@@ -6,6 +6,7 @@
 
 - [Installation](./getting-started/installation.md)
 - [Quick start](./getting-started/quick-start.md)
+- [Using the GUI](./getting-started/gui.md)
 - [Your first profile](./getting-started/first-profile.md)
 
 # Games

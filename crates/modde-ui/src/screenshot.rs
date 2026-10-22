@@ -41,6 +41,8 @@ use crate::app::{ButtonHoverToastState, FOMODWizardState, Modde, View};
 /// `--screen` values and the website / metainfo asset basenames.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
+    /// The owned-game Library, the start screen (asset basename `library`).
+    Library,
     /// The active profile's mod list (asset basename `mod-list`).
     ModList,
     /// The download queue (asset basename `downloads`).
@@ -59,6 +61,7 @@ impl Screen {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Screen::Library => "library",
             Screen::ModList => "mod-list",
             Screen::Downloads => "downloads",
             Screen::FomodWizard => "fomod-wizard",
@@ -73,6 +76,7 @@ impl FromStr for Screen {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
+            "library" => Ok(Screen::Library),
             "mod-list" | "modlist" => Ok(Screen::ModList),
             "downloads" | "download-queue" => Ok(Screen::Downloads),
             "fomod-wizard" | "fomod" => Ok(Screen::FomodWizard),
@@ -114,6 +118,7 @@ impl Default for ShotOptions {
 #[must_use]
 pub fn all_screens() -> &'static [Screen] {
     &[
+        Screen::Library,
         Screen::ModList,
         Screen::Downloads,
         Screen::FomodWizard,
@@ -227,6 +232,7 @@ pub fn capture_to_png(screen: Screen, opts: &ShotOptions, out: &Path) -> anyhow:
 fn demo_app(screen: Screen, opts: &ShotOptions) -> Modde {
     let mut app = base_demo_app(opts);
     match screen {
+        Screen::Library => populate_library(&mut app),
         Screen::ModList => populate_mod_list(&mut app),
         Screen::Downloads => populate_downloads(&mut app),
         Screen::FomodWizard => populate_fomod_wizard(&mut app),
@@ -338,6 +344,6 @@ fn base_demo_app(opts: &ShotOptions) -> Modde {
 mod fixtures;
 
 use self::fixtures::{
-    populate_browse_nexus, populate_downloads, populate_fomod_wizard, populate_mod_list,
-    populate_tools,
+    populate_browse_nexus, populate_downloads, populate_fomod_wizard, populate_library,
+    populate_mod_list, populate_tools,
 };

@@ -348,3 +348,53 @@ pub fn populate_browse_nexus(app: &mut Modde) {
     app.active_view = View::BrowseNexus;
     app.status_message = "Browse Nexus".to_string();
 }
+
+pub fn populate_library(app: &mut Modde) {
+    use crate::views::library::{LibraryGameInstall, build_game_entries};
+
+    let installs = [
+        (
+            "skyrim-se",
+            "The Elder Scrolls V: Skyrim Special Edition",
+            "Steam",
+            "/home/demo/.local/share/Steam/steamapps/common/Skyrim Special Edition",
+        ),
+        (
+            "fallout4",
+            "Fallout 4",
+            "Steam",
+            "/home/demo/.local/share/Steam/steamapps/common/Fallout 4",
+        ),
+        (
+            "cyberpunk2077",
+            "Cyberpunk 2077",
+            "Heroic (GOG)",
+            "/home/demo/Games/Heroic/Cyberpunk 2077",
+        ),
+        (
+            "stardew-valley",
+            "Stardew Valley",
+            "Steam",
+            "/home/demo/.local/share/Steam/steamapps/common/Stardew Valley",
+        ),
+    ]
+    .into_iter()
+    .map(
+        |(game_id, display_name, source_label, install_path)| LibraryGameInstall {
+            game_id: game_id.to_string(),
+            display_name: display_name.to_string(),
+            install_path: PathBuf::from(install_path),
+            source_label: source_label.to_string(),
+        },
+    )
+    .collect();
+
+    let mut entries = build_game_entries(installs);
+    if let Some(first) = entries.first_mut() {
+        first.favorite = true;
+        first.managed = true;
+    }
+    app.library.selected_id = entries.first().map(|entry| entry.id.clone());
+    app.library.entries = entries;
+    app.active_view = View::Library;
+}

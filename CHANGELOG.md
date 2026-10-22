@@ -540,7 +540,7 @@ profiles`, `tool sources` — all read-only, all with `--json`.
 - **Sources**: BAIN installer support
 - **Sources**: nxm:// protocol handler with XDG desktop integration
 - **CLI**: 24 top-level commands with 60+ subcommands covering the full modding workflow
-- **GUI**: Iced-based GUI with 20+ views (mod list, downloads, saves, settings, FOMOD wizard, Nexus browser, diagnostics, tools)
+- **GUI**: Iced-based GUI with 13 views (mod list, downloads, saves, settings, FOMOD wizard, Nexus browser, diagnostics, tools)
 - **Tools**: Integration with MangoHud, vkBasalt, GameMode, ReShade, and OptiScaler
 - **Diagnostics**: Form 43 detection, missing master detection, shadowed mod detection, load order validation
 - **Nix**: Flake with binary, docs, and website outputs; home-manager module for declarative configuration

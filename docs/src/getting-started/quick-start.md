@@ -1,6 +1,6 @@
 # Quick Start
 
-modde runs natively on Linux, macOS, and Windows, and gives you two ways to
+modde is Linux-first (macOS and Windows builds are experimental) and gives you two ways to
 drive the same engine:
 
 - **Imperative (CLI)** — `modde detect`, `modde profile create`,

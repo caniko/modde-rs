@@ -42,6 +42,10 @@
   </categories>
   <screenshots>
     <screenshot type="default">
+      <image type="source">https://modde.tartanoglu.com/screenshots/library.png</image>
+      <caption>The Library screen listing installed games from Steam and Heroic</caption>
+    </screenshot>
+    <screenshot>
       <image type="source">https://modde.tartanoglu.com/screenshots/mod-list.png</image>
       <caption>Browsing the active profile's mod list with conflict status</caption>
     </screenshot>
