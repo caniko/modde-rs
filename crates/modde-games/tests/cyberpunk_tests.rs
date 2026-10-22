@@ -287,3 +287,47 @@ fn test_cyberpunk_hot_deploy_patches_staging_and_refreshes_root_symlink() {
         b"archive"
     );
 }
+
+// ── store metadata and REDmod archive detection ─────────────────────
+
+#[test]
+fn test_cyberpunk_metadata_and_redmod_detection() {
+    use modde_core::installer::InstallMethod;
+
+    let game = Cyberpunk2077;
+    let install = std::path::Path::new("/games/Cyberpunk 2077");
+    assert_eq!(game.steam_app_id_u32(), Some(1091500));
+    assert_eq!(game.nexus_game_domain(), Some("cyberpunk2077"));
+    assert_eq!(game.nexus_game_id_u32(), Some(3333));
+    assert_eq!(game.archive_extensions(), ["archive"]);
+    assert_eq!(game.executable_dir(install), install.join("bin/x64"));
+
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = |name: &str, files: &[&str]| {
+        let root = tmp.path().join(name);
+        for file in files {
+            let path = root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "x").unwrap();
+        }
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    };
+    let redmod = InstallMethod::REDmod {
+        manifest: "info.json".into(),
+    };
+    for archive_dir in ["archives", "archive"] {
+        let root = dir(
+            archive_dir,
+            &["info.json", &format!("{archive_dir}/a.archive")],
+        );
+        assert_eq!(game.analyze_mod_archive(&root), Some(redmod.clone()));
+    }
+    assert_eq!(
+        game.analyze_mod_archive(&dir("info-only", &["info.json"])),
+        None
+    );
+    assert_eq!(game.analyze_mod_archive(&dir("empty", &[])), None);
+    assert!(game.recognizes_bare_layout(&dir("loose", &["r6/scripts/a.reds"])));
+    assert!(!game.recognizes_bare_layout(&dir("other", &["readme.txt"])));
+}
