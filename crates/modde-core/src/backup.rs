@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::PluginEntry;
 use crate::error::{CoreError, Result};
@@ -52,7 +52,7 @@ impl BackupManager {
         let dest_dir = self.backup_dir.join("mods").join(mod_id.as_str());
         fs::create_dir_all(&dest_dir)?;
 
-        let timestamp = unix_timestamp();
+        let timestamp = unix_timestamp_nanos();
         let name = format!("{mod_id}_{timestamp}.zip");
         let zip_path = dest_dir.join(&name);
 
@@ -123,7 +123,7 @@ impl BackupManager {
         let dir = self.backup_dir.join("plugins").join(game.as_str());
         fs::create_dir_all(&dir)?;
 
-        let timestamp = unix_timestamp();
+        let timestamp = unix_timestamp_nanos();
         let name = format!("{profile}_{timestamp}.json");
         let path = dir.join(&name);
 
@@ -152,10 +152,17 @@ impl BackupManager {
             ));
         }
 
+        // Match `<profile>_<timestamp>.json` exactly, so profile `main` never
+        // picks up `main_extra_<timestamp>.json`.
         let prefix = format!("{profile}_");
         let mut candidates: Vec<_> = fs::read_dir(&dir)?
             .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .and_then(|name| name.strip_prefix(&prefix)?.strip_suffix(".json"))
+                    .is_some_and(|ts| !ts.is_empty() && ts.bytes().all(|b| b.is_ascii_digit()))
+            })
             .collect();
 
         candidates.sort_by_key(|e| {
@@ -198,12 +205,13 @@ impl BackupManager {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-/// Produce a Unix timestamp (seconds since epoch).
-fn unix_timestamp() -> u64 {
+/// Nanoseconds since the epoch, so backups made within the same second get
+/// distinct file names instead of overwriting each other.
+fn unix_timestamp_nanos() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs()
+        .as_nanos()
 }
 
 /// Create a zip archive from a directory.
@@ -248,7 +256,14 @@ fn extract_zip_to_dir(zip_path: &Path, dest: &Path) -> Result<()> {
         let mut entry = archive
             .by_index(i)
             .map_err(|e| CoreError::Other(e.to_string().into()))?;
-        let out_path = dest.join(entry.name());
+        let Some(name) = entry.enclosed_name() else {
+            warn!(
+                entry = entry.name(),
+                "skipping backup entry that escapes the destination"
+            );
+            continue;
+        };
+        let out_path = dest.join(name);
 
         if entry.is_dir() {
             fs::create_dir_all(&out_path)?;
@@ -345,5 +360,83 @@ mod tests {
         assert!(restored[0].enabled);
         assert_eq!(restored[1].plugin_name, "Two.esp");
         assert!(restored[1].enabled);
+    }
+
+    fn plugin(name: &str) -> PluginEntry {
+        PluginEntry {
+            plugin_name: name.to_string(),
+            sort_index: 0,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn mod_backups_round_trip_and_are_never_overwritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = manager_in(&tmp.path().join("backups"));
+        let mod_id = ModId::from("mod_a");
+        let mod_dir = tmp.path().join("store/mod_a");
+        fs::create_dir_all(mod_dir.join("nested")).unwrap();
+        fs::write(mod_dir.join("nested/file.txt"), "v1").unwrap();
+
+        assert!(matches!(
+            mgr.list_mod_backups(&mod_id).unwrap().as_slice(),
+            []
+        ));
+        assert!(mgr.restore_mod_backup(&mod_id, &mod_dir).is_err());
+
+        mgr.create_mod_backup(&mod_id, &mod_dir).unwrap();
+        fs::write(mod_dir.join("nested/file.txt"), "v2").unwrap();
+        let second = mgr.create_mod_backup(&mod_id, &mod_dir).unwrap();
+        // Two backups in the same second must not share a file name.
+        assert_eq!(mgr.list_mod_backups(&mod_id).unwrap().len(), 2);
+
+        fs::write(mod_dir.join("nested/file.txt"), "broken").unwrap();
+        let restored = mgr.restore_mod_backup(&mod_id, &mod_dir).unwrap();
+        assert_eq!(restored.name, second.name);
+        assert_eq!(
+            fs::read_to_string(mod_dir.join("nested/file.txt")).unwrap(),
+            "v2"
+        );
+    }
+
+    #[test]
+    fn restore_skips_entries_that_escape_the_destination() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = manager_in(&tmp.path().join("backups"));
+        let mod_id = ModId::from("mod_a");
+        let dir = tmp.path().join("backups/mods/mod_a");
+        fs::create_dir_all(&dir).unwrap();
+        let mut zip = zip::ZipWriter::new(fs::File::create(dir.join("mod_a_1.zip")).unwrap());
+        for name in ["../escape.txt", "kept.txt"] {
+            zip.start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            std::io::Write::write_all(&mut zip, b"x").unwrap();
+        }
+        zip.finish().unwrap();
+
+        let dest = tmp.path().join("restore/mod_a");
+        mgr.restore_mod_backup(&mod_id, &dest).unwrap();
+        assert!(dest.join("kept.txt").is_file());
+        assert!(!tmp.path().join("restore/escape.txt").exists());
+    }
+
+    #[test]
+    fn plugin_backups_of_prefix_sharing_profiles_stay_separate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = manager_in(tmp.path());
+        let game = GameId::from("skyrim-se");
+        mgr.backup_plugin_order("main", &game, &[plugin("Main.esp")])
+            .unwrap();
+        mgr.backup_plugin_order("main_extra", &game, &[plugin("Extra.esp")])
+            .unwrap();
+
+        let restored = mgr.restore_plugin_order("main", &game).unwrap();
+        assert_eq!(restored[0].plugin_name, "Main.esp");
+        assert!(mgr.restore_plugin_order("other", &game).is_err());
+        assert!(
+            mgr.restore_plugin_order("main", &GameId::from("fallout4"))
+                .is_err()
+        );
     }
 }
