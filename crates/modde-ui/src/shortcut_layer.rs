@@ -6,7 +6,7 @@ use iced::advanced::widget::{self, Tree};
 use iced::advanced::{Clipboard, Layout, Shell, Widget};
 use iced::{Element, Event, Length, Rectangle, Size, Theme, Vector, keyboard};
 
-use crate::app::{Message, shortcut_action_to_message};
+use crate::app::Message;
 
 type Renderer = iced::Renderer;
 
@@ -86,9 +86,8 @@ impl Widget<Message, Theme, Renderer> for ShortcutLayer<'_> {
 
         if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event
             && let Some(action) = crate::shortcuts::match_shortcut(key, *modifiers)
-            && let Some(message) = shortcut_action_to_message(action)
         {
-            shell.publish(message);
+            shell.publish(Message::Shortcut(action));
             shell.capture_event();
         }
     }

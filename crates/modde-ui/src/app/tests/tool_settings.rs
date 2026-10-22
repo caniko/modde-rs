@@ -347,25 +347,19 @@ fn unavailable_tool_toggle_leaves_settings_untouched() {
 }
 
 #[test]
-fn test_shortcut_action_to_message_maps_deploy() {
-    assert!(matches!(
-        shortcut_action_to_message("deploy"),
-        Some(Message::Deploy)
-    ));
-}
-
-#[test]
-fn test_shortcut_action_to_message_drops_unmapped() {
-    assert!(shortcut_action_to_message("refresh").is_none());
-    assert!(shortcut_action_to_message("nonexistent").is_none());
-}
-
-#[test]
-fn test_shortcut_action_to_message_maps_dismiss_modal() {
-    assert!(matches!(
-        shortcut_action_to_message("dismiss_modal"),
-        Some(Message::CancelNewProfileDialog)
-    ));
+fn escape_shortcut_closes_the_topmost_modal_first() {
+    let mut app = test_app();
+    app.new_profile_dialog_open = true;
+    app.pending_confirm = Some(PendingConfirm {
+        title: "x",
+        body: String::new(),
+        on_confirm: Message::Noop,
+    });
+    let _ = app.update(Message::Shortcut("dismiss_modal"));
+    assert!(app.pending_confirm.is_none());
+    assert!(app.new_profile_dialog_open, "one Escape closes one layer");
+    let _ = app.update(Message::Shortcut("dismiss_modal"));
+    assert!(!app.new_profile_dialog_open);
 }
 
 #[test]
@@ -381,8 +375,8 @@ fn shortcuts_layer_maps_uncaptured_escape() {
     assert!(
         messages
             .iter()
-            .any(|message| matches!(message, Message::CancelNewProfileDialog)),
-        "uncaptured Escape should emit CancelNewProfileDialog, got: {messages:?}",
+            .any(|message| matches!(message, Message::Shortcut("dismiss_modal"))),
+        "uncaptured Escape should emit Shortcut(dismiss_modal), got: {messages:?}",
     );
 }
 

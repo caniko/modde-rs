@@ -504,6 +504,9 @@ pub enum Message {
     ConfirmCancelled,
     /// Close the window even though an install or game session is running.
     ForceWindowClose,
+    /// A matched keyboard shortcut (see `shortcuts::all_shortcuts`), resolved
+    /// against the current state in `handle_shortcut`.
+    Shortcut(&'static str),
     Noop,
     UpdateCheckLoaded(Result<Option<modde_core::update_check::UpdateInfo>, String>),
     OpenUpdateReleasePage,

@@ -50,22 +50,10 @@ pub fn all_shortcuts() -> Vec<Shortcut> {
             action: "toggle_selected",
         },
         Shortcut {
-            key: Key::Character("s".into()),
-            modifiers: Modifiers::CTRL,
-            description: "Save settings",
-            action: "save_settings",
-        },
-        Shortcut {
             key: Key::Character("i".into()),
             modifiers: Modifiers::CTRL,
             description: "Open mod info",
             action: "open_info",
-        },
-        Shortcut {
-            key: Key::Character("e".into()),
-            modifiers: Modifiers::CTRL,
-            description: "Export mod list",
-            action: "export",
         },
         Shortcut {
             key: Key::Named(Named::Escape),
@@ -99,7 +87,7 @@ fn keys_match(a: &Key, b: &Key) -> bool {
 /// Format all shortcuts as a human-readable help string.
 #[must_use]
 pub fn help_text() -> String {
-    let mut lines = vec!["Keyboard Shortcuts:".to_string(), String::new()];
+    let mut lines = Vec::new();
     for s in all_shortcuts() {
         let mod_str = format_modifiers(s.modifiers);
         let key_str = format_key(&s.key);

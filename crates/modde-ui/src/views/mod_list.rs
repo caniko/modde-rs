@@ -62,6 +62,7 @@ pub fn view_filtered<'a>(
 
     // ── Filter toolbar ──
     let search = text_input("Filter mods...", filter_text)
+        .id(crate::semantics::widget_id("mod_list.filter"))
         .on_input(Message::FilterChanged)
         .padding(6)
         .width(Length::Fill);

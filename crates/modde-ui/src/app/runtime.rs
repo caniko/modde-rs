@@ -171,19 +171,6 @@ pub(super) fn resize_thumbnail_bytes(raw: &[u8]) -> iced::widget::image::Handle 
     iced::widget::image::Handle::from_rgba(w, h, rgba.into_raw())
 }
 
-/// Map a matched shortcut action string to the corresponding
-/// `Message`. Returns `None` for actions whose handlers aren't wired
-/// yet — those shortcuts still register in `all_shortcuts()` for
-/// help-text purposes but produce no messages until their handlers
-/// exist (most need state-aware lookups or new `Message` variants).
-pub(crate) fn shortcut_action_to_message(action: &str) -> Option<Message> {
-    match action {
-        "deploy" => Some(Message::Deploy),
-        "dismiss_modal" => Some(Message::CancelNewProfileDialog),
-        _ => None,
-    }
-}
-
 /// Run the iced application.
 pub fn run() -> iced::Result {
     iced::application(Modde::new, Modde::update, Modde::view)

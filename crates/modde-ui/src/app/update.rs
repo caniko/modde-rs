@@ -372,7 +372,8 @@ impl Modde {
             | Message::WindowMinimize
             | Message::WindowToggleMaximize
             | Message::WindowClose
-            | Message::ForceWindowClose => self.handle_window_controls_update(message),
+            | Message::ForceWindowClose
+            | Message::Shortcut(_) => self.handle_window_controls_update(message),
 
             Message::ToggleMod { .. }
             | Message::FilterChanged(_)

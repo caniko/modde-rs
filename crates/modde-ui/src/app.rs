@@ -103,7 +103,6 @@ use self::helpers::{
 };
 pub use self::message::Message;
 pub use self::runtime::run;
-pub(crate) use self::runtime::shortcut_action_to_message;
 use self::runtime::{external_refresh_stream, resize_thumbnail_bytes};
 pub use self::types::{
     ButtonHoverToast, ButtonHoverToastState, ExperimentWriteKind, ExperimentWriteOutcome, Modde,

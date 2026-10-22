@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::views::selectable_text::{danger, success, text, warning};
+use crate::views::selectable_text::{danger, secondary, success, text, warning};
 use iced::widget::{button, column, pick_list, row, scrollable, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -208,6 +208,14 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
     ]
     .spacing(4);
 
+    let shortcuts_section = column![
+        text("Keyboard shortcuts").size(14),
+        text(crate::shortcuts::help_text())
+            .size(11)
+            .style(secondary),
+    ]
+    .spacing(4);
+
     let content = scrollable(
         column![
             api_key_section,
@@ -219,6 +227,8 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
             stock_game_section,
             iced::widget::rule::horizontal(1),
             theme_section,
+            iced::widget::rule::horizontal(1),
+            shortcuts_section,
         ]
         .spacing(16)
         .padding(16),
