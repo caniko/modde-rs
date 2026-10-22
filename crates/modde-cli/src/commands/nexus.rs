@@ -45,20 +45,9 @@ fn map_nexus_error(e: anyhow::Error, rejected_advice: &str) -> anyhow::Error {
         );
     }
 
-    let msg = e.to_string();
-    if msg.contains("401") || msg.contains("403") {
-        anyhow::anyhow!(
-            "API key rejected by Nexus (HTTP 401/403). {rejected_advice}\n\
-             Cause: {e}"
-        )
-    } else if msg.contains("429") {
-        anyhow::anyhow!(
-            "Nexus API rate limit exceeded (HTTP 429). Wait a few minutes and try again.\n\
-             Cause: {e}"
-        )
-    } else {
-        anyhow::anyhow!("API key validation failed: {e}")
-    }
+    // Other statuses arrive untyped; their text includes the request URL, so
+    // matching "401" or "429" in it would misread ports and ids as statuses.
+    anyhow::anyhow!("API key validation failed: {e}")
 }
 
 async fn handle_auth() -> Result<()> {
@@ -156,7 +145,7 @@ async fn handle_status() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AuthKeySource, select_auth_api_key};
+    use super::{AuthKeySource, SourceError, map_nexus_error, select_auth_api_key};
 
     #[test]
     fn auth_prefers_non_empty_env_key() {
@@ -178,5 +167,36 @@ mod tests {
     fn auth_rejects_empty_keys() {
         let err = select_auth_api_key(Some(String::new()), Some(" \n".into())).unwrap_err();
         assert!(format!("{err:#}").contains("API key cannot be empty"));
+    }
+
+    #[test]
+    fn only_typed_statuses_are_reported_as_rejected_or_rate_limited() {
+        let message = |error: anyhow::Error| format!("{:#}", map_nexus_error(error, "advice"));
+        let url = "http://127.0.0.1:44291/users/validate.json".to_string();
+
+        // A 500 from a server on port 44291 is neither a 401 nor a 429.
+        let server_error = message(anyhow::anyhow!(
+            "HTTP status server error (500) for url ({url})"
+        ));
+        assert!(
+            server_error.starts_with("API key validation failed"),
+            "{server_error}"
+        );
+        let limited = message(
+            SourceError::RateLimited {
+                url: url.clone(),
+                retry_after: None,
+            }
+            .into(),
+        );
+        assert!(
+            limited.contains("rate limit exceeded (HTTP 429)"),
+            "{limited}"
+        );
+        let rejected = message(SourceError::Unauthorized { url }.into());
+        assert!(
+            rejected.contains("API key rejected by Nexus (HTTP 401/403). advice"),
+            "{rejected}"
+        );
     }
 }
