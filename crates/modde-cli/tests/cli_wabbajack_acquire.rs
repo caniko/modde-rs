@@ -339,3 +339,160 @@ fn manual_archive(hash: u64, name: &str, url: &str) -> Value {
         },
     })
 }
+
+fn assess_manifest(fx: &Fixture, archives: Vec<Value>) -> std::path::PathBuf {
+    let manifest = serde_json::json!({
+        "Name": "AssessTest",
+        "Author": "tester",
+        "Description": "desc",
+        "Game": "SkyrimSE",
+        "Version": "1.0.0",
+        "Archives": archives,
+        "Directives": [],
+    });
+    let path = fx.root().join("assess.wabbajack");
+    write_wabbajack(&path, manifest);
+    path
+}
+
+fn game_file(hash: u64, file: &str) -> Value {
+    serde_json::json!({
+        "Hash": hash,
+        "Name": file,
+        "Size": 1,
+        "State": { "$type": "GameFileSourceDownloader, Wabbajack.Lib", "GameFile": file },
+    })
+}
+
+#[test]
+fn assess_reports_every_blocker_and_fails() {
+    let fx = Fixture::new();
+    let present = b"present archive";
+    let store = fx.data_dir().join("store");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(
+        store.join(format!("{:016x}.archive", xxh64(present, 0))),
+        present,
+    )
+    .unwrap();
+    let game_dir = fx.root().join("game");
+    std::fs::create_dir_all(game_dir.join("Data")).unwrap();
+    std::fs::write(game_dir.join("Data/Skyrim.esm"), b"esm").unwrap();
+    std::fs::write(game_dir.join("Data/Update.esm"), b"changed").unwrap();
+    // Leftover staging without the resumable layout is adopted, not wiped.
+    std::fs::create_dir_all(fx.data_dir().join("staging/AssessTest/mods")).unwrap();
+
+    let manifest = assess_manifest(
+        &fx,
+        vec![
+            manual_archive(1, "manual.7z", "https://example.test/manual.7z"),
+            serde_json::json!({
+                "Hash": 2, "Name": "nexus.7z", "Size": 1,
+                "State": {
+                    "$type": "NexusDownloader, Wabbajack.Lib",
+                    "GameName": "SkyrimSpecialEdition", "ModID": 10, "FileID": 20,
+                },
+            }),
+            serde_json::json!({ "Hash": 3, "Name": "orphan.7z", "Size": 1 }),
+            serde_json::json!({
+                "Hash": xxh64(present, 0), "Name": "present.7z", "Size": present.len(),
+                "State": {
+                    "$type": "GitHubDownloader, Wabbajack.Lib",
+                    "User": "u", "Repo": "r", "Tag": "t", "Asset": "a.7z",
+                },
+            }),
+            game_file(xxh64(b"esm", 0), "Data/Skyrim.esm"),
+            game_file(xxh64(b"original", 0), "Data/Update.esm"),
+            game_file(4, "Data/Missing.esm"),
+        ],
+    );
+    let manifest = manifest.to_str().unwrap();
+    let game_dir = game_dir.to_str().unwrap();
+
+    let output = fx
+        .cmd()
+        .args(["wabbajack", "assess", manifest, "--game-dir", game_dir])
+        .output()
+        .expect("spawn modde");
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "Wabbajack assessment: AssessTest (SkyrimSE)",
+        "archives: 7 (downloadable 4, store present 1, missing 3)",
+        "Nexus credentials: missing",
+        "game-file sources: 1/3 present",
+        "layout: adopt",
+        "0000000000000001  Manual  manual.7z",
+        "import: modde wabbajack import-archive",
+        "missing game-file sources:\n    - Data/Missing.esm",
+        "mismatched game-file sources:\n    - Data/Update.esm expected xxh64",
+        "Archive 'orphan.7z' (0000000000000003) is missing from the store",
+        "no Nexus API key is configured",
+        "1 manual archive(s) must be downloaded",
+        "existing staging will be adopted instead of deleted",
+        "resolve the blockers above",
+        "add `--reset-staging` only for a deliberate rebuild",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected:?}:\n{stdout}");
+    }
+    assert!(String::from_utf8_lossy(&output.stderr).contains("assessment found blockers"));
+
+    let json = fx
+        .cmd()
+        .args([
+            "wabbajack",
+            "assess",
+            manifest,
+            "--profile",
+            "Other",
+            "--json",
+        ])
+        .output()
+        .expect("spawn modde");
+    assert!(!json.status.success());
+    let report: Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(report["profile_name"], "Other");
+    assert_eq!(report["staging"]["layout_action"], "create");
+    assert_eq!(
+        report["game_file_sources"]["missing"],
+        serde_json::json!(["game directory was not provided"])
+    );
+    assert_eq!(report["install_ready"], false);
+}
+
+#[test]
+fn assess_passes_when_every_archive_is_in_the_store() {
+    let fx = Fixture::new();
+    let bytes = b"ready archive";
+    let store = fx.data_dir().join("store");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(
+        store.join(format!("{:016x}.archive", xxh64(bytes, 0))),
+        bytes,
+    )
+    .unwrap();
+    let manifest = assess_manifest(
+        &fx,
+        vec![manual_archive(
+            xxh64(bytes, 0),
+            "ready.7z",
+            "https://example.test/r",
+        )],
+    );
+
+    let output = fx
+        .cmd()
+        .args(["wabbajack", "assess", manifest.to_str().unwrap()])
+        .output()
+        .expect("spawn modde");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stdout}");
+    assert!(
+        stdout.contains("Nexus credentials: not required"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("ready for validated staging/deploy"),
+        "{stdout}"
+    );
+}
