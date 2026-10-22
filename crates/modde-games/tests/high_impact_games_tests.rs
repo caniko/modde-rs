@@ -543,3 +543,61 @@ fn witcher3_deploys_rooted_and_plain_staging() {
     witcher.deploy_to_install(&plain, &install).unwrap();
     assert!(install.join("mods/modB/content/c.ws").exists());
 }
+
+#[test]
+fn bannerlord_plugin_metadata_and_module_analysis() {
+    use modde_games::traits::{ContentCategory, ModSafety};
+
+    let game = &bannerlord::BANNERLORD;
+    let install = Path::new("/games/common/Bannerlord");
+    assert_eq!(game.steam_app_id_u32(), Some(261550));
+    assert_eq!(game.nexus_game_domain(), Some("mountandblade2bannerlord"));
+    assert!(game.supports_save_profiles());
+    assert!(game.save_directory().is_some());
+    assert_eq!(game.save_directory_at(install, None), None);
+    assert!(
+        game.save_directory_at(install, Some(Path::new("/prefix")))
+            .unwrap()
+            .ends_with("Game Saves/Native")
+    );
+    assert_eq!(
+        game.executable_dir(install),
+        install.join("bin/Win64_Shipping_Client")
+    );
+    assert_eq!(game.classify_extension("dll"), ContentCategory::Binary);
+
+    let tmp = TempDir::new().unwrap();
+    let module = tmp.path().join("MyModule");
+    touch(&module.join("SubModule.xml"));
+    touch(&module.join("bin/Win64_Shipping_Client/My.dll"));
+    assert_eq!(game.classify_mod(&module), ModSafety::SaveBreaking);
+    assert_eq!(
+        game.analyze_mod_archive(&module),
+        Some(InstallMethod::DirectoryModFromXml {
+            marker: "SubModule.xml".into(),
+            id_attr: "Id.value".to_string(),
+            fallback_name: None,
+        })
+    );
+    assert!(game.recognizes_bare_layout(&module));
+    let wrapped = tmp.path().join("wrapped");
+    touch(&wrapped.join("Modules/MyModule/SubModule.xml"));
+    assert_eq!(
+        game.analyze_mod_archive(&wrapped),
+        Some(InstallMethod::StripContentRoot {
+            root: "Modules".to_string()
+        })
+    );
+    let empty = tmp.path().join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    assert_eq!(game.analyze_mod_archive(&empty), None);
+    assert!(!game.recognizes_bare_layout(&empty));
+
+    // Without <Id>/<Name> the module is named after its directory.
+    let info = bannerlord::parse_submodule_xml(&module.join("SubModule.xml")).unwrap();
+    assert_eq!(
+        (info.id.as_str(), info.name.as_str()),
+        ("MyModule", "MyModule")
+    );
+    assert!(bannerlord::parse_submodule_xml(&empty.join("SubModule.xml")).is_err());
+}
