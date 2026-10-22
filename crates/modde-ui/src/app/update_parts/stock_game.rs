@@ -9,9 +9,12 @@ impl Modde {
         match message {
             // ── Stock game ───────────────────────────────────────
             Message::CreateStockSnapshot => {
-                self.set_status("Creating stock game snapshot...".to_string());
-                if let Some(ref profile) = self.loaded_profile {
-                    let game_id = profile.game_id.clone();
+                let Some(game_id) = self.loaded_profile.as_ref().map(|p| p.game_id.clone()) else {
+                    self.set_error("No active profile to snapshot");
+                    return Task::none();
+                };
+                self.set_status("Creating stock game snapshot...");
+                {
                     return Task::perform(
                         async move {
                             tokio::task::spawn_blocking(move || -> Result<String, String> {
@@ -36,7 +39,6 @@ impl Modde {
                         Message::StockSnapshotCreated,
                     );
                 }
-                self.set_status("No active profile".to_string());
             }
             Message::StockSnapshotCreated(result) => match result {
                 Ok(msg) => {
@@ -46,9 +48,12 @@ impl Modde {
                 Err(e) => self.set_error(format!("Snapshot failed: {e}")),
             },
             Message::VerifyStockSnapshot => {
-                self.set_status("Verifying stock snapshot...".to_string());
-                if let Some(ref profile) = self.loaded_profile {
-                    let game_id = profile.game_id.clone();
+                let Some(game_id) = self.loaded_profile.as_ref().map(|p| p.game_id.clone()) else {
+                    self.set_error("No active profile to verify against");
+                    return Task::none();
+                };
+                self.set_status("Verifying stock snapshot...");
+                {
                     return Task::perform(
                         async move {
                             tokio::task::spawn_blocking(move || -> Result<String, String> {

@@ -126,12 +126,15 @@ fn explorer_tab<'a>(
         ]
         .spacing(8),
         row![
-            checkbox(state.official_only).on_toggle(Message::WabbajackToggleOfficialOnly),
-            text("Official only").size(12),
-            checkbox(state.include_nsfw).on_toggle(Message::WabbajackToggleNsfw),
-            text("NSFW").size(12),
-            checkbox(state.include_down).on_toggle(Message::WabbajackToggleDown),
-            text("Unavailable").size(12),
+            checkbox(state.official_only)
+                .label("Official only")
+                .on_toggle(Message::WabbajackToggleOfficialOnly),
+            checkbox(state.include_nsfw)
+                .label("NSFW")
+                .on_toggle(Message::WabbajackToggleNsfw),
+            checkbox(state.include_down)
+                .label("Unavailable")
+                .on_toggle(Message::WabbajackToggleDown),
         ]
         .spacing(6)
         .align_y(Alignment::Center),

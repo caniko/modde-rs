@@ -41,8 +41,11 @@ impl Modde {
                     }
                 }
             }
+            Message::GamePathDraftChanged(draft) => self.game_path_draft = draft,
+            Message::DownloadDirDraftChanged(draft) => self.download_dir_draft = draft,
             Message::SetGamePath { game_id, path } => {
                 let path_exists = path.is_dir();
+                self.game_path_draft = path.display().to_string();
                 self.settings
                     .set_game_path(&GameId::from(game_id.as_str()), path);
                 if path_exists {
@@ -54,11 +57,16 @@ impl Modde {
                 self.save_settings();
             }
             Message::SetDownloadDir(path) => {
+                self.download_dir_draft = path.display().to_string();
                 self.set_status(format!("Download directory set to {}", path.display()));
                 self.settings.download_dir = Some(path);
                 self.save_settings();
             }
             Message::BrowseGamePath => {
+                let Some(game_id) = self.current_game_id().map(str::to_string) else {
+                    self.set_error("Select a game before setting its install path");
+                    return Task::none();
+                };
                 return Task::perform(
                     async {
                         rfd::AsyncFileDialog::new()
@@ -67,9 +75,9 @@ impl Modde {
                             .await
                             .map(|h| h.path().to_path_buf())
                     },
-                    |path| match path {
+                    move |path| match path {
                         Some(p) => Message::SetGamePath {
-                            game_id: "default".to_string(),
+                            game_id: game_id.clone(),
                             path: p,
                         },
                         None => Message::Noop,

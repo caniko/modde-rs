@@ -19,7 +19,12 @@ impl Modde {
                     Self::scan_installed_games_task(),
                 ]);
             }
-            Message::InstalledGamesScanned(games) => self.installed_games = games,
+            Message::InstalledGamesScanned(games) => {
+                self.installed_games = games;
+                if matches!(self.active_view, View::Settings) && self.game_path_draft.is_empty() {
+                    self.seed_settings_drafts();
+                }
+            }
             Message::ProfileContextLoaded { generation, result } => {
                 // Drop stale loads: a newer kickoff bumped the generation, so
                 // this result is for a game/profile the user has moved on from.

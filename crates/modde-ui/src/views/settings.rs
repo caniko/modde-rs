@@ -32,16 +32,6 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
         None => text("Not validated").size(12).into(),
     };
 
-    let game_path_str = state
-        .game_install_paths
-        .first()
-        .map(|install| install.path.display().to_string())
-        .unwrap_or_default();
-    let download_dir_str = state
-        .download_dir
-        .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
     let nexus_source = state
         .nexus_api_key_source
         .as_ref()
@@ -115,14 +105,17 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
     // Game install path
     let game_path_section = column![
         text("Game Install Path").size(14),
-        text("Root directory of the game installation.").size(11),
+        text("Root directory of the game installation. Press Enter to apply.").size(11),
         row![
-            text_input("/path/to/game", &game_path_str,)
+            text_input("/path/to/game", &state.game_path_draft)
                 .id(semantics::widget_id("settings.game_path"))
-                .on_input(|s| Message::SetGamePath {
-                    game_id: "default".to_string(),
-                    path: PathBuf::from(s)
-                })
+                .on_input(Message::GamePathDraftChanged)
+                .on_submit_maybe(state.current_game_id.clone().map(|game_id| {
+                    Message::SetGamePath {
+                        game_id,
+                        path: PathBuf::from(&state.game_path_draft),
+                    }
+                }))
                 .padding(8)
                 .width(Length::Fill),
             semantics::test_id(
@@ -141,11 +134,14 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
     // Download directory
     let download_dir_section = column![
         text("Download Directory").size(14),
-        text("Where downloaded mod archives are stored.").size(11),
+        text("Where downloaded mod archives are stored. Press Enter to apply.").size(11),
         row![
-            text_input("/path/to/downloads", &download_dir_str,)
+            text_input("/path/to/downloads", &state.download_dir_draft)
                 .id(semantics::widget_id("settings.download_dir"))
-                .on_input(|s| Message::SetDownloadDir(PathBuf::from(s)))
+                .on_input(Message::DownloadDirDraftChanged)
+                .on_submit(Message::SetDownloadDir(PathBuf::from(
+                    &state.download_dir_draft
+                )))
                 .padding(8)
                 .width(Length::Fill),
             semantics::test_id(

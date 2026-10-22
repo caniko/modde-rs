@@ -35,7 +35,28 @@ impl Modde {
             has_stock_snapshot: self.stock_snapshot_exists,
             theme_name: self.theme_name.clone(),
             nexus_status: self.nexus_status.clone(),
+            game_path_draft: self.game_path_draft.clone(),
+            download_dir_draft: self.download_dir_draft.clone(),
+            current_game_id: self.current_game_id().map(str::to_string),
         }
+    }
+
+    /// Seed the Settings path drafts from the saved/detected values.
+    pub(crate) fn seed_settings_drafts(&mut self) {
+        let current = self.current_game_id().map(str::to_string);
+        let installs = settings_game_install_paths(&self.settings, self.installed_games.clone());
+        self.game_path_draft = installs
+            .iter()
+            .find(|install| Some(&install.game_id) == current.as_ref())
+            .or(installs.first())
+            .map(|install| install.path.display().to_string())
+            .unwrap_or_default();
+        self.download_dir_draft = self
+            .settings
+            .download_dir
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
     }
 
     /// Rescan Steam/Heroic libraries off the UI thread into `installed_games`.
@@ -186,6 +207,7 @@ impl Modde {
     /// `refresh_data_tab_conflicts`/`refresh_tools_state` helpers.
     pub(crate) fn apply_profile_context(&mut self, snapshot: ProfileContextSnapshot) {
         self.profiles = snapshot.profiles;
+        self.stock_snapshot_exists = snapshot.stock_snapshot_exists;
         self.active_profile = snapshot.active_profile;
         match snapshot.profile_outcome {
             ProfileLoadOutcome::Loaded {

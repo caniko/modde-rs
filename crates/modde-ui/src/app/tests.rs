@@ -20,6 +20,8 @@ fn test_app() -> Modde {
         pending_confirm: None,
         installed_games: Vec::new(),
         startup_error: None,
+        game_path_draft: String::new(),
+        download_dir_draft: String::new(),
         button_hover_toast: ButtonHoverToastState::default(),
         pending_tools_load_status_message: None,
         settings: AppSettings::default(),

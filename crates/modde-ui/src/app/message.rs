@@ -320,6 +320,8 @@ pub enum Message {
         path: PathBuf,
     },
     SetDownloadDir(PathBuf),
+    GamePathDraftChanged(String),
+    DownloadDirDraftChanged(String),
     BrowseGamePath,
     BrowseDownloadDir,
     SetTheme(String),
@@ -352,7 +354,6 @@ pub enum Message {
 
     // Data tab
     DataTabFilterChanged(String),
-    DataTabToggleConflicts(bool),
 
     // Diagnostics
     RunDiagnostics,

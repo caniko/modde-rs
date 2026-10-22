@@ -110,6 +110,17 @@ pub async fn import_archives(
     Ok(results)
 }
 
+impl std::fmt::Display for ArchiveImportStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Imported => "imported",
+            Self::AlreadyPresent => "already present",
+            Self::Mismatched => "hash mismatch",
+            Self::Unused => "not in modlist",
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

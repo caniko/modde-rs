@@ -18,7 +18,6 @@ impl Modde {
             | Message::SelectSaveSnapshot(_)
             | Message::RestoreSaveSnapshot(_)
             | Message::DataTabFilterChanged(_)
-            | Message::DataTabToggleConflicts(_)
             | Message::RunDiagnostics
             | Message::CrashLogPathChanged(_)
             | Message::AnalyzeCrashLog

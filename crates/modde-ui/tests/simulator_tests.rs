@@ -39,6 +39,9 @@ fn default_settings_state() -> SettingsState {
         has_stock_snapshot: false,
         theme_name: "Dark".to_string(),
         nexus_status: None,
+        game_path_draft: String::new(),
+        download_dir_draft: String::new(),
+        current_game_id: None,
     }
 }
 

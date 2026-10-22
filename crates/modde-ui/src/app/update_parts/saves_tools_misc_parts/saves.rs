@@ -138,9 +138,6 @@ impl Modde {
             Message::DataTabFilterChanged(f) => {
                 self.data_tab_state.filter = f;
             }
-            Message::DataTabToggleConflicts(v) => {
-                self.data_tab_state.show_conflicts_only = v;
-            }
             Message::RunDiagnostics => {
                 return self.start_diagnostics_load();
             }

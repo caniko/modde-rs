@@ -170,7 +170,7 @@ pub(super) fn missing_archives_panel(state: &WabbajackInstallerState) -> Element
         for result in state.archive_import_results.iter().rev().take(5) {
             panel = panel.push(
                 text(format!(
-                    "{}: {:?} ({:016x})",
+                    "{}: {} ({:016x})",
                     result.source_path.display(),
                     result.status,
                     result.computed_xxh64

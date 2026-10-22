@@ -258,7 +258,7 @@ fn crash_report_rows(report: &DiagnosticsReport) -> Element<'_, Message> {
                 .first()
                 .map(|e| format!("{} in {}", e.token, e.section))
                 .unwrap_or_else(|| "mentioned by crash log".to_string());
-            col.push(text(format!("{:?}: {name} - {evidence}", suspect.confidence)).size(13))
+            col.push(text(format!("{}: {name} - {evidence}", suspect.confidence)).size(13))
         },
     );
     container(rows)

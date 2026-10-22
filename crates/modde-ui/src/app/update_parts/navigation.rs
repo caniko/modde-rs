@@ -66,9 +66,14 @@ impl Modde {
                 View::BrowseNexus => {
                     self.active_view = View::BrowseNexus;
                     self.sync_browse_game_to_current(false);
+                    let browse = &self.browse_nexus;
+                    if browse.mods.is_empty() && browse.collections.is_empty() && !browse.loading {
+                        return self.update(Message::BrowseTabSwitched(browse.active_tab));
+                    }
                 }
                 View::Settings => {
                     self.active_view = View::Settings;
+                    self.seed_settings_drafts();
                     return Self::scan_installed_games_task();
                 }
                 other => {
@@ -135,6 +140,17 @@ impl Modde {
                 );
             }
             Message::ForkProfile { source, new_name } => {
+                // `<name>-fork` collides on the second fork; pick the first free suffix.
+                let taken = |candidate: &str| self.profiles.iter().any(|p| p.name == candidate);
+                let new_name = if taken(&new_name) {
+                    // With n profiles, one of n+1 suffixes is free.
+                    (2..=self.profiles.len() + 2)
+                        .map(|n| format!("{new_name}-{n}"))
+                        .find(|candidate| !taken(candidate))
+                        .unwrap_or(new_name)
+                } else {
+                    new_name
+                };
                 if let Some(ref profile) = self.loaded_profile {
                     let game_id = profile.game_id.clone();
                     self.context_generation = self.context_generation.wrapping_add(1);

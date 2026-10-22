@@ -146,6 +146,8 @@ impl Modde {
             pending_confirm: None,
             installed_games: Vec::new(),
             startup_error,
+            game_path_draft: String::new(),
+            download_dir_draft: String::new(),
             button_hover_toast: ButtonHoverToastState::default(),
             pending_tools_load_status_message: None,
             settings,
@@ -517,6 +519,8 @@ impl Modde {
             | Message::RemoveNexusConfigKey
             | Message::SetGamePath { .. }
             | Message::SetDownloadDir(_)
+            | Message::GamePathDraftChanged(_)
+            | Message::DownloadDirDraftChanged(_)
             | Message::BrowseGamePath
             | Message::BrowseDownloadDir
             | Message::SetTheme(_)

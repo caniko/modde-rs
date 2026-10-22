@@ -107,5 +107,10 @@ pub(crate) async fn load_profile_context(
         missing_store_mod_count,
         tools,
         rerun_diagnostics: request.rerun_diagnostics,
+        stock_snapshot_exists: selected_game_id.as_ref().is_some_and(|game_id| {
+            modde_core::stock::StockGameManager::default_dir()
+                .join(game_id.as_str())
+                .exists()
+        }),
     })
 }

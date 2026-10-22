@@ -65,7 +65,7 @@ pub fn view<'a>(
         text("Date").size(12).width(Length::Fixed(110.0)),
         text("Save").size(12).width(Length::Fill),
         text("Files").size(12).width(Length::Fixed(50.0)),
-        text("Mods").size(12).width(Length::Fixed(60.0)),
+        text("Fingerprint").size(12).width(Length::Fixed(60.0)),
     ]
     .spacing(8)
     .padding([4, 0]);

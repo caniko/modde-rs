@@ -14,6 +14,10 @@ pub struct SettingsState {
     pub has_stock_snapshot: bool,
     pub theme_name: String,
     pub nexus_status: Option<NexusAuthStatus>,
+    pub game_path_draft: String,
+    pub download_dir_draft: String,
+    /// Game the path field applies to; `None` disables submit.
+    pub current_game_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,6 +135,9 @@ pub struct Modde {
     pub installed_games: Vec<modde_games::DetectedGame>,
     /// Set when the database could not be opened; `view` renders only this.
     pub startup_error: Option<String>,
+    /// Settings path fields; committed with Enter or Browse, not per keystroke.
+    pub game_path_draft: String,
+    pub download_dir_draft: String,
     pub button_hover_toast: ButtonHoverToastState,
     pub pending_tools_load_status_message: Option<String>,
     pub settings: AppSettings,

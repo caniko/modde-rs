@@ -458,6 +458,8 @@ pub struct ProfileContextSnapshot {
     /// Only set by the profile-switch handler (preserves the old synchronous
     /// `SwitchProfile` behavior).
     pub rerun_diagnostics: bool,
+    /// Whether a stock snapshot directory exists for the selected game.
+    pub stock_snapshot_exists: bool,
 }
 
 #[derive(Debug, Clone)]

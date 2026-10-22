@@ -411,3 +411,14 @@ fn upsert_suspect(
 
 #[cfg(test)]
 mod tests;
+
+impl std::fmt::Display for CrashConfidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Low => "Low",
+            Self::Medium => "Medium",
+            Self::High => "High",
+            Self::Highest => "Highest",
+        })
+    }
+}

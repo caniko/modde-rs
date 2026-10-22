@@ -1,5 +1,5 @@
 use crate::views::selectable_text::text;
-use iced::widget::{checkbox, column, container, row, scrollable, text_input};
+use iced::widget::{column, container, row, scrollable, text_input};
 use iced::{Alignment, Element, Length};
 
 use crate::app::Message;
@@ -8,7 +8,6 @@ use crate::app::Message;
 #[derive(Debug, Clone, Default)]
 pub struct DataTabState {
     pub filter: String,
-    pub show_conflicts_only: bool,
     pub missing_store_mod_count: usize,
 }
 
@@ -28,8 +27,6 @@ pub fn view<'a>(
             .on_input(Message::DataTabFilterChanged)
             .padding(6)
             .width(Length::Fill),
-        checkbox(state.show_conflicts_only).on_toggle(Message::DataTabToggleConflicts),
-        text("Conflicts only").size(13),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
@@ -37,15 +34,7 @@ pub fn view<'a>(
     let filter_lower = state.filter.to_lowercase();
     let filtered: Vec<&(String, Vec<String>)> = conflict_files
         .iter()
-        .filter(|(file, _)| {
-            if !filter_lower.is_empty() && !file.to_lowercase().contains(&filter_lower) {
-                return false;
-            }
-            if state.show_conflicts_only {
-                return true; // all entries in conflict_files are conflicts
-            }
-            true
-        })
+        .filter(|(file, _)| filter_lower.is_empty() || file.to_lowercase().contains(&filter_lower))
         .collect();
 
     let file_count = filtered.len();

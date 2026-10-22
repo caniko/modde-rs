@@ -153,11 +153,18 @@ pub fn view_filtered<'a>(
 
     // ── Build rows ──
     let mod_rows: Element<Message> = if filtered_indices.is_empty() {
-        container(text("No mods found. Click 'Add Mod' to get started.").size(14))
-            .padding(20)
-            .width(Length::Fill)
-            .center_x(Length::Fill)
-            .into()
+        container(
+            text(if mods.is_empty() {
+                "No mods found. Click 'Add Mod' to get started."
+            } else {
+                "No mods match the current filter."
+            })
+            .size(14),
+        )
+        .padding(20)
+        .width(Length::Fill)
+        .center_x(Length::Fill)
+        .into()
     } else if categories.is_empty() {
         // No categories defined — flat list
         let rows = build_flat_mod_rows(

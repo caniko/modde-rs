@@ -295,6 +295,7 @@ fn profile_context_loaded_discards_stale_generation() {
         missing_store_mod_count: 0,
         tools: None,
         rerun_diagnostics: false,
+        stock_snapshot_exists: false,
     };
     let _ = app.update(Message::ProfileContextLoaded {
         generation: 1,
@@ -313,6 +314,7 @@ fn profile_context_loaded_discards_stale_generation() {
         missing_store_mod_count: 0,
         tools: None,
         rerun_diagnostics: false,
+        stock_snapshot_exists: false,
     };
     let _ = app.update(Message::ProfileContextLoaded {
         generation: 2,

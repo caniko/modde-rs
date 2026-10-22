@@ -8,10 +8,16 @@ impl Modde {
     pub(super) fn handle_deploy_update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Deploy => {
-                self.set_status("Deploying mods...".to_string());
-                if let Some(ref profile) = self.loaded_profile {
-                    let profile_name = profile.name.clone();
-                    let game_id = profile.game_id.clone();
+                let Some((profile_name, game_id)) = self
+                    .loaded_profile
+                    .as_ref()
+                    .map(|profile| (profile.name.clone(), profile.game_id.clone()))
+                else {
+                    self.set_error("No active profile to deploy");
+                    return Task::none();
+                };
+                self.set_status("Deploying mods...");
+                {
                     let db = self.db.clone();
                     return Task::perform(
                         async move {
