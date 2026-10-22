@@ -466,3 +466,28 @@ fn status_severity_follows_the_last_write() {
     assert!(!app.status_is_error);
     assert_eq!(app.status_message, "Deployed");
 }
+
+#[test]
+fn confirm_modal_dispatches_the_pending_message_only_on_accept() {
+    let request = || {
+        Message::RequestConfirm(Box::new(PendingConfirm {
+            title: "Switch?",
+            body: String::new(),
+            on_confirm: Message::SwitchView(View::Settings),
+        }))
+    };
+    let mut app = test_app();
+    let _ = app.update(request());
+    assert!(app.pending_confirm.is_some());
+    let _ = app.update(Message::ConfirmCancelled);
+    assert!(app.pending_confirm.is_none());
+    assert!(
+        matches!(app.active_view, View::ModList),
+        "cancel must not dispatch"
+    );
+
+    let _ = app.update(request());
+    let _ = app.update(Message::ConfirmAccepted);
+    assert!(app.pending_confirm.is_none());
+    assert!(matches!(app.active_view, View::Settings));
+}

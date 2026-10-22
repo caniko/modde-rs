@@ -498,6 +498,12 @@ pub enum Message {
     },
 
     // Misc
+    /// Show a confirmation modal; `on_confirm` is dispatched on accept.
+    RequestConfirm(Box<PendingConfirm>),
+    ConfirmAccepted,
+    ConfirmCancelled,
+    /// Close the window even though an install or game session is running.
+    ForceWindowClose,
     Noop,
     UpdateCheckLoaded(Result<Option<modde_core::update_check::UpdateInfo>, String>),
     OpenUpdateReleasePage,

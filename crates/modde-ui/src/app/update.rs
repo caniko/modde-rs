@@ -136,6 +136,7 @@ impl Modde {
             profiles: Vec::new(),
             status_message: "Ready".to_string(),
             status_is_error: false,
+            pending_confirm: None,
             button_hover_toast: ButtonHoverToastState::default(),
             pending_tools_load_status_message: None,
             settings,
@@ -347,7 +348,10 @@ impl Modde {
             Message::OpenNewProfileDialog
             | Message::NewProfileNameChanged(_)
             | Message::CancelNewProfileDialog
-            | Message::SubmitNewProfileDialog => self.handle_profile_dialog_update(message),
+            | Message::SubmitNewProfileDialog
+            | Message::RequestConfirm(_)
+            | Message::ConfirmAccepted
+            | Message::ConfirmCancelled => self.handle_profile_dialog_update(message),
 
             Message::SelectGame(_)
             | Message::GamePathDialogBrowse
@@ -367,7 +371,8 @@ impl Modde {
             | Message::TitleBarDrag
             | Message::WindowMinimize
             | Message::WindowToggleMaximize
-            | Message::WindowClose => self.handle_window_controls_update(message),
+            | Message::WindowClose
+            | Message::ForceWindowClose => self.handle_window_controls_update(message),
 
             Message::ToggleMod { .. }
             | Message::FilterChanged(_)

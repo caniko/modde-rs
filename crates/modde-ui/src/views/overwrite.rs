@@ -45,7 +45,10 @@ pub fn view(state: &OverwriteState) -> Element<'_, Message> {
         button(text("Clear All").size(12))
             .style(button::danger)
             .padding([4, 12])
-            .on_action(ButtonAction::ClearOverwrite),
+            .on_action(ButtonAction::ClearOverwrite.confirmed(
+                "Clear overrides",
+                "Delete every file in the overrides directory? This cannot be undone.",
+            )),
         button(text("Create Mod from Overrides").size(12))
             .padding([4, 12])
             .on_action(ButtonAction::MoveOverwriteToMod(

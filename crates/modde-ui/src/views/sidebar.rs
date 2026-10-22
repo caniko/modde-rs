@@ -200,7 +200,10 @@ pub fn view<'a>(
             button(text("Del").size(11))
                 .style(button::danger)
                 .padding([3, 8])
-                .on_action(ButtonAction::DeleteProfile(name_del)),
+                .on_action(ButtonAction::DeleteProfile(name_del.clone()).confirmed(
+                    "Delete profile",
+                    format!("Delete profile '{name_del}'? This cannot be undone."),
+                )),
         );
     }
     profile_actions = profile_actions.push(
@@ -242,7 +245,10 @@ pub fn view<'a>(
                 button(text("Rollback").size(11))
                     .style(button::danger)
                     .padding([3, 8])
-                    .on_action(ButtonAction::RollbackExperiment),
+                    .on_action(ButtonAction::RollbackExperiment.confirmed(
+                        "Roll back experiment",
+                        "Discard every change made in this experiment?",
+                    )),
                 button(text("Commit").size(11))
                     .style(button::success)
                     .padding([3, 8])

@@ -45,7 +45,10 @@ pub fn view_filtered<'a>(
             .style(button::secondary)
             .padding([6, 14])
             .on_action_maybe(
-                selected_index.map(ButtonAction::RemoveMod),
+                selected_index.map(|index| {
+                    ButtonAction::RemoveMod(index)
+                        .confirmed("Remove mod", "Remove the selected mod from this profile?")
+                }),
                 "Select a mod before removing it from the active profile.",
             ),
         iced::widget::space::horizontal(),

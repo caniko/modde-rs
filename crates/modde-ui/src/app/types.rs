@@ -106,6 +106,16 @@ pub struct ButtonHoverToastState {
     pub visible: Option<ButtonHoverToast>,
 }
 
+/// A destructive action waiting for the user to confirm it in a modal.
+#[derive(Debug, Clone)]
+pub struct PendingConfirm {
+    pub title: &'static str,
+    pub body: String,
+    /// Dispatched through the normal `update` path on accept, so the
+    /// mutation lock still applies.
+    pub on_confirm: crate::app::Message,
+}
+
 /// Top-level application state.
 #[allow(clippy::struct_excessive_bools)]
 pub struct Modde {
@@ -116,6 +126,7 @@ pub struct Modde {
     pub status_message: String,
     /// Render `status_message` in the danger colour. Set via `set_error`.
     pub status_is_error: bool,
+    pub pending_confirm: Option<PendingConfirm>,
     pub button_hover_toast: ButtonHoverToastState,
     pub pending_tools_load_status_message: Option<String>,
     pub settings: AppSettings,

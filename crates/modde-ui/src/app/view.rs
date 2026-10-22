@@ -250,6 +250,9 @@ impl Modde {
         if self.manage_custom_games_dialog_open {
             base = stack([base, self.manage_custom_games_modal()]).into();
         }
+        if let Some(confirm) = &self.pending_confirm {
+            base = stack([base, self.confirm_dialog(confirm)]).into();
+        }
 
         crate::shortcut_layer::shortcut_layer(base).into()
     }
@@ -288,6 +291,46 @@ impl Modde {
             .spacing(12),
         )
         .width(Length::Fixed(360.0))
+        .padding(16)
+        .style(container::rounded_box);
+
+        opaque(
+            container(dialog)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill),
+        )
+    }
+
+    fn confirm_dialog(&self, confirm: &super::PendingConfirm) -> Element<'_, Message> {
+        let dialog = container(
+            column![
+                text(confirm.title).size(18),
+                text(&confirm.body).size(13),
+                row![
+                    iced::widget::Space::new().width(Length::Fill),
+                    crate::semantics::test_id(
+                        "confirm.cancel",
+                        button(text("Cancel").size(13))
+                            .style(button::secondary)
+                            .padding([6, 14])
+                            .on_action(ButtonAction::ConfirmCancel),
+                    ),
+                    crate::semantics::test_id(
+                        "confirm.accept",
+                        button(text("Confirm").size(13))
+                            .style(button::danger)
+                            .padding([6, 14])
+                            .on_action(ButtonAction::ConfirmAccept),
+                    ),
+                ]
+                .spacing(8)
+                .align_y(iced::Alignment::Center),
+            ]
+            .spacing(12),
+        )
+        .width(Length::Fixed(420.0))
         .padding(16)
         .style(container::rounded_box);
 

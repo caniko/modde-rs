@@ -256,7 +256,12 @@ pub(super) fn render_save_details(state: &SaveDetailsState) -> Element<'_, Messa
             .style(button::secondary)
             .padding([4, 8])
             .width(Length::Fill)
-            .on_action(ButtonAction::RestoreSaveSnapshot(state.commit_id.clone())),
+            .on_action(
+                ButtonAction::RestoreSaveSnapshot(state.commit_id.clone()).confirmed(
+                    "Restore save snapshot",
+                    "Overwrite the current save files with this snapshot?",
+                ),
+            ),
     );
 
     // Commit ID (subtle)

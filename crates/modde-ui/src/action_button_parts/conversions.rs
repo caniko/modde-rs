@@ -144,6 +144,17 @@ impl From<ButtonAction> for Message {
             ButtonAction::RemoveCustomGame(id) => Message::RemoveCustomGame(id),
             ButtonAction::OpenUpdateReleasePage => Message::OpenUpdateReleasePage,
             ButtonAction::DismissUpdateBanner => Message::DismissUpdateBanner,
+            ButtonAction::Confirm {
+                title,
+                body,
+                action,
+            } => Message::RequestConfirm(Box::new(PendingConfirm {
+                title,
+                body,
+                on_confirm: (*action).into(),
+            })),
+            ButtonAction::ConfirmAccept => Message::ConfirmAccepted,
+            ButtonAction::ConfirmCancel => Message::ConfirmCancelled,
         }
     }
 }

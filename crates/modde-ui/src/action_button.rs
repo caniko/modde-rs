@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::app::{Message, ReorderDirection, SidebarGroup, View, WabbajackTab};
+use crate::app::{Message, PendingConfirm, ReorderDirection, SidebarGroup, View, WabbajackTab};
 use crate::views::browse_nexus::BrowseTab;
 use iced::Element;
 use iced::widget::{Button, mouse_area};
@@ -156,6 +156,26 @@ pub enum ButtonAction {
     RemoveCustomGame(String),
     OpenUpdateReleasePage,
     DismissUpdateBanner,
+    /// Ask before running `action`; see [`ButtonAction::confirmed`].
+    Confirm {
+        title: &'static str,
+        body: String,
+        action: Box<ButtonAction>,
+    },
+    ConfirmAccept,
+    ConfirmCancel,
+}
+
+impl ButtonAction {
+    /// Wrap a destructive action in a confirmation modal.
+    #[must_use]
+    pub fn confirmed(self, title: &'static str, body: impl Into<String>) -> Self {
+        Self::Confirm {
+            title,
+            body: body.into(),
+            action: Box::new(self),
+        }
+    }
 }
 
 #[path = "action_button_parts/conversions.rs"]

@@ -28,6 +28,14 @@ impl Modde {
                 }
                 return self.update(Message::CreateProfile { name, game_id });
             }
+            // ── Confirmation modal ───────────────────────────────
+            Message::RequestConfirm(confirm) => self.pending_confirm = Some(*confirm),
+            Message::ConfirmCancelled => self.pending_confirm = None,
+            Message::ConfirmAccepted => {
+                if let Some(confirm) = self.pending_confirm.take() {
+                    return self.update(confirm.on_confirm);
+                }
+            }
             _ => unreachable!("message routed to wrong update handler"),
         }
         Task::none()

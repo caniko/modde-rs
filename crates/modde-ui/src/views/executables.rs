@@ -83,9 +83,12 @@ fn executables_panel(state: &ToolState) -> Element<'_, Message> {
                                 .style(button::danger)
                                 .padding([4, 10])
                                 .on_action_maybe(
-                                    (!busy).then_some(ButtonAction::RemoveExecutable(
-                                        entry.name.clone()
-                                    )),
+                                    (!busy).then_some(
+                                        ButtonAction::RemoveExecutable(entry.name.clone()).confirmed(
+                                            "Remove executable",
+                                            "Remove this executable from modde? Files on disk are kept.",
+                                        ),
+                                    ),
                                     "This executable is already running.",
                                 ),
                         ]

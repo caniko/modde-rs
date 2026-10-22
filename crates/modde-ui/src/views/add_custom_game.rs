@@ -175,12 +175,13 @@ pub fn manage_dialog(custom_games: Vec<(String, String)>) -> Element<'static, Me
                 .style(secondary),
         );
     } else {
-        let list = custom_games
-            .into_iter()
-            .fold(column![].spacing(8), |column, (id, label)| {
-                column.push(
-                    container(
-                        row![
+        let list =
+            custom_games
+                .into_iter()
+                .fold(column![].spacing(8), |column, (id, label)| {
+                    column.push(
+                        container(
+                            row![
                             column![
                                 text(label).size(14),
                                 text(id.clone()).size(11).style(secondary)
@@ -192,16 +193,19 @@ pub fn manage_dialog(custom_games: Vec<(String, String)>) -> Element<'static, Me
                                 button(text("Remove").size(12))
                                     .style(button::danger)
                                     .padding([5, 12])
-                                    .on_action(ButtonAction::RemoveCustomGame(id.clone())),
+                                    .on_action(ButtonAction::RemoveCustomGame(id.clone()).confirmed(
+                                        "Remove custom game",
+                                        "Remove this user-defined game from modde's registry?",
+                                    )),
                             ),
                         ]
-                        .spacing(8)
-                        .align_y(Alignment::Center),
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                        )
+                        .padding(8)
+                        .style(container::rounded_box),
                     )
-                    .padding(8)
-                    .style(container::rounded_box),
-                )
-            });
+                });
         rows = rows.push(scrollable(list).height(Length::Fixed(280.0)));
     }
 

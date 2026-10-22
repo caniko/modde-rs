@@ -82,10 +82,12 @@ fn settings_click_replace_and_remove_emit_messages() {
         "should emit ReplaceNexusApiKey, got: {messages:?}",
     );
     assert!(
-        messages
-            .iter()
-            .any(|m| matches!(m, Message::RemoveNexusConfigKey)),
-        "should emit RemoveNexusConfigKey, got: {messages:?}",
+        messages.iter().any(|m| matches!(
+            m,
+            Message::RequestConfirm(confirm)
+                if matches!(confirm.on_confirm, Message::RemoveNexusConfigKey)
+        )),
+        "should ask to confirm RemoveNexusConfigKey, got: {messages:?}",
     );
 }
 

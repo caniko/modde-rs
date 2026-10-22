@@ -304,6 +304,9 @@ impl ButtonActionDescription for ButtonAction {
             ButtonAction::DismissUpdateBanner => {
                 "Hide this update notification for the current session."
             }
+            ButtonAction::Confirm { action, .. } => action.button_description(),
+            ButtonAction::ConfirmAccept => "Proceed with the action described in this dialog.",
+            ButtonAction::ConfirmCancel => "Close this dialog without making any changes.",
         }
     }
 }

@@ -107,8 +107,8 @@ pub(crate) use self::runtime::shortcut_action_to_message;
 use self::runtime::{external_refresh_stream, resize_thumbnail_bytes};
 pub use self::types::{
     ButtonHoverToast, ButtonHoverToastState, ExperimentWriteKind, ExperimentWriteOutcome, Modde,
-    NexusAuthStatus, ProfileWriteKind, ProfileWriteOutcome, SettingsGameInstall, SettingsState,
-    WabbajackInstallEvent, WabbajackInstallUiSummary,
+    NexusAuthStatus, PendingConfirm, ProfileWriteKind, ProfileWriteOutcome, SettingsGameInstall,
+    SettingsState, WabbajackInstallEvent, WabbajackInstallUiSummary,
 };
 pub use self::view::THEMES;
 

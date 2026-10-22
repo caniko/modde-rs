@@ -86,7 +86,10 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
                 button(text("Remove modde config").size(13))
                     .style(button::secondary)
                     .padding([6, 12])
-                    .on_action(ButtonAction::RemoveNexusConfigKey),
+                    .on_action(ButtonAction::RemoveNexusConfigKey.confirmed(
+                        "Remove Nexus API key",
+                        "Remove the API key saved in modde's config file?",
+                    )),
             ),
             semantics::test_id(
                 "settings.nexus_api_key.validate",
