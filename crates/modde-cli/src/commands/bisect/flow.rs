@@ -13,8 +13,8 @@ use modde_core::{
 use super::BisectResultArg;
 use super::candidate::{
     analyze_crash_log, cleanup_candidates, complete_and_advance, create_candidate_profile,
-    enforce_save_safety, finish_without_candidate, launch_candidate, newest_file_after,
-    print_completion_if_any, restore_source_profile,
+    finish_without_candidate, launch_candidate, newest_file_after, print_completion_if_any,
+    restore_source_profile,
 };
 use super::perf::{PerfRegressionConfig, perf_regression_verdict, run_perf_candidate};
 use super::start::bisect_dependency_map;
@@ -41,9 +41,14 @@ pub async fn handle_run(session_id: String) -> Result<()> {
     };
     let step_index = pm.db().list_bisect_steps(&session_id).await?.len() + 1;
     let candidate_name = format!("__bisect_{}_{}", session.session_id, step_index);
-    let candidate =
-        create_candidate_profile(&pm, &source, &candidate_name, &plan.disabled_mod_ids).await?;
-    enforce_save_safety(&session, &source, &candidate)?;
+    let candidate = create_candidate_profile(
+        &pm,
+        &session,
+        &source,
+        &candidate_name,
+        &plan.disabled_mod_ids,
+    )
+    .await?;
 
     let step_id = pm
         .db()

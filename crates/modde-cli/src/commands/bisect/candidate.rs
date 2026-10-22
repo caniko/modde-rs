@@ -47,6 +47,7 @@ pub(super) async fn installation(
 
 pub(super) async fn create_candidate_profile(
     pm: &ProfileManager,
+    session: &BisectSession,
     source: &Profile,
     candidate_name: &str,
     disabled_mod_ids: &[String],
@@ -61,6 +62,9 @@ pub(super) async fn create_candidate_profile(
             m.enabled = false;
         }
     }
+    // Check before persisting: a refused candidate has no recorded step, so
+    // `cleanup_candidates` could never remove it afterwards.
+    enforce_save_safety(session, source, &candidate)?;
     let source_id = source
         .id
         .ok_or_else(|| anyhow::anyhow!("source profile '{}' has no database ID", source.name))?;
