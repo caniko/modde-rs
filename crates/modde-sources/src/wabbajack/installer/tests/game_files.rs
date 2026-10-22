@@ -226,3 +226,44 @@ async fn install_resolves_game_file_path_case_insensitively() {
 // -----------------------------------------------------------------------
 // 3. find_entry_in_archive with exact match
 // -----------------------------------------------------------------------
+
+#[tokio::test]
+async fn install_patches_a_game_file_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let game_dir = dir.path().join("game");
+    std::fs::create_dir_all(game_dir.join("Data")).unwrap();
+    let basis = b"vanilla master";
+    std::fs::write(game_dir.join("Data/Skyrim.esm"), basis).unwrap();
+    let wabbajack_path = dir.path().join("test.wabbajack");
+    create_zip_file(&wabbajack_path, &[("fix", &data_patch(b"fixed master"))]);
+    let hash = xxh64(basis, 0);
+    let manifest = WabbajackManifest {
+        archives: vec![game_file_archive(hash, "Data\\Skyrim.esm")],
+        directives: vec![
+            modde_core::manifest::wabbajack::RawDirective::PatchedFromArchive {
+                archive_hash_path: vec![serde_json::Value::Number(hash.into())],
+                to: "mods/Fix/Skyrim.esm".into(),
+                hash: 0,
+                patch_id: "fix".into(),
+                size: 0,
+            },
+        ],
+        ..minimal_manifest()
+    };
+    let staging_dir = dir.path().join("staging");
+    let mut inst = WabbajackInstaller::new(
+        manifest,
+        wabbajack_path,
+        dir.path().join("store"),
+        staging_dir.clone(),
+    );
+    inst.set_game_dir(game_dir);
+    inst.apply_memory_provider = Some(admission::fixture_provider());
+
+    let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
+    inst.install(progress_tx).await.unwrap();
+    assert_eq!(
+        std::fs::read(staging_dir.join("mods/Fix/Skyrim.esm")).unwrap(),
+        b"fixed master"
+    );
+}

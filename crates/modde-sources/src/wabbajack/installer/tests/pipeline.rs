@@ -322,3 +322,75 @@ async fn synthetic_wabbajack_pipeline_reaches_late_directives() {
 // -----------------------------------------------------------------------
 // 2. set_concurrency changes and clamps the value
 // -----------------------------------------------------------------------
+
+#[tokio::test]
+async fn nested_archives_feed_copies_and_patches() {
+    use modde_core::manifest::wabbajack::{ArchiveEntry, RawDirective};
+
+    let dir = tempfile::tempdir().unwrap();
+    let inner = zip_bytes(&[("x.txt", b"inner")]);
+    let outer = zip_bytes(&[("inner.zip", inner.as_slice()), ("top.txt", b"top")]);
+    let hash = xxh64(&outer, 0);
+    let store = dir.path().join("store");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join(format!("{hash:016x}.archive")), &outer).unwrap();
+    let wabbajack_path = dir.path().join("nested.wabbajack");
+    create_zip_file(
+        &wabbajack_path,
+        &[
+            ("patch-inner", &data_patch(b"patched inner")),
+            ("patch-top", &data_patch(b"patched top")),
+        ],
+    );
+    let path = |parts: &[&str]| {
+        std::iter::once(serde_json::Value::Number(hash.into()))
+            .chain(parts.iter().map(|p| serde_json::Value::String((*p).into())))
+            .collect::<Vec<_>>()
+    };
+    let patched = |parts: &[&str], to: &str, patch_id: &str| RawDirective::PatchedFromArchive {
+        archive_hash_path: path(parts),
+        to: to.into(),
+        hash: 0,
+        patch_id: patch_id.into(),
+        size: 0,
+    };
+    let manifest = WabbajackManifest {
+        archives: vec![ArchiveEntry {
+            hash,
+            name: "outer.zip".into(),
+            size: outer.len() as u64,
+            state: Some(ArchiveState::ManualDownloader {
+                url: "https://example.test/outer.zip".into(),
+                prompt: String::new(),
+            }),
+        }],
+        directives: vec![
+            RawDirective::FromArchive {
+                archive_hash_path: path(&["inner.zip", "x.txt"]),
+                to: "mods/n/x.txt".into(),
+                size: 5,
+            },
+            patched(&["inner.zip", "x.txt"], "mods/n/inner.txt", "patch-inner"),
+            patched(&["top.txt"], "mods/n/top.txt", "patch-top"),
+        ],
+        ..minimal_manifest()
+    };
+    let staging = dir.path().join("staging");
+    let mut inst = WabbajackInstaller::new(manifest, wabbajack_path, store, staging.clone());
+    inst.apply_memory_provider = Some(admission::fixture_provider());
+    inst.add_source(crate::AnySource::Manual(crate::manual::ManualSource::new()));
+
+    let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
+    inst.install(progress_tx).await.unwrap();
+    for (file, expected) in [
+        ("x.txt", &b"inner"[..]),
+        ("inner.txt", b"patched inner"),
+        ("top.txt", b"patched top"),
+    ] {
+        assert_eq!(
+            std::fs::read(staging.join("mods/n").join(file)).unwrap(),
+            expected,
+            "{file}"
+        );
+    }
+}
