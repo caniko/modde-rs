@@ -49,3 +49,40 @@ async fn deploy_decodes_compressed_files_and_links_plain_files() {
         b"plugin"
     );
 }
+
+#[tokio::test]
+async fn deploy_honours_mo2_priority_and_enabled_flags() {
+    let temp = tempfile::tempdir().unwrap();
+    let staging = temp.path().join("staging");
+    let game = temp.path().join("game");
+    for (name, body) in [
+        ("Base", "base"),
+        ("Expansion", "expansion"),
+        ("Disabled", "disabled"),
+    ] {
+        let dir = staging.join("mods").join(name).join("r6/scripts");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Shared.reds"), body).unwrap();
+    }
+    std::fs::write(staging.join("mods/Disabled/r6/scripts/only.reds"), "x").unwrap();
+    let profile = staging.join("profiles/List");
+    std::fs::create_dir_all(&profile).unwrap();
+    // MO2 writes the highest-priority mod first, with CRLF line endings.
+    std::fs::write(
+        profile.join("modlist.txt"),
+        "# generated\r\n+Expansion\r\n-Disabled\r\n+Base\r\n-Deps_separator\r\n",
+    )
+    .unwrap();
+    let shared = game.join("r6/scripts/Shared.reds");
+
+    deploy_mo2_to_game(&staging, &game, false).await.unwrap();
+    assert_eq!(std::fs::read_to_string(&shared).unwrap(), "expansion");
+    assert!(!game.join("r6/scripts/only.reds").exists());
+
+    // A loser left behind by an older deploy is replaced by the winner.
+    modde_core::link::link_or_copy(&staging.join("mods/Base/r6/scripts/Shared.reds"), &shared)
+        .await
+        .unwrap();
+    deploy_mo2_to_game(&staging, &game, false).await.unwrap();
+    assert_eq!(std::fs::read_to_string(&shared).unwrap(), "expansion");
+}

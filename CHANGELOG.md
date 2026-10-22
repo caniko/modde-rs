@@ -202,6 +202,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Wabbajack deploy**: Deploy MO2 staging in the selected profile's
+  `modlist.txt` priority and skip disabled mods, so the higher-priority mod wins
+  each overlapping file. `modde deploy` and `modde play` now share the install
+  path's deploy, including compressed staging files.
 - **Nix tooling**: Match exported tool-schema enum lists to the repository's
   formatter so regeneration and the schema-freshness check agree.
 - **Test isolation**: Bind UI fixtures to disposable SQLite databases and reject

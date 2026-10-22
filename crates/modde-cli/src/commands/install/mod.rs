@@ -32,7 +32,8 @@ use archives::{
     build_http_client, download_file, extract_archive, fetch_collection, parse_nexus_url,
 };
 use collection::handle_nexus_collection;
-pub use launcher::{configure_wine_overrides, deploy_mo2_to_game, print_tool_environment_report};
+pub use launcher::{configure_wine_overrides, print_tool_environment_report};
+pub use modde_sources::wabbajack::runner::deploy_mo2_to_game;
 use single_mod::handle_single_mod;
 use wabbajack::handle_wabbajack;
 

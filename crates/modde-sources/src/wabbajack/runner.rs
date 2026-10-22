@@ -373,6 +373,54 @@ pub async fn configure_wine_overrides(
     Ok(report)
 }
 
+/// Enabled mods of the staging's MO2 profile, highest priority first.
+///
+/// MO2 writes `modlist.txt` with the highest-priority mod on top and marks
+/// enabled mods with `+`. The profile is `selected_profile` from
+/// `ModOrganizer.ini`, or the only profile when the ini is absent. `None`
+/// (no ini and zero or several profiles) keeps the legacy deploy-everything
+/// behavior.
+fn mo2_enabled_mods(staging: &Path) -> Option<Vec<String>> {
+    let selected = std::fs::read_to_string(staging.join("ModOrganizer.ini"))
+        .ok()
+        .and_then(|ini| {
+            ini.lines().find_map(|line| {
+                let value = line.trim().strip_prefix("selected_profile=")?;
+                Some(
+                    value
+                        .strip_prefix("@ByteArray(")
+                        .and_then(|v| v.strip_suffix(')'))
+                        .unwrap_or(value)
+                        .to_string(),
+                )
+            })
+        });
+    let profiles_dir = staging.join("profiles");
+    let profile = if let Some(name) = selected {
+        name
+    } else {
+        let mut profiles = std::fs::read_dir(&profiles_dir)
+            .ok()?
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().join("modlist.txt").is_file());
+        let only = profiles.next()?;
+        if profiles.next().is_some() {
+            return None;
+        }
+        only.file_name().to_string_lossy().into_owned()
+    };
+    let modlist = std::fs::read_to_string(profiles_dir.join(profile).join("modlist.txt")).ok()?;
+    Some(
+        modlist
+            .lines()
+            .filter_map(|line| line.trim_end_matches('\r').strip_prefix('+'))
+            // A mod name is a single directory under mods/, never a path.
+            .filter(|name| Path::new(name).file_name() == Some(std::ffi::OsStr::new(name)))
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
 pub async fn deploy_mo2_to_game(staging: &Path, game_dir: &Path, force: bool) -> Result<()> {
     #[cfg(not(unix))]
     let _ = force;
@@ -383,13 +431,33 @@ pub async fn deploy_mo2_to_game(staging: &Path, game_dir: &Path, force: bool) ->
         return Ok(());
     }
 
-    let staging_store = StagingStore::new(staging);
-    let mut entries = tokio::fs::read_dir(&mods_dir).await?;
-    while let Some(mod_entry) = entries.next_entry().await? {
-        if !mod_entry.file_type().await?.is_dir() {
-            continue;
+    let mod_paths: Vec<PathBuf> = if let Some(order) = mo2_enabled_mods(staging) {
+        order
+            .iter()
+            .map(|name| mods_dir.join(name))
+            .filter(|path| path.is_dir())
+            .collect()
+    } else {
+        let mut all = Vec::new();
+        let mut entries = tokio::fs::read_dir(&mods_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            if entry.file_type().await?.is_dir() {
+                all.push(entry.path());
+            }
         }
-        let mod_path = mod_entry.path();
+        all
+    };
+    info!(
+        mods = mod_paths.len(),
+        "deploying MO2 staging to game directory"
+    );
+
+    // Mods are visited highest priority first, so the first provider of a
+    // path wins, as in MO2. Keys are lowercased because the game resolves
+    // paths with Windows (case-insensitive) semantics.
+    let mut claimed = std::collections::HashSet::new();
+    let staging_store = StagingStore::new(staging);
+    for mod_path in mod_paths {
         let mut stack = vec![mod_path.clone()];
         while let Some(dir) = stack.pop() {
             let mut dir_entries = tokio::fs::read_dir(&dir).await?;
@@ -411,6 +479,9 @@ pub async fn deploy_mo2_to_game(staging: &Path, game_dir: &Path, force: bool) ->
                     .unwrap_or(&logical_entry_path);
                 let filename = rel_path.file_name().unwrap_or_default().to_string_lossy();
                 if filename == "meta.ini" || filename == "meta.json" {
+                    continue;
+                }
+                if !claimed.insert(rel_path.to_string_lossy().to_lowercase()) {
                     continue;
                 }
 
