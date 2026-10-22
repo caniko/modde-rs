@@ -270,6 +270,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and restoring profile `main`'s plugin order no longer picks up `main_extra`'s.
 - **Patcher**: `modde patcher reorder` now requires every stage exactly once and
   applies the order atomically instead of ignoring typos or leaving ties.
+- **Saves**: Find Skyrim, Fallout and Starfield saves in Steam's Proton prefix
+  on Linux. The game-wide lookup used `drive_c/Users`, which Proton never
+  creates on a case-sensitive filesystem, so `modde mod remove` never checked
+  the live saves.
 - **Profiles**: Reject `.` and `..` profile names, skip invalid names during TOML
   import, write plugin order atomically, and encode profile sources as valid
   TOML so control characters no longer make a profile unloadable. Roll back
