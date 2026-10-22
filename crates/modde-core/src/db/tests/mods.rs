@@ -224,3 +224,151 @@ fn source_decoding_rejects_unknown_kinds_and_defaults_missing_data() {
         }
     );
 }
+
+async fn profile_with_mods(db: &ModdeDb, name: &str) -> i64 {
+    db.create_profile(&sample_profile(name, "skyrim-se"))
+        .await
+        .unwrap()
+}
+
+async fn loaded_mod(db: &ModdeDb, name: &str, mod_id: &str) -> EnabledMod {
+    db.load_profile(name, &GameId::from("skyrim-se"))
+        .await
+        .unwrap()
+        .mods
+        .into_iter()
+        .find(|m| m.mod_id == mod_id)
+        .unwrap()
+}
+
+#[tokio::test]
+async fn hidden_files_are_idempotent_and_listed_per_mod() {
+    let db = test_db().await;
+    let id = profile_with_mods(&db, "p").await;
+    let (mod_a, mod_b) = (ModId::from("mod_a"), ModId::from("mod_b"));
+
+    db.hide_file(id, &mod_a, "a.esp").await.unwrap();
+    db.hide_file(id, &mod_a, "a.esp").await.unwrap();
+    db.hide_file(id, &mod_b, "b.esp").await.unwrap();
+    assert_eq!(db.list_hidden_files(id).await.unwrap().len(), 2);
+    assert_eq!(
+        db.list_hidden_files_for_mod(id, &mod_a).await.unwrap(),
+        ["a.esp"]
+    );
+
+    db.unhide_file(id, &mod_a, "a.esp").await.unwrap();
+    assert_eq!(
+        db.list_hidden_files_for_mod(id, &mod_a).await.unwrap(),
+        [] as [&str; 0]
+    );
+}
+
+#[tokio::test]
+async fn categories_reorder_and_detach_mods_on_delete() {
+    let db = test_db().await;
+    let id = profile_with_mods(&db, "p").await;
+    let category = |name: &str, sort_index| ModCategory {
+        id: None,
+        name: name.to_string(),
+        color: None,
+        sort_index,
+    };
+    let ui = db.create_category(id, &category("UI", 1)).await.unwrap();
+    let gameplay = db
+        .create_category(id, &category("Gameplay", 2))
+        .await
+        .unwrap();
+    db.update_category(gameplay, "Gameplay", Some("#ff0000"), 0)
+        .await
+        .unwrap();
+    let listed = db.list_categories(id).await.unwrap();
+    let names: Vec<&str> = listed.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Gameplay", "UI"]);
+    assert_eq!(listed[0].color.as_deref(), Some("#ff0000"));
+
+    db.set_mod_category(id, &ModId::from("mod_a"), Some(ui))
+        .await
+        .unwrap();
+    assert_eq!(loaded_mod(&db, "p", "mod_a").await.category_id, Some(ui));
+    db.delete_category(ui).await.unwrap();
+    assert_eq!(loaded_mod(&db, "p", "mod_a").await.category_id, None);
+    assert_eq!(db.list_categories(id).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn mod_notes_tags_and_nexus_metadata_persist() {
+    let db = test_db().await;
+    let id = profile_with_mods(&db, "p").await;
+    let mod_a = ModId::from("mod_a");
+
+    db.set_mod_notes(id, &mod_a, Some("keep last"))
+        .await
+        .unwrap();
+    db.set_mod_tags(id, &mod_a, &["ui".to_string(), "core".to_string()])
+        .await
+        .unwrap();
+    db.set_mod_nexus_meta(
+        id,
+        &mod_a,
+        NexusModId::from(42),
+        NexusFileId::from(7),
+        "skyrimspecialedition",
+        1_700_000_000,
+    )
+    .await
+    .unwrap();
+
+    let loaded = loaded_mod(&db, "p", "mod_a").await;
+    assert_eq!(loaded.notes.as_deref(), Some("keep last"));
+    assert_eq!(loaded.tags, ["ui", "core"]);
+    assert_eq!(loaded.nexus_mod_id, Some(NexusModId::from(42)));
+    assert_eq!(loaded.nexus_file_id, Some(NexusFileId::from(7)));
+    assert_eq!(
+        loaded.nexus_game_domain.as_deref(),
+        Some("skyrimspecialedition")
+    );
+    assert_eq!(loaded.installed_timestamp, Some(1_700_000_000));
+
+    db.set_mod_notes(id, &mod_a, None).await.unwrap();
+    assert_eq!(loaded_mod(&db, "p", "mod_a").await.notes, None);
+}
+
+#[tokio::test]
+async fn auxiliary_state_copies_to_another_profile() {
+    let db = test_db().await;
+    let source = profile_with_mods(&db, "source").await;
+    let target = profile_with_mods(&db, "target").await;
+    let mod_a = ModId::from("mod_a");
+    db.hide_file(source, &mod_a, "hidden.esp").await.unwrap();
+    db.set_plugin_order(source, &[plugin("a.esp", 0)])
+        .await
+        .unwrap();
+    db.record_install(
+        source,
+        &mod_a,
+        &plan(vec![staged("a.esp", None)]),
+        InstallStatus::Installed,
+    )
+    .await
+    .unwrap();
+
+    db.copy_profile_auxiliary_state(source, target)
+        .await
+        .unwrap();
+    assert_eq!(
+        db.list_hidden_files_for_mod(target, &mod_a).await.unwrap(),
+        ["hidden.esp"]
+    );
+    assert_eq!(
+        plugin_names(&db.get_plugin_order(target).await.unwrap()),
+        ["a.esp"]
+    );
+    assert_eq!(
+        rel_paths(db.installed_files_for_mod(target, &mod_a).await.unwrap()),
+        ["a.esp"]
+    );
+    assert_eq!(
+        db.installed_files_for_profile(target).await.unwrap().len(),
+        1
+    );
+}
