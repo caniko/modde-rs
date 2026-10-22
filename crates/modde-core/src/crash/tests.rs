@@ -244,3 +244,83 @@ fn net_script_framework_parser_detects_sections() {
             .any(|t| t.value == "Data\\textures\\foo.dds")
     );
 }
+
+#[test]
+fn format_names_round_trip_and_headers_pick_the_parser() {
+    for format in [
+        CrashLogFormat::Auto,
+        CrashLogFormat::CrashLoggerSse,
+        CrashLogFormat::NetScriptFramework,
+        CrashLogFormat::Trainwreck,
+        CrashLogFormat::Generic,
+    ] {
+        assert_eq!(CrashLogFormat::parse(format.as_str()), Some(format));
+    }
+    assert_eq!(
+        CrashLogFormat::parse("crashlogger"),
+        Some(CrashLogFormat::CrashLoggerSse)
+    );
+    assert_eq!(CrashLogFormat::parse("minidump"), None);
+
+    for (head, format) in [
+        ("CrashLoggerSSE v1.2", CrashLogFormat::CrashLoggerSse),
+        ("Trainwreck crash log", CrashLogFormat::Trainwreck),
+        ("Unhandled exception", CrashLogFormat::Generic),
+    ] {
+        assert_eq!(detect_format(head), format, "{head}");
+        assert_eq!(
+            parse_crash_log(head, CrashLogFormat::Auto).detected_format,
+            format
+        );
+    }
+    assert_eq!(
+        parse_crash_log("anything", CrashLogFormat::Trainwreck).detected_format,
+        CrashLogFormat::Trainwreck
+    );
+    assert_eq!(CrashConfidence::Highest.to_string(), "Highest");
+    assert_eq!(CrashConfidence::Low.to_string(), "Low");
+}
+
+#[test]
+fn tool_dlls_and_asset_paths_correlate_to_their_mods() {
+    let mut input = correlation_input();
+    input
+        .profile
+        .mods
+        .push(enabled_mod("armor-mod", Some("Armor")));
+    input.installed_files.push((
+        "armor-mod".to_string(),
+        staged_file("meshes/armor/cuirass.nif"),
+    ));
+    input
+        .installed_files
+        .push(("bad-skse-plugin".to_string(), staged_file("dxgi.dll")));
+    input.tool_files.push("bin/dxgi.dll".to_string());
+    let log = "Unhandled exception\nmodule dxgi.dll\nwhile loading meshes\\armor\\cuirass.nif\n";
+
+    let report = correlate_crash_log(
+        Path::new("/tmp/generic.log"),
+        log,
+        CrashLogFormat::Auto,
+        input,
+    );
+    assert_eq!(report.format, CrashLogFormat::Generic);
+    let evidence = |mod_id: &str| {
+        report
+            .suspects
+            .iter()
+            .find(|s| s.mod_id.as_deref() == Some(mod_id))
+            .unwrap_or_else(|| panic!("no suspect {mod_id}: {:?}", report.suspects))
+    };
+    let tool = evidence("bad-skse-plugin");
+    assert!(
+        tool.evidence
+            .iter()
+            .any(|e| e.reason.contains("tracked as tool-applied file")),
+        "{:?}",
+        tool.evidence
+    );
+    let asset = evidence("armor-mod");
+    assert_eq!(asset.confidence, CrashConfidence::Medium);
+    assert_eq!(asset.evidence[0].kind, CrashTokenKind::AssetPath);
+}
