@@ -149,3 +149,33 @@ fn rejects_unresolved_installs_missing_save_dirs_and_unknown_snapshots() {
     let missing = err(&save(&fx, &["restore", "--profile", PROFILE, "deadbeef"]));
     assert!(missing.contains("deadbeef"), "{missing}");
 }
+
+#[tokio::test]
+async fn restoring_after_the_mod_list_changed_warns_about_the_fingerprint() {
+    let (fx, live) = sandbox("day 1");
+    ok(&save(&fx, &["adopt", "--profile", PROFILE]));
+    std::fs::write(live.join("Farm_123"), "day 2").unwrap();
+    ok(&save(&fx, &["auto-capture"]));
+    let fingerprinted = history(&fx)[0].clone();
+
+    let db = modde_core::ModdeDb::open_at(&fx.data_dir().join("modde.db"))
+        .await
+        .unwrap();
+    let mut profile = db.load_profile(PROFILE, &GameId::from(GAME)).await.unwrap();
+    profile.mods.push(modde_core::profile::EnabledMod {
+        mod_id: "new_mod".to_string(),
+        enabled: true,
+        ..Default::default()
+    });
+    db.update_profile(&profile).await.unwrap();
+    drop(db);
+
+    let restored = save(&fx, &["restore", "--profile", PROFILE, &fingerprinted]);
+    let stderr = String::from_utf8_lossy(&restored.stderr);
+    assert!(ok(&restored).contains("Restored 1 save file(s)"));
+    assert!(
+        stderr.contains("Save-breaking mod mismatch detected!"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("    + new_mod"), "{stderr}");
+}

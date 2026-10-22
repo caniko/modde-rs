@@ -224,3 +224,69 @@ fn manifest_threshold_excludes_partial_archives() {
     assert!(!failed.status.success());
     assert!(String::from_utf8_lossy(&failed.stderr).contains("failed to parse manifest"));
 }
+
+#[cfg(feature = "cyberpunk")]
+#[test]
+fn dedup_prunes_scanner_rows_the_manifest_already_installs() {
+    let fx = Fixture::new();
+    let install = fx.root().join("cyberpunk");
+    for file in ["archive/pc/mod/foo.archive", "archive/pc/mod/other.archive"] {
+        write(&install.join(file));
+    }
+    ok(&scan(
+        &fx,
+        &[
+            "--game",
+            "cyberpunk2077",
+            "--game-dir",
+            install.to_str().unwrap(),
+            "--import-to",
+            "list",
+        ],
+    ));
+    let dedup = |profile: &str, extra: &[&str]| {
+        fx.cmd()
+            .args(["profile", "dedup", profile, "--game", "cyberpunk2077"])
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+
+    let heuristic = ok(&dedup("list", &[]));
+    assert!(
+        heuristic.contains("2 filesystem-scanner suspects"),
+        "{heuristic}"
+    );
+    assert!(
+        heuristic.contains("Suspects (layer-1, heuristic only):"),
+        "{heuristic}"
+    );
+    let unclassified = dedup("list", &["--apply"]);
+    assert!(String::from_utf8_lossy(&unclassified.stderr).contains("--apply requires --manifest"));
+
+    let manifest = cyberpunk_manifest(&fx);
+    let manifest = manifest.to_str().unwrap();
+    let dry = ok(&dedup("list", &["--manifest", manifest]));
+    for expected in [
+        "Classification: 1 leaked duplicate(s), 1 genuine addition(s)",
+        "LEAKED (safe to delete):",
+        "GENUINE (kept):",
+        "[DRY RUN]",
+    ] {
+        assert!(dry.contains(expected), "missing {expected:?}:\n{dry}");
+    }
+    let applied = ok(&dedup("list", &["--manifest", manifest, "--apply"]));
+    assert!(
+        applied.contains("Deleted 1 LEAKED row(s). Profile 'list' now has 1 mods."),
+        "{applied}"
+    );
+    let again = ok(&dedup("list", &["--manifest", manifest, "--apply"]));
+    assert!(again.contains("Nothing to delete."), "{again}");
+
+    ok(&fx
+        .cmd()
+        .args(["profile", "create", "empty", "--game", "cyberpunk2077"])
+        .output()
+        .unwrap());
+    assert!(ok(&dedup("empty", &[])).contains("No filesystem-scanner rows found"));
+}
