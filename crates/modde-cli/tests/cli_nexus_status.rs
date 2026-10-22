@@ -1,4 +1,5 @@
-//! End-to-end tests for `modde nexus status` against a mock Nexus API.
+//! End-to-end tests for `modde nexus status` and `modde nexus auth`
+//! against a mock Nexus API.
 //!
 //! `MockServer` from wiremock listens on a random port; we point the
 //! CLI at it via `MODDE_NEXUS_BASE_URL`. The CLI never reaches the
@@ -98,4 +99,74 @@ async fn nexus_status_rejects_invalid_key_with_friendly_message() {
         stderr.contains("API key rejected") || stderr.contains("revoked"),
         "expected friendly auth-error message in stderr; got:\n{stderr}"
     );
+}
+
+fn run_auth(
+    fx: &Fixture,
+    base_url: &str,
+    env_key: Option<&str>,
+    stdin: &str,
+) -> std::process::Output {
+    let mut cmd = fx.cmd();
+    cmd.env("MODDE_NEXUS_BASE_URL", base_url)
+        .args(["nexus", "auth"])
+        .write_stdin(stdin);
+    if let Some(key) = env_key {
+        cmd.env("NEXUS_API_KEY", key);
+    }
+    cmd.output().expect("spawn modde")
+}
+
+#[tokio::test]
+async fn nexus_auth_validates_and_stores_the_key() {
+    let fx = Fixture::new();
+    let stored = fx.home().join(".config/modde/nexus_api_key");
+    let premium = start_mock_validate(true).await;
+    let free = start_mock_validate(false).await;
+
+    let from_env = run_auth(&fx, &premium.uri(), Some("test-key"), "");
+    let stdout = String::from_utf8_lossy(&from_env.stdout);
+    assert!(from_env.status.success(), "{stdout}");
+    assert!(
+        stdout.contains("Loaded Nexus API key from NEXUS_API_KEY."),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("API key validated and saved to"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Account type: Premium"), "{stdout}");
+    assert_eq!(std::fs::read_to_string(&stored).unwrap().trim(), "test-key");
+
+    let prompted = run_auth(&fx, &free.uri(), None, "  test-key \n");
+    let stdout = String::from_utf8_lossy(&prompted.stdout);
+    assert!(prompted.status.success(), "{stdout}");
+    assert!(stdout.contains("Enter your Nexus API key: "), "{stdout}");
+    assert!(!stdout.contains("NEXUS_API_KEY"), "{stdout}");
+    assert!(stdout.contains("Account type: Free"), "{stdout}");
+
+    let empty = run_auth(&fx, &free.uri(), None, "\n");
+    assert!(String::from_utf8_lossy(&empty.stderr).contains("API key cannot be empty"));
+}
+
+#[tokio::test]
+async fn nexus_auth_explains_rate_limits_and_other_failures() {
+    let fx = Fixture::new();
+    for (status, expected) in [
+        (429, "rate limit exceeded (HTTP 429)"),
+        (401, "API key rejected by Nexus (HTTP 401/403)"),
+        (500, "API key validation failed"),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/validate.json"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+        let output = run_auth(&fx, &server.uri(), Some("test-key"), "");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(expected), "{status}: {stderr}");
+    }
+    assert!(!fx.home().join(".config/modde/nexus_api_key").exists());
 }

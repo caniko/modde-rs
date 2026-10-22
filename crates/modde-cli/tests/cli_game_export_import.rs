@@ -186,3 +186,94 @@ fn import_profile_attaches_to_built_in_game() {
             .exists()
     );
 }
+
+#[test]
+fn game_commands_reject_bad_input_and_respect_the_remove_prompt() {
+    let fx = Fixture::new();
+    let run = |args: &[&str], stdin: &str| {
+        fx.cmd()
+            .args(args)
+            .write_stdin(stdin)
+            .output()
+            .expect("spawn modde game")
+    };
+    let stderr =
+        |output: &std::process::Output| String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout =
+        |output: &std::process::Output| String::from_utf8_lossy(&output.stdout).into_owned();
+
+    assert!(
+        stderr(&run(&["game", "export", "no-such-game"], ""))
+            .contains("unknown game 'no-such-game'")
+    );
+    assert!(
+        stderr(&run(&["game", "show", "no-such-game"], "")).contains("unknown game 'no-such-game'")
+    );
+
+    let missing = fx.root().join("missing.toml");
+    let bad = fx.root().join("bad.toml");
+    std::fs::write(&bad, "id = [unterminated").unwrap();
+    for (path, expected) in [(&missing, "failed to read"), (&bad, "failed to parse")] {
+        let path = path.to_str().unwrap();
+        assert!(stderr(&run(&["game", "import", path], "")).contains(expected));
+        assert!(
+            stderr(&run(
+                &["game", "import-profile", path, "--for", "custom"],
+                ""
+            ))
+            .contains(expected)
+        );
+    }
+
+    assert!(add_game(&fx, "dup").status.success());
+    let spec = fx.root().join("dup.toml");
+    let spec_path = spec.to_str().unwrap();
+    assert!(
+        run(&["game", "export", "dup", "--output", spec_path], "")
+            .status
+            .success()
+    );
+    assert!(
+        stderr(&run(&["game", "import", spec_path], ""))
+            .contains("already exists; re-run with --force")
+    );
+    assert!(
+        run(&["game", "import", spec_path, "--force"], "")
+            .status
+            .success()
+    );
+
+    let profile = fx.root().join("profile.toml");
+    std::fs::write(&profile, "[optiscaler]\nprofile = []\n").unwrap();
+    let profile_path = profile.to_str().unwrap();
+    let first = run(
+        &["game", "import-profile", profile_path, "--for", "custom"],
+        "",
+    );
+    assert!(
+        stdout(&first).contains("Imported 0 OptiScaler profiles"),
+        "{}",
+        stderr(&first)
+    );
+    assert!(
+        stderr(&run(
+            &["game", "import-profile", profile_path, "--for", "custom"],
+            ""
+        ))
+        .contains("already exists; re-run with --force")
+    );
+
+    let declined = run(&["game", "remove", "dup"], "n\n");
+    assert!(stdout(&declined).contains("Remove user-defined game 'dup'? [y/N]"));
+    assert!(stderr(&declined).contains("aborted"));
+    let accepted = run(&["game", "remove", "dup"], "yes\n");
+    assert!(stdout(&accepted).contains("Removed user-defined game 'dup'"));
+    assert!(stdout(&run(&["game", "list"], "")).contains("No user-defined games configured."));
+
+    let empty = fx.root().join("empty-install");
+    std::fs::create_dir_all(&empty).unwrap();
+    assert!(
+        stdout(&run(&["game", "detect", empty.to_str().unwrap()], ""))
+            .contains("No executable-bearing directories found")
+    );
+}
