@@ -342,6 +342,97 @@ async fn install_mod_warns_when_adding_to_a_locked_profile() {
     );
 }
 
+fn modde(fx: &Fixture, args: &[&str]) -> std::process::Output {
+    fx.cmd().args(args).output().expect("spawn modde")
+}
+
+#[tokio::test]
+async fn installed_mods_can_be_removed_and_unknown_ones_diagnosed() {
+    let fx = Fixture::new();
+    let server = MockServer::start().await;
+    mock_nexus(
+        &server,
+        150,
+        json!([nexus_file(1, "MAIN", 1)]),
+        zip(&["version.dll"]),
+    )
+    .await;
+    mock_nexus(
+        &server,
+        151,
+        json!([nexus_file(1, "MAIN", 1)]),
+        zip(&["readme.txt"]),
+    )
+    .await;
+
+    // Nothing to diagnose before any unknown layout was installed.
+    assert!(
+        !modde(&fx, &["mod", "diagnose", "unlistedgame_151"])
+            .status
+            .success()
+    );
+
+    stdout(&run_install_mod(&fx, &server.uri(), &mod_url(150)));
+    stdout(&run_install_mod(&fx, &server.uri(), &mod_url(151)));
+
+    let diagnose = stdout(&modde(&fx, &["mod", "diagnose", "unlistedgame_151"]));
+    assert!(diagnose.contains("----- PROMPT.md -----"), "{diagnose}");
+    assert!(diagnose.contains("Critical files"), "{diagnose}");
+    assert!(
+        !modde(&fx, &["mod", "diagnose", "unlistedgame_999"])
+            .status
+            .success()
+    );
+
+    let store = fx.data_dir().join("store/unlistedgame_150_1");
+    let dry_run = stdout(&modde(
+        &fx,
+        &[
+            "mod",
+            "remove",
+            "unlistedgame_150_1",
+            "--profile",
+            GAME,
+            "--dry-run",
+        ],
+    ));
+    assert!(
+        dry_run.contains("No record-level save dependency analyzer"),
+        "{dry_run}"
+    );
+    assert!(store.is_dir(), "a dry run must not remove anything");
+
+    let removed = stdout(&modde(
+        &fx,
+        &["mod", "remove", "unlistedgame_150_1", "--profile", GAME],
+    ));
+    assert!(
+        removed.contains(
+            "Removed 'unlistedgame_150_1' from profile 'unlistedgame' (1 staged files tracked)."
+        ),
+        "{removed}"
+    );
+    assert!(!store.exists());
+
+    let db = modde_core::ModdeDb::open_at(&fx.data_dir().join("modde.db"))
+        .await
+        .unwrap();
+    let profile = db
+        .load_profile(GAME, &modde_core::GameId::from(GAME))
+        .await
+        .unwrap();
+    let mods: Vec<&str> = profile.mods.iter().map(|m| m.mod_id.as_str()).collect();
+    assert_eq!(mods, ["unlistedgame_151_1"]);
+
+    stdout(&modde(&fx, &["profile", "lock", GAME]));
+    let locked = modde(
+        &fx,
+        &["mod", "remove", "unlistedgame_151_1", "--profile", GAME],
+    );
+    assert!(!locked.status.success());
+    assert!(String::from_utf8_lossy(&locked.stderr).contains("is locked"));
+}
+
 /// Report `mod_id` as having a file newer than any install timestamp.
 async fn mock_updated(server: &MockServer, mod_id: u64) {
     Mock::given(method("GET"))
