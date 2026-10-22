@@ -164,6 +164,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Site and docs**: The landing page recommends the live Nix/Home Manager
+  route and marks Flatpak, AUR, Homebrew and winget as staged; platform copy
+  says Linux-first with experimental macOS/Windows builds, matching the README,
+  and the repo-truth test now covers the site. Screenshots are regenerated with
+  a new Library capture (also the default AppStream screenshot) and the docs
+  gain a "Using the GUI" page with images.
 - **Dependencies**: Update direct crates to their latest stable releases and
   refresh Git-pinned dependencies. Raise the minimum Rust version to 1.94 for
   SQLx 0.9 and adapt database, resolver, telemetry and xtask integrations.
@@ -202,6 +208,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GUI theme**: Text colours follow the selected theme instead of about 100
+  hardcoded literals, so Light and the other palettes are readable. Muted,
+  success, warning and danger styles keep their hue while meeting 4.5:1
+  contrast on every built-in theme.
+- **GUI status line**: Errors render in the danger colour; progress and success
+  stay neutral. The periodic Library reload no longer overwrites the status.
+- **GUI confirmations**: Deleting a profile, removing a mod, executable or custom
+  game, restoring a save snapshot, rolling back an experiment, clearing
+  overrides and removing the saved Nexus key now ask first, as does closing the
+  window during a Wabbajack install or a running game session.
+- **GUI shortcuts**: Esc closes the topmost dialog or cancels the FOMOD wizard;
+  Delete and Space act on the selected mod; F5 refreshes; Ctrl+F focuses the
+  filter; Ctrl+I opens the mod page. Ctrl+S and Ctrl+E mapped to nothing and
+  are gone. The shortcut list is shown at the bottom of Settings.
+- **GUI responsiveness**: The Steam/Heroic library scan ran on every redraw; it
+  is now cached and refreshed off-thread. The 2 s session tick runs only while
+  the Library is visible or a session is live. A database that fails to open
+  shows an error screen instead of panicking before the window appears.
+- **GUI details**: Settings path fields apply on Enter or Browse with the
+  current game id (previously saved on every keystroke under `"default"`);
+  Fork no longer collides on `<name>-fork`; Browse Nexus loads its feed on
+  open; the no-op Data Files "Conflicts only" toggle is gone; checkbox labels
+  are clickable; stock-snapshot status is right at startup; diagnostics and
+  Wabbajack import text no longer show Rust debug formatting.
 - **Wabbajack deploy**: Deploy MO2 staging in the selected profile's
   `modlist.txt` priority and skip disabled mods, so the higher-priority mod wins
   each overlapping file. `modde deploy` and `modde play` now share the install
