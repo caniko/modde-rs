@@ -57,6 +57,9 @@ impl Fixture {
             .env("XDG_DATA_HOME", self.home.join(".local/share"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("XDG_CACHE_HOME", self.home.join(".cache"))
+            // Read-only commands otherwise query the live GitHub release API;
+            // update-check tests remove this and point at a mock instead.
+            .env("MODDE_NO_UPDATE_CHECK", "1")
             // Keep PATH so the binary can find linkers / libc on platforms
             // that need them at runtime; assert_cmd resolves the binary
             // path explicitly so PATH itself doesn't pick a stale modde.
