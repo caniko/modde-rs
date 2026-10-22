@@ -252,3 +252,20 @@ async fn open_with_settings_honors_env_backend_override() {
     db.ping().await.unwrap();
     assert!(data_home.join("modde/modde.db").exists());
 }
+
+#[cfg(feature = "postgres")]
+#[test]
+fn build_pg_options_defaults_user_to_the_os_account() {
+    // A socket URL without a user relies on sqlx's OS-user default for peer
+    // auth. whoami's stub backend would report "anonymous" instead.
+    let opts = build_pg_options(
+        &DatabaseSettings::default(),
+        &env_from(&[(
+            "MODDE_DATABASE_URL",
+            "postgres:///modde?host=/run/postgresql",
+        )]),
+    )
+    .unwrap();
+
+    assert_ne!(opts.get_username(), "anonymous");
+}

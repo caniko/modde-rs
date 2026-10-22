@@ -146,6 +146,10 @@ sqlx = { version = "0.9.0", default-features = false, features = [
   "tls-rustls",
   "sqlite",
 ] }
+# sqlx-postgres 0.9.0 pulls whoami without `std`, which compiles whoami's stub
+# backend: a URL without a user then connects as "anonymous" and fails peer
+# auth. modde-core enables `std` through its `postgres` feature.
+whoami = { version = "2.1.3", default-features = false, features = ["std"] }
 
 # Git — local repository operations only (snapshot save/restore in
 # modde-core). default-features=false drops the `ssh`+`https` transports,

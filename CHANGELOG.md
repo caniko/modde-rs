@@ -206,6 +206,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `modlist.txt` priority and skip disabled mods, so the higher-priority mod wins
   each overlapping file. `modde deploy` and `modde play` now share the install
   path's deploy, including compressed staging files.
+- **PostgreSQL**: Restore the OS-user default for connection URLs without a
+  user. SQLx 0.9 built whoami's stub backend and connected as `anonymous`,
+  failing Unix-socket peer authentication. `modde config test` also no longer
+  fails decoding its probe on PostgreSQL.
 - **Nix tooling**: Match exported tool-schema enum lists to the repository's
   formatter so regeneration and the schema-freshness check agree.
 - **Test isolation**: Bind UI fixtures to disposable SQLite databases and reject

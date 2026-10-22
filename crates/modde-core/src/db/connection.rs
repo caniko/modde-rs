@@ -56,7 +56,8 @@ impl ModdeDb {
     /// connection can execute SQL.
     pub async fn ping(&self) -> Result<()> {
         self.db
-            .fetch_one("SELECT 1", &vals![], |r| r.i64(0))
+            // Postgres types a bare `1` as INT4; the shared row API decodes INT8.
+            .fetch_one("SELECT CAST(1 AS BIGINT)", &vals![], |r| r.i64(0))
             .await?;
         Ok(())
     }

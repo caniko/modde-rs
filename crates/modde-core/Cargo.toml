@@ -32,7 +32,9 @@ workspace = true
 default = ["postgres", "bethesda-archives"]
 bethesda-archives = ["dep:flate2", "dep:lz4_flex"]
 # Enable the PostgreSQL backend in addition to the always-present SQLite backend.
-postgres = ["sqlx/postgres"]
+# ponytail: `dep:whoami` only restores sqlx's OS-user default (see the
+# workspace manifest); drop it once sqlx-postgres enables whoami/std itself.
+postgres = ["sqlx/postgres", "dep:whoami"]
 linux-integrations = []
 macos-integrations = []
 windows-integrations = []
@@ -56,6 +58,7 @@ lz4_flex = { workspace = true, optional = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 sqlx = { workspace = true }
+whoami = { workspace = true, optional = true }
 git2 = { workspace = true }
 dirs = { workspace = true }
 zip = { workspace = true }
