@@ -274,6 +274,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on Linux. The game-wide lookup used `drive_c/Users`, which Proton never
   creates on a case-sensitive filesystem, so `modde mod remove` never checked
   the live saves.
+- **Nexus auth**: `modde nexus auth` and `modde nexus status` no longer report a
+  server error as a rejected key or a rate limit because the request URL
+  happened to contain `401`, `403` or `429`.
 - **Profiles**: Reject `.` and `..` profile names, skip invalid names during TOML
   import, write plugin order atomically, and encode profile sources as valid
   TOML so control characters no longer make a profile unloadable. Roll back
