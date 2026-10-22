@@ -235,6 +235,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hint promises instead of silently skipping them.
 - **Bisect**: A `bisect run` refused by the save-safety check no longer leaves an
   orphaned `__bisect_*` candidate profile that `bisect abort` cannot remove.
+- **Backups**: Two backups taken in the same second no longer overwrite each
+  other, restores skip archive entries that would escape the target directory,
+  and restoring profile `main`'s plugin order no longer picks up `main_extra`'s.
+- **Patcher**: `modde patcher reorder` now requires every stage exactly once and
+  applies the order atomically instead of ignoring typos or leaving ties.
 - **Profiles**: Reject `.` and `..` profile names, skip invalid names during TOML
   import, write plugin order atomically, and encode profile sources as valid
   TOML so control characters no longer make a profile unloadable. Roll back
