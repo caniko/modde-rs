@@ -341,3 +341,78 @@ async fn install_mod_warns_when_adding_to_a_locked_profile() {
         "expected a lock warning"
     );
 }
+
+/// Report `mod_id` as having a file newer than any install timestamp.
+async fn mock_updated(server: &MockServer, mod_id: u64) {
+    Mock::given(method("GET"))
+        .and(path(format!("/games/{GAME}/mods/updated.json")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
+            "mod_id": mod_id, "latest_file_update": 4_102_444_800_u64, "latest_mod_activity": 4_102_444_800_u64,
+        }])))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn mods_installed_by_url_are_tracked_for_updates() {
+    let fx = Fixture::new();
+    let server = MockServer::start().await;
+    let files = json!([nexus_file(1, "MAIN", 100), nexus_file(2, "MAIN", 200)]);
+    mock_nexus(&server, 170, files, zip(&["version.dll"])).await;
+    mock_updated(&server, 170).await;
+    let pinned = format!("{}?tab=files&file_id=1", mod_url(170));
+    stdout(&run_install_mod(&fx, &server.uri(), &pinned));
+
+    let update = |args: &[&str]| {
+        fx.cmd()
+            .env("MODDE_NEXUS_BASE_URL", server.uri())
+            .env("NEXUS_API_KEY", "test-key")
+            .arg("update")
+            .args(args)
+            .args(["--profile", GAME])
+            .output()
+            .expect("spawn modde update")
+    };
+
+    let check = stdout(&update(&["check", "--mods"]));
+    assert!(
+        check.contains("Checking updates for 1 tracked mods"),
+        "{check}"
+    );
+    assert!(
+        check.contains("unlistedgame_170_1 (installed: 1.0"),
+        "{check}"
+    );
+
+    let dry_run = stdout(&update(&["apply", "--dry-run"]));
+    assert!(
+        dry_run.contains("would update unlistedgame_170_1"),
+        "{dry_run}"
+    );
+
+    let applied = stdout(&update(&["apply"]));
+    assert!(
+        applied.contains("Updating unlistedgame_170_1 → file 2"),
+        "{applied}"
+    );
+    assert!(
+        applied.contains("Applied 1 update(s); 0 failure(s); 0 unchanged."),
+        "{applied}"
+    );
+
+    let db = modde_core::ModdeDb::open_at(&fx.data_dir().join("modde.db"))
+        .await
+        .unwrap();
+    let profile = db
+        .load_profile(GAME, &modde_core::GameId::from(GAME))
+        .await
+        .unwrap();
+    let mods: Vec<&str> = profile.mods.iter().map(|m| m.mod_id.as_str()).collect();
+    assert_eq!(mods, ["unlistedgame_170_2"]);
+
+    let again = stdout(&update(&["apply"]));
+    assert!(
+        again.contains("Applied 0 update(s); 0 failure(s); 1 unchanged."),
+        "{again}"
+    );
+}

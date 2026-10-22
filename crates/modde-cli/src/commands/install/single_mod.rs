@@ -136,6 +136,13 @@ pub(super) async fn handle_single_mod(url: String, profile_name: Option<String>)
             nexus_mod_id: Some(mod_id),
             nexus_file_id: Some(file_id),
             nexus_game_domain: Some(game_domain.clone()),
+            // `update check` / `update apply` only track mods with a timestamp.
+            installed_timestamp: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+            ),
             install_status: Some(status),
             fomod_config: None,
             ..Default::default()
