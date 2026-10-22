@@ -159,16 +159,37 @@ impl ModdeDb {
 
     /// Replace stage ordering for the supplied names.
     pub async fn reorder_patcher_stages(&self, profile_id: i64, names: &[String]) -> Result<()> {
-        for (idx, name) in names.iter().enumerate() {
-            self.db
-                .execute(
-                    "UPDATE profile_patcher_stages SET sort_index = ?, updated_at = {NOW}
-                     WHERE profile_id = ? AND name = ?",
-                    &vals![idx as i64, profile_id, name.clone()],
+        // A reorder replaces the whole order: a missing, unknown or repeated
+        // name would otherwise be skipped silently or leave tied positions.
+        let mut expected: Vec<String> = self
+            .list_patcher_stages(profile_id)
+            .await?
+            .into_iter()
+            .map(|stage| stage.name)
+            .collect();
+        let mut supplied = names.to_vec();
+        expected.sort();
+        supplied.sort();
+        if supplied != expected {
+            return Err(CoreError::Validation(
+                format!(
+                    "reorder must list every patcher stage exactly once: {}",
+                    expected.join(", ")
                 )
-                .await?;
+                .into(),
+            ));
         }
-        Ok(())
+
+        let mut tx = self.db.begin().await?;
+        for (idx, name) in names.iter().enumerate() {
+            tx.execute(
+                "UPDATE profile_patcher_stages SET sort_index = ?, updated_at = {NOW}
+                 WHERE profile_id = ? AND name = ?",
+                &vals![idx as i64, profile_id, name.clone()],
+            )
+            .await?;
+        }
+        tx.commit().await
     }
 
     /// Load every managed output path recorded for one patcher stage.
