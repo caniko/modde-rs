@@ -170,3 +170,193 @@ fn rejects_future_lock_versions() {
 
     assert!(validate_lock(&lock).is_err());
 }
+
+fn locked_file(rel_path: &str) -> LockedFile {
+    LockedFile {
+        rel_path: rel_path.to_string(),
+        origin_rel_path: rel_path.to_string(),
+        size: 0,
+        sha256: String::new(),
+        xxh64: String::new(),
+        xxh3: String::new(),
+        merge_group: None,
+    }
+}
+
+fn patcher(name: &str, outputs: &[&str]) -> PatcherStageLock {
+    PatcherStageLock {
+        name: name.to_string(),
+        stage_kind: crate::patcher::PatcherStageKind::RustNative,
+        enabled: true,
+        sort_index: 0,
+        settings: crate::patcher::PatcherStageSettings::RustNative,
+        output_mod: "out".to_string(),
+        outputs: outputs.iter().map(|path| locked_file(path)).collect(),
+    }
+}
+
+#[test]
+fn validation_rejects_every_invalid_or_duplicate_entry() {
+    let plugin = |name: &str| PluginEntryLock {
+        plugin_name: name.to_string(),
+        sort_index: 0,
+        enabled: true,
+    };
+    let hidden = |path: &str| HiddenFileLock {
+        mod_id: "mod-a".to_string(),
+        rel_path: path.to_string(),
+    };
+    let tool = |path: &str| ToolOutputLock {
+        tool_id: "reshade".to_string(),
+        rel_path: path.to_string(),
+        file: locked_file(path),
+    };
+    let cases: Vec<(&str, Box<dyn Fn(&mut LockPayload)>)> = vec![
+        (
+            "invalid profile name",
+            Box::new(|p| p.profile.name = "a/b".into()),
+        ),
+        (
+            "invalid mod id",
+            Box::new(|p| p.mods[0].mod_id = "..".into()),
+        ),
+        (
+            "duplicate file",
+            Box::new(|p| p.mods[0].files = vec![locked_file("a"), locked_file("a")]),
+        ),
+        (
+            "invalid relative path",
+            Box::new(|p| {
+                let mut file = locked_file("a");
+                file.origin_rel_path = "dir\\a".into();
+                p.mods[0].files = vec![file];
+            }),
+        ),
+        (
+            "duplicate plugin",
+            Box::new(move |p| p.plugin_order = vec![plugin("A.esp"), plugin("a.ESP")]),
+        ),
+        (
+            "invalid relative path",
+            Box::new(move |p| p.hidden_files = vec![hidden("/abs")]),
+        ),
+        (
+            "duplicate hidden file",
+            Box::new(move |p| p.hidden_files = vec![hidden("x"), hidden("x")]),
+        ),
+        (
+            "invalid patcher stage name",
+            Box::new(|p| p.patchers = vec![patcher("", &[])]),
+        ),
+        (
+            "duplicate patcher stage",
+            Box::new(|p| p.patchers = vec![patcher("s", &[]), patcher("s", &[])]),
+        ),
+        (
+            "duplicate patcher output",
+            Box::new(|p| p.patchers = vec![patcher("s", &["o", "o"])]),
+        ),
+        (
+            "invalid relative path",
+            Box::new(move |p| p.tool_outputs = vec![tool("")]),
+        ),
+        (
+            "duplicate tool output",
+            Box::new(move |p| p.tool_outputs = vec![tool("t"), tool("t")]),
+        ),
+    ];
+    for (expected, corrupt) in cases {
+        let mut payload = minimal_payload();
+        corrupt(&mut payload);
+        let err = validate_payload(&payload).unwrap_err().to_string();
+        assert!(err.contains(expected), "{expected}: {err}");
+    }
+
+    let mut valid = minimal_payload();
+    valid.plugin_order = vec![plugin("A.esp")];
+    valid.hidden_files = vec![hidden("x")];
+    valid.patchers = vec![patcher("s", &["o"])];
+    valid.tool_outputs = vec![tool("t")];
+    validate_payload(&valid).unwrap();
+
+    let lock = ModdeLock {
+        kind: "other".to_string(),
+        format_version: LOCK_FORMAT_VERSION,
+        payload: minimal_payload(),
+        signatures: Vec::new(),
+    };
+    assert!(
+        validate_lock(&lock)
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported lock kind")
+    );
+}
+
+#[tokio::test]
+async fn export_refuses_or_records_missing_provenance() {
+    let db = crate::db::ModdeDb::open_memory().await.unwrap();
+    let mut profile = crate::profile::Profile {
+        id: None,
+        name: "main".to_string(),
+        game_id: crate::resolver::GameId::from("skyrim-se"),
+        source: ProfileSource::Manual,
+        mods: vec![crate::profile::EnabledMod {
+            mod_id: "bare".to_string(),
+            enabled: true,
+            ..Default::default()
+        }],
+        overrides: std::path::PathBuf::from("/tmp/overrides"),
+        load_order_rules: smallvec::SmallVec::new(),
+        load_order_lock: None,
+    };
+    let export = |profile: crate::profile::Profile, allow_incomplete: bool| {
+        let db = db.clone();
+        async move { export_profile_lock(&db, &profile, ExportOptions { allow_incomplete }).await }
+    };
+
+    let unsaved = export(profile.clone(), true).await.unwrap_err();
+    assert!(
+        unsaved.to_string().contains("is not persisted"),
+        "{unsaved}"
+    );
+    profile.id = Some(db.create_profile(&profile).await.unwrap());
+
+    let refused = export(profile.clone(), false)
+        .await
+        .unwrap_err()
+        .to_string();
+    for reason in [
+        "missing required provenance",
+        "no tracked installed_mod_files rows",
+        "missing source archive hash",
+        "missing portable upstream locator",
+    ] {
+        assert!(refused.contains(reason), "{reason}: {refused}");
+    }
+    let lock = export(profile.clone(), true).await.unwrap();
+    assert!(!lock.payload.reproducible);
+    assert_eq!(lock.payload.incomplete_reasons.len(), 3);
+
+    // Wabbajack provenance stands in for an upstream locator.
+    profile.source = ProfileSource::Wabbajack {
+        manifest_hash: "lockfile-test-uncached-manifest".to_string(),
+    };
+    let lock = export(profile.clone(), true).await.unwrap();
+    assert_eq!(lock.payload.incomplete_reasons.len(), 2);
+    assert_eq!(
+        lock.payload.wabbajack_manifest,
+        Some(WabbajackManifestLock {
+            manifest_hash: "lockfile-test-uncached-manifest".to_string(),
+            cached_path: None,
+            sha256: None,
+        })
+    );
+
+    profile.mods.push(profile.mods[0].clone());
+    let duplicate = export(profile, true).await.unwrap_err();
+    assert!(
+        duplicate.to_string().contains("duplicate mod id 'bare'"),
+        "{duplicate}"
+    );
+}
