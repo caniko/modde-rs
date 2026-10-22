@@ -21,7 +21,7 @@ pub(super) fn derived_facts_panel(entry: &ToolUiEntry) -> Element<'_, Message> {
             row![
                 text(label.as_str())
                     .size(11)
-                    .color(color!(0x888888))
+                    .style(secondary)
                     .width(Length::FillPortion(1)),
                 text(value.as_str()).size(11).width(Length::FillPortion(2)),
             ]
@@ -82,7 +82,7 @@ pub(super) fn settings_panel(entry: &ToolUiEntry, show_advanced: bool) -> Elemen
         }
     }
     for (section, specs) in sections {
-        rows = rows.push(text(section).size(13).color(color!(0xBBBBBB)));
+        rows = rows.push(text(section).size(13).style(secondary));
         for spec in specs {
             rows = rows.push(setting_row(entry, spec));
         }
@@ -111,7 +111,7 @@ pub(super) fn setting_row<'a>(
 
     let label_row = if is_dirty {
         row![
-            text("●").size(13).color(color!(0xCCAA44)),
+            text("●").size(13).style(warning),
             text(&*spec.label).size(13),
         ]
         .spacing(4)
@@ -123,7 +123,7 @@ pub(super) fn setting_row<'a>(
     row![
         column![
             label_row,
-            text(&*spec.description).size(11).color(color!(0x888888)),
+            text(&*spec.description).size(11).style(secondary),
         ]
         .spacing(2)
         .width(Length::FillPortion(1)),
@@ -231,7 +231,7 @@ pub(super) fn setting_control<'a>(
         ToolSettingKind::ReadOnly => {
             text(setting_value_as_string(value).if_empty(&spec.description))
                 .size(12)
-                .color(color!(0xAAAAAA))
+                .style(secondary)
                 .into()
         }
     }

@@ -1,9 +1,19 @@
 use crate::action_button::{ButtonAction, DescribedButtonExt};
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{danger, text};
 use iced::widget::{button, column, container, mouse_area, opaque, row, stack, text_input};
 use iced::{Element, Length, Theme};
 
 use super::{Message, Modde, View, external_refresh_stream};
+
+/// Selectable themes, in picker order. The first entry is the default.
+pub const THEMES: [(&str, Theme); 6] = [
+    ("Dark", Theme::Dark),
+    ("Light", Theme::Light),
+    ("Dracula", Theme::Dracula),
+    ("Nord", Theme::Nord),
+    ("Gruvbox Dark", Theme::GruvboxDark),
+    ("Catppuccin Mocha", Theme::CatppuccinMocha),
+];
 
 impl Modde {
     // ─── View ────────────────────────────────────────────────────
@@ -304,7 +314,7 @@ impl Modde {
         .spacing(12);
 
         if let Some(error) = &self.game_path_dialog_error {
-            body = body.push(text(error).size(12).color(iced::color!(0xFF6666)));
+            body = body.push(text(error).size(12).style(danger));
         }
 
         let dialog = container(
@@ -338,14 +348,10 @@ impl Modde {
     }
 
     pub(super) fn theme(&self) -> Theme {
-        match self.theme_name.as_str() {
-            "Light" => Theme::Light,
-            "Dracula" => Theme::Dracula,
-            "Nord" => Theme::Nord,
-            "Gruvbox Dark" => Theme::GruvboxDark,
-            "Catppuccin Mocha" => Theme::CatppuccinMocha,
-            _ => Theme::Dark,
-        }
+        THEMES
+            .iter()
+            .find(|(name, _)| *name == self.theme_name)
+            .map_or(Theme::Dark, |(_, theme)| theme.clone())
     }
 
     /// Crate-internal accessor for the headless screenshot backend, which

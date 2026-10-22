@@ -110,6 +110,7 @@ pub use self::types::{
     NexusAuthStatus, ProfileWriteKind, ProfileWriteOutcome, SettingsGameInstall, SettingsState,
     WabbajackInstallEvent, WabbajackInstallUiSummary,
 };
+pub use self::view::THEMES;
 
 #[cfg(test)]
 mod tests;

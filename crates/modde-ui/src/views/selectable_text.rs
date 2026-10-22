@@ -18,11 +18,83 @@ use crate::app::Message;
 
 type Renderer = iced::Renderer;
 
-#[derive(Debug, Clone)]
+pub use text_widget::base;
+
+/// A theme style chosen at runtime, e.g. `let s: TextStyle = if ok { success } else { danger };`.
+pub type TextStyle = fn(&Theme) -> text_widget::Style;
+
+/// WCAG AA contrast for body text. iced's own `is_readable_on` wants 6:1, which
+/// saturated accent hues cannot reach on dark backgrounds without going grey.
+pub(crate) const MIN_TEXT_CONTRAST: f32 = 4.5;
+
+/// Nudge a palette colour towards readability on the theme background while
+/// keeping its hue. iced's Dark `success` (`#12664f`) is a fill colour, not a
+/// text colour, so used raw it vanishes on dark cards.
+fn on_background(theme: &Theme, color: Color) -> Color {
+    use iced::theme::palette::{darken, is_dark, lighten, mix};
+    let background = theme.palette().background;
+    let dark = is_dark(background);
+    let steps = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+    // `lighten`/`darken` keep saturation but bump chroma and can leave gamut
+    // for strong accents; `mix` towards the pole always converges, at the
+    // cost of hue. Try the saturated route first.
+    let improved = steps.map(|amount| {
+        if dark {
+            lighten(color, amount)
+        } else {
+            darken(color, amount)
+        }
+    });
+    let mixed = steps.map(|amount| {
+        mix(
+            color,
+            if dark { Color::WHITE } else { Color::BLACK },
+            amount,
+        )
+    });
+    std::iter::once(color)
+        .chain(improved)
+        .chain(mixed)
+        .find(|candidate| background.relative_contrast(*candidate) >= MIN_TEXT_CONTRAST)
+        .unwrap_or(color)
+}
+
+macro_rules! palette_style {
+    ($(#[$doc:meta])* $name:ident => $field:ident) => {
+        $(#[$doc])*
+        pub fn $name(theme: &Theme) -> text_widget::Style {
+            text_widget::Style {
+                color: Some(on_background(theme, theme.palette().$field)),
+            }
+        }
+    };
+}
+
+// Theme-aware text styles used as `text("…").style(danger)`. They follow the
+// active theme, unlike a hardcoded `.color(..)`.
+palette_style!(/// Accent / link colour.
+    primary => primary);
+palette_style!(/// Positive state.
+    success => success);
+palette_style!(/// Needs attention but not failed.
+    warning => warning);
+palette_style!(/// Errors and destructive actions.
+    danger => danger);
+
+/// Muted captions and metadata.
+pub fn secondary(theme: &Theme) -> text_widget::Style {
+    text_widget::Style {
+        color: Some(on_background(
+            theme,
+            theme.extended_palette().secondary.base.color,
+        )),
+    }
+}
+
 pub struct SelectableText {
     content: String,
     format: text_widget::Format<Font>,
-    color: Option<Color>,
+    style: Option<text_widget::StyleFn<'static, Theme>>,
 }
 
 #[derive(Debug, Default)]
@@ -37,7 +109,7 @@ pub fn text(content: impl ToString) -> SelectableText {
     SelectableText {
         content: content.to_string(),
         format: text_widget::Format::default(),
-        color: None,
+        style: None,
     }
 }
 
@@ -60,10 +132,18 @@ impl SelectableText {
         self
     }
 
+    /// Colour the text from the active theme, e.g. `.style(danger)`.
     #[must_use]
-    pub fn color(mut self, color: impl Into<Color>) -> Self {
-        self.color = Some(color.into());
+    pub fn style(mut self, style: impl Fn(&Theme) -> text_widget::Style + 'static) -> Self {
+        self.style = Some(Box::new(style));
         self
+    }
+
+    /// Fixed colour that ignores the theme. Prefer [`Self::style`].
+    #[must_use]
+    pub fn color(self, color: impl Into<Color>) -> Self {
+        let color = color.into();
+        self.style(move |_| text_widget::Style { color: Some(color) })
     }
 }
 
@@ -184,7 +264,9 @@ impl Widget<Message, Theme, Renderer> for SelectableText {
             defaults,
             bounds,
             state.paragraph.raw(),
-            text_widget::Style { color: self.color },
+            self.style
+                .as_ref()
+                .map_or_else(text_widget::Style::default, |style| style(theme)),
             viewport,
         );
     }
@@ -304,5 +386,33 @@ fn draw_selection(
         }
 
         line_start = line_end + usize::from(has_newline);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn palette_styles_are_readable_on_every_theme() {
+        for (name, theme) in &crate::app::THEMES {
+            let background = theme.palette().background;
+            for (style_name, style) in [
+                ("primary", primary as TextStyle),
+                ("success", success),
+                ("warning", warning),
+                ("danger", danger),
+                ("secondary", secondary),
+            ] {
+                let color = style(theme)
+                    .color
+                    .expect("palette styles always set a colour");
+                let contrast = background.relative_contrast(color);
+                assert!(
+                    contrast >= MIN_TEXT_CONTRAST,
+                    "{style_name} has {contrast:.2}:1 on the {name} theme"
+                );
+            }
+        }
     }
 }

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{danger, success, text, warning};
 use iced::widget::{button, column, pick_list, row, scrollable, text_input};
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 use crate::action_button::{ButtonAction, DescribedButtonExt};
 use crate::app::{Message, NexusAuthStatus, SettingsState};
@@ -14,9 +14,7 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
 
     // Nexus API key with validation status
     let nexus_status_widget: Element<'static, Message> = match &state.nexus_status {
-        Some(NexusAuthStatus::Checking) => {
-            text("Checking...").size(12).color(color!(0xAAAA44)).into()
-        }
+        Some(NexusAuthStatus::Checking) => text("Checking...").size(12).style(warning).into(),
         Some(NexusAuthStatus::Valid {
             username,
             is_premium,
@@ -24,12 +22,12 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
             let tier = if *is_premium { "Premium" } else { "Standard" };
             text(format!("Logged in as {username} ({tier})"))
                 .size(12)
-                .color(color!(0x88CC88))
+                .style(success)
                 .into()
         }
         Some(NexusAuthStatus::Invalid(err)) => text(format!("Invalid: {err}"))
             .size(12)
-            .color(color!(0xFF4444))
+            .style(danger)
             .into(),
         None => text("Not validated").size(12).into(),
     };
@@ -192,14 +190,10 @@ pub fn view(state: SettingsState) -> Element<'static, Message> {
     .spacing(4);
 
     // Theme selection
-    let theme_options = vec![
-        "Dark".to_string(),
-        "Light".to_string(),
-        "Dracula".to_string(),
-        "Nord".to_string(),
-        "Gruvbox Dark".to_string(),
-        "Catppuccin Mocha".to_string(),
-    ];
+    let theme_options: Vec<String> = crate::app::THEMES
+        .iter()
+        .map(|(name, _)| (*name).to_string())
+        .collect();
     let theme_section = column![
         text("Theme").size(14),
         pick_list(

@@ -50,7 +50,7 @@ pub(super) fn history_panel(entry: &ToolUiEntry) -> Element<'_, Message> {
             .push(
                 text("No settings history recorded yet.")
                     .size(12)
-                    .color(color!(0x888888)),
+                    .style(secondary),
             )
             .into();
     }
@@ -73,7 +73,7 @@ fn history_row<'a>(entry: &'a ToolUiEntry, node: &'a ToolHistoryUiEntry) -> Elem
             text(format!("{marker}: {}", node.label)).size(12),
             text(format!("{} - {state}", node.human_reason))
                 .size(11)
-                .color(color!(0x888888)),
+                .style(secondary),
         ]
         .spacing(2)
         .width(Length::Fill),
@@ -118,7 +118,7 @@ pub(super) fn bottom_action_bar(
     let mut actions = row![
         text(format!("{applied_count} file(s) applied to game directory"))
             .size(12)
-            .color(color!(0xAAAA66)),
+            .style(warning),
         iced::widget::space::horizontal(),
     ];
     if entry.tool_id == "optiscaler" {

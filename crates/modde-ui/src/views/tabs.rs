@@ -1,8 +1,8 @@
 use crate::action_button::{ButtonAction, DescribedButtonExt};
 use crate::semantics;
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{primary, text};
 use iced::widget::{button, column, row};
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 pub struct Tab {
     pub label: String,
@@ -32,7 +32,7 @@ pub fn tab_bar(tabs: impl IntoIterator<Item = Tab>) -> Element<'static, crate::a
     tabs.into_iter()
         .fold(row![].spacing(6), |bar, tab| {
             let label = if tab.active {
-                text(tab.label.clone()).size(13).color(color!(0x8AB4FF))
+                text(tab.label.clone()).size(13).style(primary)
             } else {
                 text(tab.label.clone()).size(13)
             };
@@ -48,7 +48,7 @@ pub fn tab_bar(tabs: impl IntoIterator<Item = Tab>) -> Element<'static, crate::a
                 tab_button
             };
             let indicator = if tab.active {
-                text("━━━━").size(10).color(color!(0x8AB4FF))
+                text("━━━━").size(10).style(primary)
             } else {
                 text("").size(10)
             };

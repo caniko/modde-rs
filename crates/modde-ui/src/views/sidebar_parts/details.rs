@@ -7,7 +7,7 @@ pub(super) fn render_mod_details(state: &ModDetailsState) -> Element<'_, Message
     if state.loading {
         return column![
             text(&state.name).size(13),
-            text("Loading…").size(11).color(color!(0x888888)),
+            text("Loading…").size(11).style(secondary),
         ]
         .spacing(4)
         .width(Length::Fill)
@@ -18,7 +18,7 @@ pub(super) fn render_mod_details(state: &ModDetailsState) -> Element<'_, Message
     if let Some(ref err) = state.error {
         return column![
             text(&state.name).size(13),
-            text(err.as_str()).size(11).color(color!(0xFF6666)),
+            text(err.as_str()).size(11).style(danger),
             button(text("Open in Nexus").size(11))
                 .style(button::text)
                 .padding([2, 4])
@@ -36,7 +36,7 @@ pub(super) fn render_mod_details(state: &ModDetailsState) -> Element<'_, Message
             .height(Length::Fixed(96.0))
             .content_fit(iced::ContentFit::Contain)
             .into(),
-        None => container(text("…").size(14).color(color!(0x888888)))
+        None => container(text("…").size(14).style(secondary))
             .width(Length::Fill)
             .height(Length::Fixed(96.0))
             .center_x(Length::Fill)
@@ -64,7 +64,7 @@ pub(super) fn render_mod_details(state: &ModDetailsState) -> Element<'_, Message
             state.gallery.len()
         ))
         .size(10)
-        .color(color!(0x888888))
+        .style(secondary)
         .into()
     } else {
         iced::widget::Space::new().into()
@@ -72,11 +72,11 @@ pub(super) fn render_mod_details(state: &ModDetailsState) -> Element<'_, Message
 
     // ── Metadata text ──
     let author_version: Element<Message> = if state.author.is_empty() {
-        text(&state.version).size(11).color(color!(0xAAAAAA)).into()
+        text(&state.version).size(11).style(secondary).into()
     } else {
         text(format!("by {} · v{}", state.author, state.version))
             .size(11)
-            .color(color!(0xAAAAAA))
+            .style(secondary)
             .into()
     };
 
@@ -146,7 +146,7 @@ pub(super) fn render_mod_details(state: &ModDetailsState) -> Element<'_, Message
     let count_line: Element<Message> = if state.endorsement_count > 0 {
         text(format!("{} endorsements", state.endorsement_count))
             .size(10)
-            .color(color!(0x888888))
+            .style(secondary)
             .into()
     } else {
         iced::widget::Space::new().into()
@@ -180,27 +180,19 @@ pub(super) fn render_save_details(state: &SaveDetailsState) -> Element<'_, Messa
     let mut col = column![].spacing(4).width(Length::Fill);
 
     // Date
-    col = col.push(
-        text(state.formatted_date())
-            .size(12)
-            .color(color!(0xAAAAAA)),
-    );
+    col = col.push(text(state.formatted_date()).size(12).style(secondary));
 
     // Title: character + save label
     col = col.push(text(state.display_title()).size(13));
 
     // Category badge
     if let Some(ref cat) = state.category {
-        col = col.push(text(format!("[{cat}]")).size(11).color(color!(0x888888)));
+        col = col.push(text(format!("[{cat}]")).size(11).style(secondary));
     }
 
     // Profile name
     if let Some(ref name) = state.profile_name {
-        col = col.push(
-            text(format!("Profile: {name}"))
-                .size(11)
-                .color(color!(0xAAAAAA)),
-        );
+        col = col.push(text(format!("Profile: {name}")).size(11).style(secondary));
     }
 
     // File count
@@ -215,13 +207,13 @@ pub(super) fn render_save_details(state: &SaveDetailsState) -> Element<'_, Messa
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or(path);
-                col.push(text(display).size(10).color(color!(0x888888)))
+                col.push(text(display).size(10).style(secondary))
             });
             col = col.push(scrollable(file_list).height(Length::Fixed(80.0)));
         }
         Some(_) => {} // empty list, skip
         None => {
-            col = col.push(text("Loading files...").size(10).color(color!(0x888888)));
+            col = col.push(text("Loading files...").size(10).style(secondary));
         }
     }
 
@@ -231,27 +223,27 @@ pub(super) fn render_save_details(state: &SaveDetailsState) -> Element<'_, Messa
             Some(FingerprintCheck::Compatible) => {
                 text(format!("Mods: {} [compatible]", fp.short_hash()))
                     .size(11)
-                    .color(color!(0x44AA44))
+                    .style(success)
                     .into()
             }
             Some(FingerprintCheck::Mismatch { removed, added }) => column![
                 text(format!("Mods: {} [mismatch]", fp.short_hash()))
                     .size(11)
-                    .color(color!(0xFF6644)),
+                    .style(danger),
                 text(format!(
                     "-{} removed, +{} added",
                     removed.len(),
                     added.len()
                 ))
                 .size(10)
-                .color(color!(0xFF6644)),
+                .style(danger),
             ]
             .spacing(1)
             .into(),
             Some(FingerprintCheck::NoFingerprint) | None => {
                 text(format!("Mods: {}", fp.short_hash()))
                     .size(11)
-                    .color(color!(0x888888))
+                    .style(secondary)
                     .into()
             }
         };
@@ -268,7 +260,7 @@ pub(super) fn render_save_details(state: &SaveDetailsState) -> Element<'_, Messa
     );
 
     // Commit ID (subtle)
-    col = col.push(text(&state.short_id).size(10).color(color!(0x666666)));
+    col = col.push(text(&state.short_id).size(10).style(secondary));
 
     col.into()
 }

@@ -58,8 +58,8 @@ pub(super) fn action_controls(state: &WabbajackInstallerState) -> Element<'_, Me
         .spacing(6)
         .align_y(Alignment::Center),
         state.install_blocker().map_or_else(
-            || text("Ready to install.").size(11).color(color!(0x66CC66)),
-            |blocker| text(blocker).size(11).color(color!(0xCCAA66)),
+            || text("Ready to install.").size(11).style(success),
+            |blocker| text(blocker).size(11).style(warning),
         ),
     ]
     .spacing(4)
@@ -94,7 +94,7 @@ pub(super) fn readiness_panel(state: &WabbajackInstallerState) -> Element<'_, Me
         panel = panel.push(
             text(format!("Readiness check failed: {error}"))
                 .size(11)
-                .color(color!(0xFF6666)),
+                .style(danger),
         );
     } else if let Some(report) = &state.readiness {
         let ready_text = if report.install_ready {
@@ -102,13 +102,13 @@ pub(super) fn readiness_panel(state: &WabbajackInstallerState) -> Element<'_, Me
         } else {
             "Not ready to install"
         };
-        let ready_color = if report.install_ready {
-            color!(0x66CC66)
+        let ready_color: TextStyle = if report.install_ready {
+            success
         } else {
-            color!(0xFFAA44)
+            warning
         };
         panel = panel
-            .push(text(ready_text).size(12).color(ready_color))
+            .push(text(ready_text).size(12).style(ready_color))
             .push(
                 text(format!(
                     "{} archive(s), {} directive(s), game {}",
@@ -145,18 +145,10 @@ pub(super) fn readiness_panel(state: &WabbajackInstallerState) -> Element<'_, Me
             );
 
         for blocker in report.hard_blockers.iter().take(5) {
-            panel = panel.push(
-                text(format!("Blocker: {blocker}"))
-                    .size(11)
-                    .color(color!(0xFF6666)),
-            );
+            panel = panel.push(text(format!("Blocker: {blocker}")).size(11).style(danger));
         }
-        for warning in report.warnings.iter().take(5) {
-            panel = panel.push(
-                text(format!("Warning: {warning}"))
-                    .size(11)
-                    .color(color!(0xCCAA66)),
-            );
+        for message in report.warnings.iter().take(5) {
+            panel = panel.push(text(format!("Warning: {message}")).size(11).style(warning));
         }
     } else {
         panel = panel
@@ -172,7 +164,7 @@ pub(super) fn readiness_panel(state: &WabbajackInstallerState) -> Element<'_, Me
 pub(super) fn missing_archives_panel(state: &WabbajackInstallerState) -> Element<'_, Message> {
     let mut panel = column![text("Missing Manual Archives").size(13)].spacing(4);
     if let Some(status) = &state.archive_import_status {
-        panel = panel.push(text(status).size(11).color(color!(0x88CCFF)));
+        panel = panel.push(text(status).size(11).style(primary));
     }
     if !state.archive_import_results.is_empty() {
         for result in state.archive_import_results.iter().rev().take(5) {
@@ -192,7 +184,7 @@ pub(super) fn missing_archives_panel(state: &WabbajackInstallerState) -> Element
             panel = panel.push(
                 text("No unresolved manual archives.")
                     .size(11)
-                    .color(color!(0x66CC66)),
+                    .style(success),
             );
         } else {
             for (index, archive) in report.manual_downloads.iter().take(8).enumerate() {
@@ -202,7 +194,7 @@ pub(super) fn missing_archives_panel(state: &WabbajackInstallerState) -> Element
                             text(&archive.name).size(11),
                             text(format!("hash {}", archive.hash))
                                 .size(10)
-                                .color(color!(0x888888)),
+                                .style(secondary),
                             row![
                                 semantics::test_id(
                                     format!("wabbajack.manual_archive.{index}.open_url"),
@@ -287,7 +279,7 @@ pub(super) fn hm_controls<'a>(state: &'a WabbajackInstallerState) -> Element<'a,
     let snippet_preview: Element<'a, Message> = if state.hm_snippet.is_empty() {
         text("Generate a snippet to preview it here.")
             .size(11)
-            .color(color!(0x888888))
+            .style(secondary)
             .into()
     } else {
         container(scrollable(text(&state.hm_snippet).size(10)).height(Length::Fixed(140.0)))
@@ -301,7 +293,7 @@ pub(super) fn hm_controls<'a>(state: &'a WabbajackInstallerState) -> Element<'a,
         text("Home Manager").size(13),
         text("Uses the install target fields above.")
             .size(11)
-            .color(color!(0x888888)),
+            .style(secondary),
         row![
             button(text("Generate").size(12))
                 .padding([4, 8])

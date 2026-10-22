@@ -1,7 +1,7 @@
 #![allow(clippy::wildcard_imports)]
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{danger, secondary, text};
 use iced::widget::{button, column, container, pick_list, row, scrollable, text_input};
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 use crate::action_button::{ButtonAction, DescribedButtonExt};
 use crate::app::{AddCustomGameDraftField, AddCustomGameState, Message};
@@ -129,7 +129,7 @@ pub fn add_dialog(state: &AddCustomGameState) -> Element<'_, Message> {
     }
 
     if let Some(error) = &state.error {
-        body = body.push(text(error).size(12).color(color!(0xFF6666)));
+        body = body.push(text(error).size(12).style(danger));
     }
 
     body = body.push(
@@ -172,7 +172,7 @@ pub fn manage_dialog(custom_games: Vec<(String, String)>) -> Element<'static, Me
         rows = rows.push(
             text("No custom games are registered.")
                 .size(12)
-                .color(color!(0xAAAAAA)),
+                .style(secondary),
         );
     } else {
         let list = custom_games
@@ -183,7 +183,7 @@ pub fn manage_dialog(custom_games: Vec<(String, String)>) -> Element<'static, Me
                         row![
                             column![
                                 text(label).size(14),
-                                text(id.clone()).size(11).color(color!(0xAAAAAA))
+                                text(id.clone()).size(11).style(secondary)
                             ]
                             .spacing(2)
                             .width(Length::Fill),

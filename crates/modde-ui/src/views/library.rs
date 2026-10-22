@@ -2,11 +2,11 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use iced::widget::{button, column, container, pick_list, row, scrollable, text_input};
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 use crate::action_button::{ButtonAction, DescribedButtonExt};
 use crate::app::Message;
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{danger, secondary, text, warning};
 use modde_core::library::{LibraryPreferences, PendingSession};
 use modde_games::library::LibraryGame;
 
@@ -396,7 +396,7 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
     };
     let title_bar = row![
         text("Library").size(20),
-        text(count_label).size(11).color(color!(0x888888)),
+        text(count_label).size(11).style(secondary),
         iced::widget::space::horizontal(),
         pick_list(
             [
@@ -492,21 +492,17 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
         }
     }
     if state.loading {
-        content = content.push(text("Loading library...").size(12).color(color!(0xAAAAAA)));
+        content = content.push(text("Loading library...").size(12).style(secondary));
     }
     if let Some(error) = &state.load_error {
         content = content.push(
             text(format!("Failed to load library: {error}"))
                 .size(12)
-                .color(color!(0xFF8888)),
+                .style(danger),
         );
     }
     if let Some(error) = &state.manager_error {
-        content = content.push(
-            text(format!("Manager: {error}"))
-                .size(12)
-                .color(color!(0xFFAA44)),
-        );
+        content = content.push(text(format!("Manager: {error}")).size(12).style(warning));
     }
 
     let visible: Vec<_> = filter_library_entries(&state.entries, &state.filter)
@@ -522,7 +518,7 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
                 "No games match this filter."
             })
             .size(12)
-            .color(color!(0xAAAAAA)),
+            .style(secondary),
         );
     } else {
         let mut list = column![].spacing(4);
@@ -560,7 +556,7 @@ pub fn view(state: &LibraryState) -> Element<'_, Message> {
                 container(
                     text("Select a game to see launch details.")
                         .size(12)
-                        .color(color!(0xAAAAAA)),
+                        .style(secondary),
                 )
                 .padding(12)
                 .width(Length::Fill)
@@ -607,14 +603,10 @@ fn entry_details<'a>(entry: &'a LibraryEntry, state: &'a LibraryState) -> Elemen
     panel = panel.push(
         text(format!("Source: {}", entry.source_label))
             .size(12)
-            .color(color!(0xAAAAAA)),
+            .style(secondary),
     );
     if let Some(path) = &entry.install_path {
-        panel = panel.push(
-            text(path.display().to_string())
-                .size(11)
-                .color(color!(0x888888)),
-        );
+        panel = panel.push(text(path.display().to_string()).size(11).style(secondary));
     }
     if entry.install_path.is_none() {
         panel = panel.push(
@@ -655,7 +647,7 @@ fn entry_details<'a>(entry: &'a LibraryEntry, state: &'a LibraryState) -> Elemen
                     .unwrap_or("Launch not configured"),
             )
             .size(12)
-            .color(color!(0xFF8888)),
+            .style(danger),
         );
         if let Some(game_id) = entry.game_id() {
             panel = panel.push(button(text("Manage Mods").size(12)).on_action_maybe(

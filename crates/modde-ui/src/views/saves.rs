@@ -1,6 +1,6 @@
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{danger, secondary, success, text, warning};
 use iced::widget::{button, column, container, mouse_area, row, scrollable};
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 use modde_core::save::{SaveFingerprint, SaveSnapshot};
 
@@ -32,7 +32,7 @@ pub fn view<'a>(
     let mut profile_info = column![].spacing(2);
     profile_info = profile_info.push(match profile_name {
         Some(name) => text(format!("Profile: {name}")).size(14),
-        None => text("No active profile").size(14).color(color!(0xFF8844)),
+        None => text("No active profile").size(14).style(warning),
     });
 
     if !save_profiles_supported {
@@ -57,7 +57,7 @@ pub fn view<'a>(
                 fp.short_hash()
             ))
             .size(12)
-            .color(color!(0x888888)),
+            .style(secondary),
         );
     }
 
@@ -87,7 +87,7 @@ pub fn view<'a>(
             let date_text = text(modde_core::save::format_timestamp_short(snap.timestamp))
                 .size(12)
                 .width(Length::Fixed(110.0))
-                .color(color!(0xAAAAAA));
+                .style(secondary);
 
             // Save label: character + save label, or fallback to message
             let display = snap.display_title();
@@ -106,7 +106,7 @@ pub fn view<'a>(
                     match check {
                         modde_core::save::FingerprintCheck::Compatible => text(fp.short_hash())
                             .size(11)
-                            .color(color!(0x44AA44))
+                            .style(success)
                             .width(Length::Fixed(60.0))
                             .into(),
                         modde_core::save::FingerprintCheck::Mismatch {
@@ -116,25 +116,25 @@ pub fn view<'a>(
                             let delta = format!("-{}/+{}", removed.len(), added.len());
                             text(delta)
                                 .size(11)
-                                .color(color!(0xFF6644))
+                                .style(danger)
                                 .width(Length::Fixed(60.0))
                                 .into()
                         }
                         modde_core::save::FingerprintCheck::NoFingerprint => text("—")
                             .size(11)
-                            .color(color!(0x666666))
+                            .style(secondary)
                             .width(Length::Fixed(60.0))
                             .into(),
                     }
                 }
                 Some(fp) => text(fp.short_hash())
                     .size(11)
-                    .color(color!(0x888888))
+                    .style(secondary)
                     .width(Length::Fixed(60.0))
                     .into(),
                 None => text("—")
                     .size(11)
-                    .color(color!(0x666666))
+                    .style(secondary)
                     .width(Length::Fixed(60.0))
                     .into(),
             };

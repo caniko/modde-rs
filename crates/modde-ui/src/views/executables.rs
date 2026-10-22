@@ -1,6 +1,6 @@
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{danger, secondary, text};
 use iced::widget::{button, column, container, row, text_input};
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 use crate::action_button::{ButtonAction, DescribedButtonExt};
 use crate::app::{ExecutableDraftField, Message, ToolState};
@@ -26,17 +26,13 @@ pub fn view(state: &ToolState) -> Element<'_, Message> {
 
     let mut content = column![title_bar].spacing(10);
     if state.executables_loading {
-        content = content.push(
-            text("Loading executables...")
-                .size(12)
-                .color(color!(0xAAAAAA)),
-        );
+        content = content.push(text("Loading executables...").size(12).style(secondary));
     }
     if let Some(error) = &state.executables_load_error {
         content = content.push(
             text(format!("Failed to load executables: {error}"))
                 .size(12)
-                .color(color!(0xFF8888)),
+                .style(danger),
         );
     }
 
@@ -52,12 +48,7 @@ fn executables_panel(state: &ToolState) -> Element<'_, Message> {
     let mut rows = column![].spacing(6);
     if state.executables.is_empty() {
         rows = rows.push(
-            container(
-                text("No executables configured")
-                    .size(12)
-                    .color(color!(0xAAAAAA)),
-            )
-            .padding([4, 0]),
+            container(text("No executables configured").size(12).style(secondary)).padding([4, 0]),
         );
     } else {
         for entry in &state.executables {
@@ -71,8 +62,8 @@ fn executables_panel(state: &ToolState) -> Element<'_, Message> {
                                 text(entry.name.as_str()).size(14),
                                 text(entry.executable_path.as_str())
                                     .size(11)
-                                    .color(color!(0xAAAAAA)),
-                                text(metadata).size(11).color(color!(0x888888)),
+                                    .style(secondary),
+                                text(metadata).size(11).style(secondary),
                             ]
                             .spacing(2)
                             .width(Length::Fill),
@@ -120,7 +111,7 @@ fn executables_panel(state: &ToolState) -> Element<'_, Message> {
     let mut panel = column![
         row![
             text("Executables").size(16),
-            text(count_label).size(11).color(color!(0x888888)),
+            text(count_label).size(11).style(secondary),
             iced::widget::space::horizontal(),
             button(text("Add executable").size(12))
                 .style(button::secondary)
@@ -133,7 +124,7 @@ fn executables_panel(state: &ToolState) -> Element<'_, Message> {
     .spacing(8);
 
     if let Some(error) = &state.executable_error {
-        panel = panel.push(text(error.as_str()).size(12).color(color!(0xFF8888)));
+        panel = panel.push(text(error.as_str()).size(12).style(danger));
     }
     if editor_visible {
         panel = panel.push(executable_form(state));

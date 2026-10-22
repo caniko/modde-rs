@@ -1,6 +1,6 @@
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{TextStyle, danger, primary, success, text, warning};
 use iced::widget::{button, column, container, row, scrollable, text_input};
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 use std::path::PathBuf;
 
 use crate::action_button::{ButtonAction, DescribedButtonExt};
@@ -100,13 +100,11 @@ pub fn view<'a>(state: &'a DiagnosticsState, crash_log_path: &'a str) -> Element
             .center_x(Length::Fill)
             .into(),
 
-        DiagnosticsState::Error(message) => {
-            container(text(message).size(14).color(color!(0xFF4444)))
-                .padding(20)
-                .width(Length::Fill)
-                .center_x(Length::Fill)
-                .into()
-        }
+        DiagnosticsState::Error(message) => container(text(message).size(14).style(danger))
+            .padding(20)
+            .width(Length::Fill)
+            .center_x(Length::Fill)
+            .into(),
 
         DiagnosticsState::Complete(report) => {
             let broken_count = report.integrity.broken_symlinks.len();
@@ -120,8 +118,8 @@ pub fn view<'a>(state: &'a DiagnosticsState, crash_log_path: &'a str) -> Element
                     .size(12),
                     text(format!("{} staged file(s) OK", report.integrity.ok_count))
                         .size(14)
-                        .color(color!(0x88CC88)),
-                    text("No issues found!").size(14).color(color!(0x88CC88)),
+                        .style(success),
+                    text("No issues found!").size(14).style(success),
                 ]
                 .spacing(8);
 
@@ -135,16 +133,16 @@ pub fn view<'a>(state: &'a DiagnosticsState, crash_log_path: &'a str) -> Element
                     .entries
                     .iter()
                     .fold(column![].spacing(4), |col, entry| {
-                        let (icon, icon_color) = match entry.severity {
-                            DiagnosticSeverity::Info => ("INFO", color!(0x88AACC)),
-                            DiagnosticSeverity::Warning => ("WARN", color!(0xFFAA44)),
-                            DiagnosticSeverity::Error => ("ERR ", color!(0xFF4444)),
+                        let (icon, icon_color): (&str, TextStyle) = match entry.severity {
+                            DiagnosticSeverity::Info => ("INFO", primary),
+                            DiagnosticSeverity::Warning => ("WARN", warning),
+                            DiagnosticSeverity::Error => ("ERR ", danger),
                         };
 
                         let entry_row = row![
                             text(icon)
                                 .size(12)
-                                .color(icon_color)
+                                .style(icon_color)
                                 .width(Length::Fixed(40.0)),
                             text(&entry.message).size(13).width(Length::Fill),
                         ]
@@ -184,7 +182,7 @@ pub fn view<'a>(state: &'a DiagnosticsState, crash_log_path: &'a str) -> Element
                             report.integrity.ok_count
                         ))
                         .size(14)
-                        .color(color!(0x88CC88))
+                        .style(success)
                     ]
                 } else {
                     let symlinks = report
@@ -201,7 +199,7 @@ pub fn view<'a>(state: &'a DiagnosticsState, crash_log_path: &'a str) -> Element
                             report.integrity.broken_symlinks.len()
                         ))
                         .size(14)
-                        .color(color!(0xFF8844)),
+                        .style(warning),
                         container(symlinks)
                             .padding(8)
                             .width(Length::Fill)

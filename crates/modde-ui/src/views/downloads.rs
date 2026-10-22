@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{TextStyle, danger, primary, success, text, warning};
 use iced::widget::{button, column, container, progress_bar, row, scrollable};
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 use crate::action_button::{ButtonAction, DescribedButtonExt};
 use crate::app::Message;
@@ -63,15 +63,15 @@ pub fn view(tasks: &[DownloadTask]) -> Element<'static, Message> {
         .map(|task| {
             let name = text(task.name.clone()).size(14);
 
-            let (status_text, status_color) = match &task.state {
-                DownloadState::Queued => ("Queued", color!(0xAAAAFF)),
-                DownloadState::Active { .. } => ("Downloading", color!(0x88CC88)),
-                DownloadState::Paused { .. } => ("Paused", color!(0xFFAA44)),
-                DownloadState::Complete { .. } => ("Complete", color!(0x44CC44)),
-                DownloadState::Failed { .. } => ("Failed", color!(0xFF4444)),
+            let (status_text, status_color): (&str, TextStyle) = match &task.state {
+                DownloadState::Queued => ("Queued", primary),
+                DownloadState::Active { .. } => ("Downloading", success),
+                DownloadState::Paused { .. } => ("Paused", warning),
+                DownloadState::Complete { .. } => ("Complete", success),
+                DownloadState::Failed { .. } => ("Failed", danger),
             };
 
-            let status = text(status_text).size(12).color(status_color);
+            let status = text(status_text).size(12).style(status_color);
 
             // Progress bar for active/paused
             let progress_widget: Element<Message> = match &task.state {
@@ -140,9 +140,7 @@ pub fn view(tasks: &[DownloadTask]) -> Element<'static, Message> {
                     .padding([3, 8])
                     .on_action(ButtonAction::CancelDownload(task.id)),
                 DownloadState::Failed { error } => column![
-                    text(format!("Error: {error}"))
-                        .size(11)
-                        .color(color!(0xFF4444)),
+                    text(format!("Error: {error}")).size(11).style(danger),
                     button(text("Retry").size(11))
                         .style(button::secondary)
                         .padding([3, 8])

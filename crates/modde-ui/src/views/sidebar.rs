@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{danger, secondary, success, text, warning};
 use iced::widget::{button, column, container, image, mouse_area, pick_list, row};
-use iced::{Element, Length, color};
+use iced::{Element, Length};
 
 use crate::action_button::{ButtonAction, DescribedButtonExt};
 use crate::app::{Message, SidebarGroup, View};
@@ -237,7 +237,7 @@ pub fn view<'a>(
         let experiment_section = column![
             text(format!("Experiment (depth {experiment_depth})"))
                 .size(12)
-                .color(color!(0xFFAA44)),
+                .style(warning),
             row![
                 button(text("Rollback").size(11))
                     .style(button::danger)

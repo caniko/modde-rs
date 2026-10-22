@@ -1,4 +1,4 @@
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{danger, primary, success, text, warning};
 use iced::widget::{
     button, checkbox, column, container, image, progress_bar, radio, row, scrollable,
 };
@@ -95,7 +95,7 @@ pub fn view(app: &Modde) -> Element<'_, Message> {
     let hints = installer.validate_step(step_idx);
     if !hints.is_empty() {
         for hint in &hints {
-            header = header.push(text(hint.to_string()).size(11).color([0.9, 0.6, 0.2]));
+            header = header.push(text(hint.to_string()).size(11).style(warning));
         }
     }
 
@@ -107,7 +107,7 @@ pub fn view(app: &Modde) -> Element<'_, Message> {
                 app.fomod_conflicts.len()
             ))
             .size(11)
-            .color([0.9, 0.4, 0.4]),
+            .style(danger),
         );
     }
 
@@ -216,7 +216,7 @@ pub fn view(app: &Modde) -> Element<'_, Message> {
                         option_col = option_col.push(
                             text(format!("{} file(s) to install", preview.len()))
                                 .size(10)
-                                .color([0.5, 0.7, 0.5]),
+                                .style(success),
                         );
                     }
                 }
@@ -237,7 +237,7 @@ pub fn view(app: &Modde) -> Element<'_, Message> {
                 preview.operations.len()
             ))
             .size(12)
-            .color([0.5, 0.7, 0.9]),
+            .style(primary),
         );
     }
 

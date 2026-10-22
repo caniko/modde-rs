@@ -1,8 +1,10 @@
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{
+    TextStyle, danger, primary, secondary, success, text, warning,
+};
 use iced::widget::{
     button, checkbox, column, container, progress_bar, row, scrollable, text_input,
 };
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 use modde_core::manifest::wabbajack::WabbajackManifest;
 use modde_sources::wabbajack::catalog::{
@@ -142,7 +144,7 @@ fn explorer_tab<'a>(
         column![
             text(format!("Catalog load failed: {error}"))
                 .size(13)
-                .color(color!(0xFF6666))
+                .style(danger)
         ]
     } else if filtered.is_empty() {
         column![text("No Wabbajack entries match the current filters.").size(13)]
@@ -252,7 +254,7 @@ fn entry_row<'a>(
     }
     let row = column![
         text(entry.title).size(14),
-        text(meta.join(" · ")).size(11).color(color!(0x888888)),
+        text(meta.join(" · ")).size(11).style(secondary),
     ]
     .spacing(2);
     let btn = button(row).width(Length::Fill).padding(8);

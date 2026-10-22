@@ -1,8 +1,8 @@
-use crate::views::selectable_text::text;
+use crate::views::selectable_text::{TextStyle, danger, secondary, success, text, warning};
 use iced::widget::{
     button, column, container, pick_list, row, scrollable, slider, text_input, toggler,
 };
-use iced::{Alignment, Element, Length, color};
+use iced::{Alignment, Element, Length};
 
 use modde_games::tools::ToolSettingKind;
 
@@ -73,13 +73,13 @@ pub fn view(state: &ToolState) -> Element<'_, Message> {
 
     let mut content = column![title_bar, tabs, iced::widget::rule::horizontal(1)].spacing(10);
     if state.loading {
-        content = content.push(text("Loading tools...").size(12).color(color!(0xAAAAAA)));
+        content = content.push(text("Loading tools...").size(12).style(secondary));
     }
     if let Some(error) = &state.load_error {
         content = content.push(
             text(format!("Failed to load tools: {error}"))
                 .size(12)
-                .color(color!(0xFF8888)),
+                .style(danger),
         );
     }
     let panel = tool_panel(active_entry, state);
@@ -93,11 +93,7 @@ pub fn view(state: &ToolState) -> Element<'_, Message> {
 }
 
 fn tool_panel<'a>(entry: &'a ToolUiEntry, state: &'a ToolState) -> Element<'a, Message> {
-    let available_color = if entry.available {
-        color!(0x88CC88)
-    } else {
-        color!(0xFF6666)
-    };
+    let available_color: TextStyle = if entry.available { success } else { danger };
 
     let toggle = toggler(entry.enabled)
         .on_toggle_maybe((entry.available && !state.loading).then_some({
@@ -112,16 +108,14 @@ fn tool_panel<'a>(entry: &'a ToolUiEntry, state: &'a ToolState) -> Element<'a, M
     let header = row![
         column![
             text(entry.display_name.as_str()).size(18),
-            text(entry.category.as_str())
-                .size(12)
-                .color(color!(0x888888)),
+            text(entry.category.as_str()).size(12).style(secondary),
         ]
         .spacing(2),
         iced::widget::space::horizontal(),
         text(entry.availability_text.as_str())
             .size(12)
-            .color(available_color),
-        row![text("Enabled").size(12).color(color!(0xAAAAAA)), toggle,]
+            .style(available_color),
+        row![text("Enabled").size(12).style(secondary), toggle,]
             .spacing(8)
             .align_y(Alignment::Center),
     ]
@@ -145,7 +139,7 @@ fn tool_panel<'a>(entry: &'a ToolUiEntry, state: &'a ToolState) -> Element<'a, M
     }
 
     if let Some(ref msg) = entry.status_message {
-        body = body.push(text(msg.as_str()).size(12).color(color!(0x88CC88)));
+        body = body.push(text(msg.as_str()).size(12).style(success));
     }
 
     let scrollable_panel = scrollable(
@@ -197,7 +191,7 @@ fn optiscaler_state_actions(
         .as_deref()
         .unwrap_or("no OptiScaler install detected");
     row![
-        text(state).size(12).color(color!(0xAAAAAA)),
+        text(state).size(12).style(secondary),
         iced::widget::space::horizontal(),
         semantics::test_id(
             "tools.optiscaler.adopt",
@@ -337,7 +331,7 @@ fn optiscaler_release_asset_row<'a>(
     row![
         column![
             text(&*spec.label).size(13),
-            text(&*spec.description).size(11).color(color!(0x888888)),
+            text(&*spec.description).size(11).style(secondary),
         ]
         .spacing(2)
         .width(Length::FillPortion(1)),
@@ -411,20 +405,19 @@ fn config_checklist_panel(entry: &ToolUiEntry) -> Element<'_, Message> {
         iced::widget::space::horizontal(),
         text(if all_done { "All steps complete" } else { "" })
             .size(12)
-            .color(color!(0x88CC88)),
+            .style(success),
     ]
     .align_y(Alignment::Center);
     let mut rows = column![header].spacing(6);
     for item in &entry.config_checklist {
         let icon = match item.status {
-            ChecklistStatus::Done => text("✓").size(13).color(color!(0x88CC88)),
-            ChecklistStatus::Pending => text("○").size(13).color(color!(0xCCAA44)),
-            ChecklistStatus::Blocked => text("✗").size(13).color(color!(0xFF6666)),
+            ChecklistStatus::Done => text("✓").size(13).style(success),
+            ChecklistStatus::Pending => text("○").size(13).style(warning),
+            ChecklistStatus::Blocked => text("✗").size(13).style(danger),
         };
         let mut row_content = row![icon, text(item.label.as_str()).size(13)].spacing(8);
         if let Some(hint) = &item.hint {
-            row_content =
-                row_content.push(text(format!("— {hint}")).size(12).color(color!(0x888888)));
+            row_content = row_content.push(text(format!("— {hint}")).size(12).style(secondary));
         }
         rows = rows.push(row_content.align_y(Alignment::Center));
     }
