@@ -24,57 +24,22 @@ impl InstanceRegistry {
     /// Load the registry from the default config location.
     #[must_use]
     pub fn load() -> Self {
-        let path = registry_path();
-        if !path.exists() {
-            return Self::default();
-        }
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| toml::from_str(&s).ok())
-            .unwrap_or_default()
+        Self::load_from(&registry_path())
     }
 
     /// Save the registry.
     pub fn save(&self) -> crate::error::Result<()> {
-        let path = registry_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let content = toml::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
-        Ok(())
+        self.save_to(&registry_path())
     }
 
     /// Create a new instance.
     pub fn create(&mut self, name: &str, data_dir: PathBuf) -> crate::error::Result<()> {
-        if self.instances.iter().any(|i| i.name == name) {
-            return Err(crate::error::CoreError::Validation(
-                format!("instance '{name}' already exists").into(),
-            ));
-        }
-        std::fs::create_dir_all(&data_dir)?;
-        self.instances.push(Instance {
-            name: name.to_string(),
-            data_dir,
-            is_default: self.instances.is_empty(),
-        });
-        if self.active.is_none() {
-            self.active = Some(name.to_string());
-        }
-        self.save()?;
-        Ok(())
+        self.create_with_path(name, data_dir, &registry_path())
     }
 
     /// Switch to a different instance.
     pub fn switch(&mut self, name: &str) -> crate::error::Result<()> {
-        if !self.instances.iter().any(|i| i.name == name) {
-            return Err(crate::error::CoreError::Validation(
-                format!("instance '{name}' not found").into(),
-            ));
-        }
-        self.active = Some(name.to_string());
-        self.save()?;
-        Ok(())
+        self.switch_with_path(name, &registry_path())
     }
 
     /// Get the active instance's data directory.
@@ -93,7 +58,7 @@ impl InstanceRegistry {
         &self.instances
     }
 
-    /// Load the registry from a specific file path (for testing).
+    /// Load the registry from a specific file path.
     #[must_use]
     pub fn load_from(path: &Path) -> Self {
         if !path.exists() {
@@ -105,7 +70,7 @@ impl InstanceRegistry {
             .unwrap_or_default()
     }
 
-    /// Save the registry to a specific file path (for testing).
+    /// Save the registry to a specific file path.
     pub fn save_to(&self, path: &Path) -> crate::error::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -115,7 +80,7 @@ impl InstanceRegistry {
         Ok(())
     }
 
-    /// Create a new instance, saving to a specific registry path (for testing).
+    /// Create a new instance, saving to a specific registry path.
     pub fn create_with_path(
         &mut self,
         name: &str,
@@ -140,7 +105,7 @@ impl InstanceRegistry {
         Ok(())
     }
 
-    /// Switch to a different instance, saving to a specific registry path (for testing).
+    /// Switch to a different instance, saving to a specific registry path.
     pub fn switch_with_path(
         &mut self,
         name: &str,
