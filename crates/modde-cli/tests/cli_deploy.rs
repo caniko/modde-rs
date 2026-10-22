@@ -1,5 +1,5 @@
-//! End-to-end tests for `modde deploy` with a seeded profile and store
-//! against a fake Stardew Valley install (mods deploy into `Mods/`).
+//! End-to-end tests for `modde deploy` and `modde verify` with a seeded
+//! profile and store against a fake Stardew Valley install (mods deploy into `Mods/`).
 
 #![cfg(feature = "stardew")]
 
@@ -208,4 +208,53 @@ async fn deploy_requires_a_known_profile_and_install() {
     std::fs::remove_file(sb.fx.home().join(".config/modde/settings.toml")).unwrap();
     let no_install = deploy(&sb.fx);
     assert!(!no_install.status.success());
+}
+
+#[cfg(unix)]
+fn verify(fx: &Fixture) -> String {
+    ok(&fx
+        .cmd()
+        .args(["verify", "--profile", "main", "--game", GAME])
+        .output()
+        .expect("spawn modde verify"))
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn verify_reports_missing_and_unreadable_store_files() {
+    let clean = sandbox(
+        &[("mod_a", "ModA/manifest.json"), ("mod_off", "Off/a.json")],
+        &[("mod_a", true), ("mod_off", false)],
+        Vec::new(),
+        &[],
+    )
+    .await;
+    let out = verify(&clean.fx);
+    assert!(out.contains("Total files checked: 1"), "{out}");
+    assert!(out.contains("All files OK."), "{out}");
+
+    let broken = sandbox(
+        &[
+            ("mod_a", "ModA/manifest.json"),
+            ("mod_a", "ModA/locked.json"),
+        ],
+        &[("mod_a", true), ("mod_gone", true)],
+        Vec::new(),
+        &[],
+    )
+    .await;
+    let mod_dir = broken.fx.data_dir().join("store/mod_a/ModA");
+    std::os::unix::fs::symlink("/nonexistent/target", mod_dir.join("dangling.json")).unwrap();
+    std::fs::set_permissions(
+        mod_dir.join("locked.json"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o000),
+    )
+    .unwrap();
+
+    let out = verify(&broken.fx);
+    assert!(out.contains("Missing mods/files:  2"), "{out}");
+    assert!(out.contains("  - mod_gone\n"), "{out}");
+    assert!(out.contains("dangling.json"), "{out}");
+    assert!(out.contains("Mismatches/errors:   1"), "{out}");
+    assert!(out.contains("locked.json (hash error:"), "{out}");
 }
