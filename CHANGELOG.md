@@ -230,6 +230,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   modde's directories. Keep `nxm://` download names returned by the Nexus API
   inside the downloads directory. `modde install mod` without a file id now
   falls back to the first file when a mod has no MAIN file instead of failing.
+- **Updates**: Mods installed with `modde install mod` now record their install
+  time, so `modde update check` and `modde update apply` track them as the CLI
+  hint promises instead of silently skipping them.
+- **Bisect**: A `bisect run` refused by the save-safety check no longer leaves an
+  orphaned `__bisect_*` candidate profile that `bisect abort` cannot remove.
 - **Profiles**: Reject `.` and `..` profile names, skip invalid names during TOML
   import, write plugin order atomically, and encode profile sources as valid
   TOML so control characters no longer make a profile unloadable. Roll back
