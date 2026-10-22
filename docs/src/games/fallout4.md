@@ -180,7 +180,7 @@ layer (`with_save_profiles(true)`).
 modde locates saves inside the Proton prefix at:
 
 ```text
-.../compatdata/377160/pfx/drive_c/Users/steamuser/Documents/My Games/Fallout4/Saves
+.../compatdata/377160/pfx/drive_c/users/steamuser/Documents/My Games/Fallout4/Saves
 ```
 
 The Fallout 4 save tracker (`FALLOUT4_SAVE_TRACKER`) scans that directory for

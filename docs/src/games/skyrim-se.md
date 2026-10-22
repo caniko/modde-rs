@@ -137,7 +137,7 @@ Save tracking is `Done` for Skyrim SE/AE. modde reads saves from the Proton
 prefix:
 
 ```text
-<steam>/steamapps/compatdata/489830/pfx/drive_c/Users/steamuser/Documents/My Games/Skyrim Special Edition/Saves
+<steam>/steamapps/compatdata/489830/pfx/drive_c/users/steamuser/Documents/My Games/Skyrim Special Edition/Saves
 ```
 
 What it captures and fingerprints:

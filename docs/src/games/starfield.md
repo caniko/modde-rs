@@ -54,7 +54,7 @@ Steam compatibility prefix are:
 
 ```text
 # Save games (auto-detected by the plugin)
-~/.local/share/Steam/steamapps/compatdata/1716740/pfx/drive_c/Users/steamuser/Documents/My Games/Starfield/Saves
+~/.local/share/Steam/steamapps/compatdata/1716740/pfx/drive_c/users/steamuser/Documents/My Games/Starfield/Saves
 
 # Load order (read by the scanner)
 ~/.local/share/Steam/steamapps/compatdata/1716740/pfx/drive_c/users/steamuser/AppData/Local/Starfield/plugins.txt

@@ -37,14 +37,14 @@ pub fn profile_ini_dir(profile_name: &str) -> PathBuf {
 /// Get the game's INI directory (under Proton prefix).
 ///
 /// For Bethesda games this is the `My Games/<game>` directory
-/// (e.g., `~/.local/share/Steam/steamapps/compatdata/<app_id>/pfx/drive_c/Users/steamuser/Documents/My Games/Skyrim Special Edition/`).
+/// (e.g., `~/.local/share/Steam/steamapps/compatdata/<app_id>/pfx/drive_c/users/steamuser/Documents/My Games/Skyrim Special Edition/`).
 #[must_use]
 pub fn game_ini_dir(steam_app_id: &str, my_games_dir: &str) -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
     let path = PathBuf::from(home)
         .join(".local/share/Steam/steamapps/compatdata")
         .join(steam_app_id)
-        .join("pfx/drive_c/Users/steamuser/Documents/My Games")
+        .join("pfx/drive_c/users/steamuser/Documents/My Games")
         .join(my_games_dir);
     if path.exists() { Some(path) } else { None }
 }

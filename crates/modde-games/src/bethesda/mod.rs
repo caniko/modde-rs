@@ -220,12 +220,12 @@ impl GamePlugin for BethesdaGame {
     }
 
     fn save_directory(&self) -> Option<PathBuf> {
-        // Proton prefix: compatdata/<APP_ID>/pfx/drive_c/Users/steamuser/Documents/My Games/<DIR>/Saves
+        // Proton prefix: compatdata/<APP_ID>/pfx/drive_c/users/steamuser/Documents/My Games/<DIR>/Saves
         let compat = paths::steam_common()
             .parent()? // steamapps/
             .join("compatdata")
             .join(self.steam_app_id)
-            .join("pfx/drive_c/Users/steamuser/Documents/My Games")
+            .join("pfx/drive_c/users/steamuser/Documents/My Games")
             .join(self.my_games_dir)
             .join("Saves");
         if compat.exists() {

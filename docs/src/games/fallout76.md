@@ -166,7 +166,7 @@ progress lives server-side and is **not** under modde's control. The save
 directory modde looks in is resolved from the Proton prefix:
 
 ```text
-.../compatdata/1151340/pfx/drive_c/Users/steamuser/Documents/My Games/Fallout 76/Saves
+.../compatdata/1151340/pfx/drive_c/users/steamuser/Documents/My Games/Fallout 76/Saves
 ```
 
 (`my_games_dir = "Fallout 76"` for this title.) Do not rely on modde save
