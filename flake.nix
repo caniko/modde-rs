@@ -15,7 +15,7 @@
     };
 
     simit = {
-      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=fa9b48c49ee510f9628a5272f4e397725c4e99a2";
+      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=4c6841cce19327927ea8a8f6e856276dd5c878f0";
       inputs.nixpkgs.follows = "harbor-rs/nixpkgs";
       inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
       inputs.crane.follows = "harbor-rs/crane";
@@ -1970,6 +1970,23 @@
           files = ["target/modde-release/root-artifacts/release/SHA256SUMS.txt"];
           publicKeyFile = "keys/minisign.pub";
         };
+
+        # Trunk prebuild publishes the Linux packages Canix consumes (Home
+        # Manager `modde` and the OctoWoW `modde-manager`) to the public
+        # canix cache. Darwin outputs depend on the private macOS SDK and
+        # must never be published there.
+        apps.push-flake-inputs = harbor-rs.lib.mkAtticPush {
+          inherit pkgs;
+          flake = ".";
+          paths = lib.optionals (system == "x86_64-linux") [modde modde-manager];
+          adapter = harbor-rs.lib.mkAdapter {
+            attic = {
+              endpoint = "https://attic.candee.baby";
+              cache = "canix";
+              tokenEnvVar = "ATTIC_TOKEN";
+            };
+          };
+        };
       });
   in
     {
@@ -2090,6 +2107,12 @@
           "sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache"
           "printf '%s\\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf"
         ];
+        prebuild = {
+          publish_attic = true;
+          attic_app = ".#push-flake-inputs";
+          nix_builds = [".#packages.x86_64-linux.modde" ".#packages.x86_64-linux.modde-manager"];
+          system_runners.x86_64-linux = "ubuntu-24.04";
+        };
         ci.required_gates = [
           {
             id = "generated-workflows";
@@ -2197,7 +2220,8 @@
           cache = "canix";
           url = "https://attic.candee.baby";
           token_name = "modde-rs";
-          result_links = ["target/modde-release/root-artifacts/linux-result" "target/modde-release/root-artifacts/aarch64-linux-result" "target/modde-release/root-artifacts/windows-result" "target/modde-release/root-artifacts/darwin-arm-result" "target/modde-release/root-artifacts/appimage-ui-result" "target/modde-release/root-artifacts/appimage-cli-result" "target/modde-release/root-artifacts/flatpak-result"];
+          token_secret = "ATTIC_TOKEN";
+          result_links = ["target/modde-release/root-artifacts/linux-result" "target/modde-release/root-artifacts/aarch64-linux-result" "target/modde-release/root-artifacts/windows-result" "target/modde-release/root-artifacts/appimage-ui-result" "target/modde-release/root-artifacts/appimage-cli-result" "target/modde-release/root-artifacts/flatpak-result"];
         };
         release.announce = {};
         release.windows_signing = {
