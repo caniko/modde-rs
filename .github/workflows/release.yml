@@ -17,7 +17,7 @@
 # - FLATHUB_TOKEN: optional GitHub PAT for flathub/com.tartanoglu.modde Flathub PRs.
 # - WINGET_PAT: optional GitHub PAT for winget-pkgs PRs.
 # - MASTODON_TOKEN, MASTODON_BASE_URL, MATRIX_TOKEN, MATRIX_HOMESERVER, MATRIX_ROOM: required when release announcements are configured.
-# Runner credential: $ATTIC_TOKENS_DIR/modde-rs: Attic token file.
+# - ATTIC_TOKEN: repository secret for native prebuild Attic publication.
 
 name: release
 
@@ -126,8 +126,15 @@ jobs:
         run: |
           set -euo pipefail
           bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix build --no-update-lock-file --max-jobs 1 --cores 2 .#modde --out-link result-qualified-package && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c cargo xtask library-package-qualify --binary "$(readlink -f result-qualified-package)/bin/modde" --output "$RUNNER_TEMP/modde-package-receipt"
-  release:
+  prebuild:
     needs: validate
+    uses: ./.github/workflows/prebuild.yaml
+    with:
+      release: true
+    secrets:
+      attic_token: ${{ secrets.ATTIC_TOKEN }}
+  release:
+    needs: [validate, prebuild]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -223,6 +230,7 @@ jobs:
           MODDE_APT_REPO_GPG_PUBLIC_KEY: ${{ vars.MODDE_APT_REPO_GPG_PUBLIC_KEY }}
           MODDE_APT_REPO_SSH_KEY: ${{ secrets.MODDE_APT_REPO_SSH_KEY }}
           CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
         run: |
           set -euo pipefail
           . ./release-env
@@ -252,6 +260,7 @@ jobs:
           if [ "${IS_PRERELEASE}" != "true" ]; then
             require_credential 'global/user secret' 'CODEBERG_TOKEN' "${CODEBERG_TOKEN:-}"
           fi
+          require_credential 'repo secret' 'ATTIC_TOKEN' "${ATTIC_TOKEN:-}"
           if [ -n "$missing" ]; then
             printf 'Missing release credentials:%s\n' "$missing" >&2
             exit 1
@@ -516,37 +525,6 @@ jobs:
             curl -sS --fail -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/octet-stream' --data-binary "@$file" "$upload_url?name=$name" > /dev/null
           done < <(printf '%s\n' "${files[@]}" | LC_ALL=C sort -u)
           SCRIPT
-      - name: Push Nix closures to Attic
-        run: |
-          set -euo pipefail
-          attic_token_dir="${ATTIC_TOKENS_DIR:-}"
-          attic_token="${attic_token_dir}/modde-rs"
-          if [ -z "$attic_token_dir" ] || [ ! -r "$attic_token" ]; then
-            echo "::error::Attic token ${ATTIC_TOKENS_DIR:-<unset>}/modde-rs is required because Nix closure cache publishing is configured." >&2
-            exit 1
-          fi
-          nix path-info -r \
-            ./target/modde-release/root-artifacts/linux-result \
-            ./target/modde-release/root-artifacts/aarch64-linux-result \
-            ./target/modde-release/root-artifacts/windows-result \
-            ./target/modde-release/root-artifacts/darwin-arm-result \
-            ./target/modde-release/root-artifacts/appimage-ui-result \
-            ./target/modde-release/root-artifacts/appimage-cli-result \
-            ./target/modde-release/root-artifacts/flatpak-result \
-            > attic-paths.txt
-          attic_config_root="$(mktemp -d)"
-          trap 'rm -rf "$attic_config_root"' EXIT
-          install -d -m 0700 "$attic_config_root/attic"
-          attic_config="$attic_config_root/attic/config.toml"
-          install -m 0600 /dev/null "$attic_config"
-          { printf '%s\n' 'default-server = "canix"'; printf '%s\n' '[servers.canix]'; printf '%s\n' 'endpoint = "https://attic.candee.baby"'; printf 'token = "%s"\n' "$(cat "$attic_token")"; } > "$attic_config"
-          test "$(stat -c '%a' "$attic_config")" = 600
-          attic="$(nix build --inputs-from . --no-link --print-out-paths nixpkgs#attic-client)"
-          test -x "$attic/bin/attic"
-          if ! XDG_CONFIG_HOME="$attic_config_root" "$attic/bin/attic" push --stdin --no-closure --ignore-upstream-cache-filter canix < attic-paths.txt; then
-            echo "::error::Attic push failed for configured Nix closure cache publishing." >&2
-            exit 1
-          fi
       - name: Probe downstream publisher state
         run: |
           set -euo pipefail
