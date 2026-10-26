@@ -14,11 +14,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # No nixpkgs/rust-overlay/crane follows: simit must keep its own locked
+    # toolchain so the dev shell hits the closure simit's trunk prebuild
+    # publishes to the canix Attic cache instead of compiling it.
     simit = {
-      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=4c6841cce19327927ea8a8f6e856276dd5c878f0";
-      inputs.nixpkgs.follows = "harbor-rs/nixpkgs";
-      inputs.rust-overlay.follows = "harbor-rs/rust-overlay";
-      inputs.crane.follows = "harbor-rs/crane";
+      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=9ffacf22c9b69385e370846ea55ce6226a26b8ad";
       inputs.flake-utils.url = "github:numtide/flake-utils";
       inputs.plinth.follows = "plinth";
     };
