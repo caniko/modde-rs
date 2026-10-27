@@ -117,7 +117,7 @@ jobs:
       - name: Publish flake inputs to Attic
         if: ${{ (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) || (inputs.release && github.event_name != 'pull_request') }}
         env:
-          ATTIC_TOKEN: ${{ inputs.release && secrets.attic_token || secrets.ATTIC_TOKEN }}
+          ATTIC_TOKEN: ${{ secrets.attic_token || secrets.ATTIC_TOKEN }}
           HARBOR_ATTIC_MANIFEST: attic-paths.txt
         run: nix run '.#push-flake-inputs'
       - name: Upload flake input manifest
