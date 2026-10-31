@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod client_dlls;
 mod files;
 mod transaction;
 mod wiring;
@@ -562,6 +563,10 @@ fn main() -> Result<()> {
                         .get(&instance)
                         .with_context(|| format!("unknown instance '{instance}'"))?;
                     validate_offline(&instance, instance_config)?;
+                    client_dlls::validate_files(
+                        instance_config,
+                        &wiring::resolve_wiring(instance_config)?.client_dlls,
+                    )?;
                     println!("modde-manager: {instance} declaration valid");
                     Ok(())
                 }

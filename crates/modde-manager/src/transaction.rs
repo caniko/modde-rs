@@ -145,11 +145,27 @@ impl Prepared {
     }
 
     pub fn apply(&self, instance: &Instance) -> Result<()> {
+        let _lease = self.root.lock()?;
         self.apply_inner(instance, None)
     }
 
+    /// Commit `(root-relative path, bytes)` files through the same journaled,
+    /// rollback-capable path as config writes. The caller already holds the
+    /// root lease (locks are not reentrant).
+    pub fn install_files_held(instance: &Instance, items: Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
+        let mut prepared = Prepared {
+            root: Anchor::open(&instance.root)?,
+            operations: Vec::new(),
+            sources: Vec::new(),
+        };
+        for (path, bytes) in items {
+            files::relative(&path)?;
+            prepared.add(path, Image::File(bytes), false)?;
+        }
+        prepared.apply_inner(instance, None)
+    }
+
     fn apply_inner(&self, instance: &Instance, fail_after: Option<(usize, bool)>) -> Result<()> {
-        let _lease = self.root.lock()?;
         self.revalidate()?;
         assert_stopped(instance)?;
         if self.operations.is_empty() {

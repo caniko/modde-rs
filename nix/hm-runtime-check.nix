@@ -20,7 +20,7 @@
     inherit pkgs;
     package = pkgs.writeShellScriptBin "modde-manager" "exit 0";
     config = {
-      schema_version = 5;
+      schema_version = 6;
       instances = {};
     };
   };
@@ -87,7 +87,7 @@ in
       done
       grep -Fx 'Exec=${runtime}/bin/modde-ui' ${runtime}/share/applications/com.tartanoglu.modde.desktop
       cmp ${manager.configFile} ${pkgs.writeText "expected-config.json" (builtins.toJSON {
-        schema_version = 5;
+        schema_version = 6;
         instances = {};
       })}
       touch "$out"
