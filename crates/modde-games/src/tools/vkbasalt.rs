@@ -14,23 +14,40 @@ pub static VKBASALT: VkBasalt = VkBasalt;
 
 pub struct VkBasalt;
 
-/// Implicit-layer manifests the Vulkan loader would read, given
-/// `$XDG_DATA_DIRS`: fixed system paths, NixOS's driver dir, then each data dir.
+/// Implicit-layer manifests the Vulkan loader would read: fixed system and
+/// NixOS driver paths, `$XDG_DATA_HOME` (default `~/.local/share`), then each
+/// `$XDG_DATA_DIRS` entry (default `/usr/local/share:/usr/share` when unset
+/// or empty).
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn layer_paths(xdg_data_dirs: &str) -> Vec<std::path::PathBuf> {
+fn layer_paths(
+    xdg_data_dirs: Option<&str>,
+    xdg_data_home: Option<&str>,
+    home: Option<&str>,
+) -> Vec<std::path::PathBuf> {
+    use std::path::{Path, PathBuf};
     const LAYER: &str = "vulkan/implicit_layer.d/vkBasalt.json";
-    let mut paths: Vec<std::path::PathBuf> = [
+    let mut paths: Vec<PathBuf> = [
         "/usr/share/vulkan/implicit_layer.d/vkBasalt.json",
         "/etc/vulkan/implicit_layer.d/vkBasalt.json",
         "/run/opengl-driver/share/vulkan/implicit_layer.d/vkBasalt.json",
     ]
     .map(Into::into)
     .into();
+    let data_home = xdg_data_home
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            home.filter(|h| !h.is_empty())
+                .map(|h| Path::new(h).join(".local/share"))
+        });
+    paths.extend(data_home.map(|d| d.join(LAYER)));
+    let dirs = xdg_data_dirs
+        .filter(|d| !d.is_empty())
+        .unwrap_or("/usr/local/share:/usr/share");
     paths.extend(
-        xdg_data_dirs
-            .split(':')
+        dirs.split(':')
             .filter(|dir| !dir.is_empty())
-            .map(|dir| std::path::Path::new(dir).join(LAYER)),
+            .map(|dir| Path::new(dir).join(LAYER)),
     );
     paths
 }
@@ -104,8 +121,13 @@ impl GameTool for VkBasalt {
         // Check for the layer JSON or the library.
         #[cfg(target_os = "linux")]
         {
-            let xdg = std::env::var("XDG_DATA_DIRS").unwrap_or_default();
-            if layer_paths(&xdg).iter().any(|p| p.exists()) || which("vkbasalt").is_some() {
+            let env = |k| std::env::var(k).ok();
+            let paths = layer_paths(
+                env("XDG_DATA_DIRS").as_deref(),
+                env("XDG_DATA_HOME").as_deref(),
+                env("HOME").as_deref(),
+            );
+            if paths.iter().any(|p| p.exists()) || which("vkbasalt").is_some() {
                 ToolAvailability::Available { version: None }
             } else {
                 // Also check via nix profile paths
@@ -198,18 +220,30 @@ mod tests {
     use super::layer_paths;
     use std::path::Path;
 
+    fn has(paths: &[std::path::PathBuf], want: &str) -> bool {
+        paths.iter().any(|p| p == Path::new(want))
+    }
+
     #[test]
-    fn layer_paths_cover_nixos_and_xdg_dirs() {
-        let paths = layer_paths("/a/share::/b/share");
+    fn layer_paths_cover_nixos_xdg_and_loader_defaults() {
+        let l = "vulkan/implicit_layer.d/vkBasalt.json";
+        let paths = layer_paths(Some("/a/share::/b/share"), Some("/dh"), Some("/home/u"));
         for want in [
-            "/usr/share/vulkan/implicit_layer.d/vkBasalt.json",
             "/etc/vulkan/implicit_layer.d/vkBasalt.json",
             "/run/opengl-driver/share/vulkan/implicit_layer.d/vkBasalt.json",
-            "/a/share/vulkan/implicit_layer.d/vkBasalt.json",
-            "/b/share/vulkan/implicit_layer.d/vkBasalt.json",
+            &format!("/dh/{l}"),
+            &format!("/a/share/{l}"),
+            &format!("/b/share/{l}"),
         ] {
-            assert!(paths.iter().any(|p| p == Path::new(want)), "{want}");
+            assert!(has(&paths, want), "{want}");
         }
-        assert_eq!(paths.len(), 5, "empty XDG entries are skipped");
+        assert!(!has(&paths, &format!("/usr/local/share/{l}")));
+        // Unset or empty: loader defaults; data home falls back to ~/.local/share.
+        for unset in [None, Some("")] {
+            let paths = layer_paths(unset, None, Some("/home/u"));
+            assert!(has(&paths, &format!("/usr/local/share/{l}")));
+            assert!(has(&paths, &format!("/usr/share/{l}")));
+            assert!(has(&paths, &format!("/home/u/.local/share/{l}")));
+        }
     }
 }

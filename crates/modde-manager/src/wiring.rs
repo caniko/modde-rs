@@ -2835,6 +2835,7 @@ pub fn prepare(
     // Offline declaration shapes fail first, before any filesystem work.
     validate_declaration(name, instance)?;
     let wiring = resolve_wiring(instance)?;
+    client_dlls::preflight(&wiring.client_dlls)?;
     Anchor::open(&instance.root)?;
     super::assert_stopped(instance)?;
 
@@ -7750,6 +7751,25 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap(), b"fake");
         assert!(!backup.exists());
         gate_ok(&instance).unwrap();
+    }
+
+    #[test]
+    fn client_dll_missing_source_fails_before_any_mutation() {
+        let (_guard, envelope, root, home) = apply_test_env();
+        let mut instance = apply_fixture(&root, home.path());
+        with_dll(
+            &mut instance,
+            "d3d9.dll",
+            &envelope.path().join("absent.dll"),
+        );
+        let err = apply("test", &instance, &dirs(&home), false, false, None).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("not a readable file"),
+            "{err:#}"
+        );
+        assert!(!envelope.path().join("octowow-prefix").exists());
+        assert!(!envelope.path().join("octo-manager").exists());
+        assert_eq!(fs::read(root.join("d3d9.dll")).unwrap(), b"fake");
     }
 
     fn walk_paths(root: &Path) -> Vec<PathBuf> {

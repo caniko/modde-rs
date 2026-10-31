@@ -86,6 +86,12 @@ fn make_readable(root: &Path, key: &str) -> Result<()> {
     Ok(())
 }
 
+/// Fail before any mutation if a declared source is unreadable.
+pub fn preflight(dlls: &ClientDlls) -> Result<()> {
+    dlls.iter()
+        .try_for_each(|(key, dll)| read_source(key, dll).map(drop))
+}
+
 /// Offline, side-effect-free: sources exist; report installed digest state.
 pub fn validate_files(instance: &Instance, dlls: &ClientDlls) -> Result<()> {
     for (key, dll) in dlls {
@@ -160,13 +166,14 @@ pub fn apply(name: &str, instance: &Instance, dlls: &ClientDlls) -> Result<bool>
         fs::remove_file(instance.root.join(key))?;
         println!("{name}: client dll {key} removed");
     }
-    // Undeclared entries are done; drop their records and backups.
+    // Undeclared entries are done: persist the pruned manifest first, then
+    // drop their backups, so an interruption never leaves a dangling record.
     next.retain(|key, _| dlls.contains_key(key));
-    for key in managed.keys().filter(|key| !dlls.contains_key(*key)) {
-        let _ = fs::remove_file(backup_path(instance, key));
-    }
     if next != managed || !keys.is_empty() {
         write_managed(instance, &next)?;
+    }
+    for key in managed.keys().filter(|key| !dlls.contains_key(*key)) {
+        let _ = fs::remove_file(backup_path(instance, key));
     }
     Ok(changed)
 }
