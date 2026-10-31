@@ -109,7 +109,9 @@ impl BackupManager {
             }
         }
 
-        entries.sort_by_key(|e| e.created);
+        // Order by the nanosecond stamp in the name: mtime ticks coarsely, so
+        // two backups made back-to-back can tie or invert.
+        entries.sort_by_key(|e| (name_stamp(&e.name), e.created));
         Ok(entries)
     }
 
@@ -166,9 +168,11 @@ impl BackupManager {
             .collect();
 
         candidates.sort_by_key(|e| {
-            e.metadata()
+            let mtime = e
+                .metadata()
                 .and_then(|m| m.modified())
-                .unwrap_or(UNIX_EPOCH)
+                .unwrap_or(UNIX_EPOCH);
+            (name_stamp(&e.file_name().to_string_lossy()), mtime)
         });
 
         let latest = candidates.last().ok_or_else(|| {
@@ -215,6 +219,14 @@ fn unix_timestamp_nanos() -> u128 {
 }
 
 /// Create a zip archive from a directory.
+/// The nanosecond stamp in `<id>_<stamp>.<ext>`; 0 when absent.
+fn name_stamp(name: &str) -> u128 {
+    let stem = name.rsplit_once('.').map_or(name, |(s, _)| s);
+    stem.rsplit_once('_')
+        .and_then(|(_, ts)| ts.parse().ok())
+        .unwrap_or(0)
+}
+
 fn create_zip_from_dir(src: &Path, dest: &Path) -> Result<()> {
     let file = fs::File::create(dest)?;
     let mut zip = zip::ZipWriter::new(file);
