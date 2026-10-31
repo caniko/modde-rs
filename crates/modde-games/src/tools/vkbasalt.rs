@@ -14,6 +14,27 @@ pub static VKBASALT: VkBasalt = VkBasalt;
 
 pub struct VkBasalt;
 
+/// Implicit-layer manifests the Vulkan loader would read, given
+/// `$XDG_DATA_DIRS`: fixed system paths, NixOS's driver dir, then each data dir.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn layer_paths(xdg_data_dirs: &str) -> Vec<std::path::PathBuf> {
+    const LAYER: &str = "vulkan/implicit_layer.d/vkBasalt.json";
+    let mut paths: Vec<std::path::PathBuf> = [
+        "/usr/share/vulkan/implicit_layer.d/vkBasalt.json",
+        "/etc/vulkan/implicit_layer.d/vkBasalt.json",
+        "/run/opengl-driver/share/vulkan/implicit_layer.d/vkBasalt.json",
+    ]
+    .map(Into::into)
+    .into();
+    paths.extend(
+        xdg_data_dirs
+            .split(':')
+            .filter(|dir| !dir.is_empty())
+            .map(|dir| std::path::Path::new(dir).join(LAYER)),
+    );
+    paths
+}
+
 impl GameTool for VkBasalt {
     fn tool_id(&self) -> &'static str {
         "vkbasalt"
@@ -83,14 +104,8 @@ impl GameTool for VkBasalt {
         // Check for the layer JSON or the library.
         #[cfg(target_os = "linux")]
         {
-            let layer_paths = [
-                "/usr/share/vulkan/implicit_layer.d/vkBasalt.json",
-                "/etc/vulkan/implicit_layer.d/vkBasalt.json",
-            ];
-
-            if layer_paths.iter().any(|p| std::path::Path::new(p).exists())
-                || which("vkbasalt").is_some()
-            {
+            let xdg = std::env::var("XDG_DATA_DIRS").unwrap_or_default();
+            if layer_paths(&xdg).iter().any(|p| p.exists()) || which("vkbasalt").is_some() {
                 ToolAvailability::Available { version: None }
             } else {
                 // Also check via nix profile paths
@@ -175,5 +190,26 @@ impl GameTool for VkBasalt {
         config.set("effects", serde_json::json!(["cas"]));
         config.set("casSharpness", serde_json::json!(0.4));
         config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::layer_paths;
+    use std::path::Path;
+
+    #[test]
+    fn layer_paths_cover_nixos_and_xdg_dirs() {
+        let paths = layer_paths("/a/share::/b/share");
+        for want in [
+            "/usr/share/vulkan/implicit_layer.d/vkBasalt.json",
+            "/etc/vulkan/implicit_layer.d/vkBasalt.json",
+            "/run/opengl-driver/share/vulkan/implicit_layer.d/vkBasalt.json",
+            "/a/share/vulkan/implicit_layer.d/vkBasalt.json",
+            "/b/share/vulkan/implicit_layer.d/vkBasalt.json",
+        ] {
+            assert!(paths.iter().any(|p| p == Path::new(want)), "{want}");
+        }
+        assert_eq!(paths.len(), 5, "empty XDG entries are skipped");
     }
 }
