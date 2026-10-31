@@ -224,3 +224,24 @@ async fn install_admission_failure_preserves_resumable_staging() {
         bytes
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn reclaimable_cache_counts_as_available_headroom() {
+    use super::super::install::ReclaimableCache;
+    struct Warm;
+    impl MemoryProvider for Warm {
+        fn used_fraction(&self) -> Result<f64, ProviderError> {
+            Ok(1.0)
+        }
+        fn stats(&self) -> Result<MemoryStats, ProviderError> {
+            Ok(MemoryStats {
+                total_bytes: 8 * GIB,
+                available_bytes: 0,
+                page_cache_bytes: 6 * GIB,
+            })
+        }
+    }
+    let stats = ReclaimableCache(Arc::new(Warm)).stats().unwrap();
+    assert_eq!(stats.available_bytes, 6 * GIB);
+}
