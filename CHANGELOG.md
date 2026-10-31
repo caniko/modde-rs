@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Manager**: Add Classic/OctoWoW reconciliation, verified offline addon import,
   private account snapshots, seed-only account-tree merging, and recovery journals.
+- **Manager**: Add `wiring.client_dlls` (schema v6): a declared replacement DLL
+  (e.g. DXVK from the Nix store) is backed up once, installed as a copy through
+  the journaled transaction, re-asserted by `onboard gate`/native launch when a
+  launcher reverts it, checked offline by `onboard validate`, and restored when
+  undeclared.
+- **Tools**: Detect the vkBasalt Vulkan layer under `/run/opengl-driver` and
+  `$XDG_DATA_DIRS` (NixOS).
 - **Manager**: Add declarative runtime wiring (presence-tracking `wiring`
   overlay plus a shared `preset = "octowow-hd"` expansion, schema v3) with
   `onboard status|plan|apply`: numeric Wine-runner selection persisted

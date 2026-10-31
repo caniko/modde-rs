@@ -1990,7 +1990,7 @@
       });
   in
     {
-      lib.managerSchemaVersion = 5;
+      lib.managerSchemaVersion = 6;
       lib.mkManager = {
         pkgs,
         package,

@@ -10,13 +10,14 @@ use super::{
     BTreeMap, Command, Context, Deserialize, Digest, Instance, Path, PathBuf, Result, Serialize,
     Sha256, atomic_write_0600, bail, files, fs, hex,
 };
+use crate::client_dlls::{self, ClientDlls};
 use crate::transaction::overlap;
 use files::{Anchor, Image, Lease, fd_path, relative};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Optional per-instance runtime wiring. All fields optional so existing
-/// configs keep parsing; bumping `managerSchemaVersion` to 5 advertises
+/// configs keep parsing; bumping `managerSchemaVersion` to 6 advertises managed `client_dlls`,
 /// launcher tuning overrides, offline validation, and the tightened
 /// registration/readiness contract.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -44,6 +45,9 @@ pub struct Wiring {
     pub launcher: Option<LauncherState>,
     #[serde(default)]
     pub client_version: Option<ClientVersion>,
+    /// Root-relative `.dll` -> replacement kept installed (schema 6).
+    #[serde(default)]
+    pub client_dlls: ClientDlls,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -449,6 +453,8 @@ pub struct WiringPatch {
     pub launcher: Option<LauncherState>,
     #[serde(default)]
     pub client_version: Option<ClientVersion>,
+    #[serde(default)]
+    pub client_dlls: Option<ClientDlls>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -535,6 +541,7 @@ pub fn octowow_hd_defaults() -> Wiring {
         endpoints: None,
         launcher: None,
         client_version: None,
+        client_dlls: ClientDlls::new(),
     }
 }
 
@@ -570,6 +577,7 @@ fn unpreset_defaults() -> Wiring {
         endpoints: None,
         launcher: None,
         client_version: None,
+        client_dlls: ClientDlls::new(),
     }
 }
 
@@ -637,6 +645,9 @@ fn apply_patch(mut base: Wiring, patch: &WiringPatch) -> Wiring {
     }
     if patch.client_version.is_some() {
         base.client_version = patch.client_version.clone();
+    }
+    if let Some(dlls) = &patch.client_dlls {
+        base.client_dlls = dlls.clone();
     }
     base
 }
@@ -781,6 +792,15 @@ pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
             bail!("launcher.tunings.env must not set {key} (owned by prefix/DLL plumbing)");
         }
     }
+    client_dlls::validate(&wiring.client_dlls)?;
+    if wiring.tunings.dxvk
+        && wiring
+            .client_dlls
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case("d3d9.dll"))
+    {
+        bail!("client_dlls d3d9.dll replaces the bundled DXVK; set tunings.dxvk=false");
+    }
     // Launcher shapes: absolute traversal-free paths, executable under its
     // prefix (lexical containment is only sound once `..` is rejected).
     if let Some(launcher) = &wiring.launcher {
@@ -853,7 +873,7 @@ pub fn validate_declaration(name: &str, instance: &Instance) -> Result<()> {
 /// component makes prefix-containment checks (`starts_with`/`overlap`)
 /// unsound (e.g. `/prefix/../outside` lexically starts with `/prefix`).
 /// Live resolution never follows such paths; validation rejects them first.
-fn has_parent_traversal(path: &Path) -> bool {
+pub(crate) fn has_parent_traversal(path: &Path) -> bool {
     path.components()
         .any(|c| matches!(c, std::path::Component::ParentDir))
 }
@@ -3046,6 +3066,7 @@ pub fn apply(
         mutated = true;
         println!("{name}: runtime selection recorded");
     }
+    mutated |= client_dlls::apply(name, instance, &prepared.wiring.client_dlls)?;
     let bad: Vec<_> = status(name, instance, dirs)?
         .into_iter()
         .filter(|item| item.state != ItemState::Verified)
@@ -3481,6 +3502,7 @@ fn ensure_launch_readiness(
             }
         }
         if target == NativeTarget::Game {
+            client_dlls::reassert(instance, &wiring.client_dlls)?;
             let drift: Vec<_> = observations
                 .iter()
                 .filter(|item| item.name == "wow-exe" && item.state != ItemState::Verified)
@@ -7635,6 +7657,99 @@ mod tests {
             Some("wine-ge-9-2"),
         )
         .unwrap();
+    }
+
+    fn with_dll(instance: &mut Instance, key: &str, source: &Path) {
+        instance.wiring.as_mut().unwrap().client_dlls = Some(ClientDlls::from([(
+            key.to_owned(),
+            client_dlls::ClientDll {
+                source: source.to_owned(),
+            },
+        )]));
+    }
+
+    #[test]
+    fn client_dll_declarations_are_validated() {
+        let (_guard, _envelope, root, home) = apply_test_env();
+        let mut instance = apply_fixture(&root, home.path());
+        let src = Path::new("/nix/store/x-dxvk/d3d9.dll");
+        with_dll(&mut instance, "d3d9.dll", src);
+        // d3d9.dll managed while Lutris-managed DXVK is on: double layer.
+        instance.wiring.as_mut().unwrap().tunings.dxvk = Some(true);
+        let err = validate_declaration("test", &instance).unwrap_err();
+        assert!(format!("{err:#}").contains("tunings.dxvk=false"), "{err:#}");
+        instance.wiring.as_mut().unwrap().tunings.dxvk = Some(false);
+        validate_declaration("test", &instance).unwrap();
+        for (key, source) in [
+            ("../d3d9.dll", "/a/d3d9.dll"),
+            ("/abs/d3d9.dll", "/a/d3d9.dll"),
+            ("d3d9.txt", "/a/d3d9.dll"),
+            ("d3d9.dll", "relative/d3d9.dll"),
+            ("d3d9.dll", "/a/../b/d3d9.dll"),
+        ] {
+            with_dll(&mut instance, key, Path::new(source));
+            assert!(
+                validate_declaration("test", &instance).is_err(),
+                "{key} {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn client_dll_install_reassert_and_undeclare_restore() {
+        let (_guard, envelope, root, home) = apply_test_env();
+        let mut instance = apply_fixture(&root, home.path());
+        let source = envelope.path().join("dxvk-d3d9.dll");
+        fs::write(&source, "dxvk-3.1.1").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o444)).unwrap();
+        with_dll(&mut instance, "d3d9.dll", &source);
+        let run = |instance: &Instance| {
+            apply("test", instance, &dirs(&home), false, false, None).unwrap();
+        };
+        let gate_ok = |instance: &Instance| {
+            ensure_launch_readiness(
+                "test",
+                instance,
+                &dirs(&home),
+                NativeTarget::Game,
+                LaunchMode::Vanilla,
+            )
+        };
+        let target = root.join("d3d9.dll");
+        let backup = envelope
+            .path()
+            .join("octo-manager/client-dll-backups/d3d9.dll");
+
+        run(&instance);
+        assert_eq!(fs::read(&target).unwrap(), b"dxvk-3.1.1");
+        assert_eq!(fs::read(&backup).unwrap(), b"fake");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+        assert!(!fs::symlink_metadata(&target).unwrap().is_symlink());
+
+        // Launcher reverts it; a repeat apply keeps the first backup.
+        fs::write(&target, "launcher-dxvk-2.7.1").unwrap();
+        gate_ok(&instance).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"dxvk-3.1.1");
+        fs::write(&target, "launcher-dxvk-2.7.1").unwrap();
+        run(&instance);
+        assert_eq!(fs::read(&target).unwrap(), b"dxvk-3.1.1");
+        assert_eq!(fs::read(&backup).unwrap(), b"fake");
+
+        // A vanished source must fail the gate, not launch the wrong DLL.
+        fs::write(&target, "launcher-dxvk-2.7.1").unwrap();
+        fs::remove_file(&source).unwrap();
+        assert!(gate_ok(&instance).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"launcher-dxvk-2.7.1");
+
+        // Undeclare: original bytes return, records are gone.
+        instance.wiring.as_mut().unwrap().client_dlls = Some(ClientDlls::new());
+        run(&instance);
+        assert_eq!(fs::read(&target).unwrap(), b"fake");
+        assert!(!backup.exists());
+        gate_ok(&instance).unwrap();
     }
 
     fn walk_paths(root: &Path) -> Vec<PathBuf> {
