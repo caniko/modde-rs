@@ -3720,7 +3720,7 @@ dependencies = [
 [[package]]
 name = "memory-admission"
 version = "0.1.7"
-source = "git+https://github.com/caniko/rs-memory-admission.git?rev=fce8d16ee5a2bbd93aafedc9d06ff71004e35d76#fce8d16ee5a2bbd93aafedc9d06ff71004e35d76"
+source = "git+https://github.com/caniko/rs-memory-admission.git?rev=7bc923c173dc933111fd858b48657fe15c06bede#7bc923c173dc933111fd858b48657fe15c06bede"
 dependencies = [
  "tokio",
  "tracing",
