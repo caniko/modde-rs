@@ -125,7 +125,6 @@ impl WabbajackInstaller {
             #[cfg(target_os = "linux")]
             {
                 memory_admission::providers::CgroupV2Provider::shared()
-                    .map(|inner| Arc::new(ReclaimableCache(inner)) as _)
                     .unwrap_or_else(|| memory_admission::providers::ProcMeminfoProvider::shared())
             }
             #[cfg(not(target_os = "linux"))]
@@ -458,31 +457,5 @@ impl WabbajackInstaller {
         }
         info!("wabbajack installation complete");
         Ok(())
-    }
-}
-
-/// `memory.current` counts reclaimable file cache as used, so a warm cache
-/// (a fresh checkout, a large download) leaves a cgroup with no apparent
-/// headroom and every reservation waits out the admission timeout. Count the
-/// cache as available, as `MemAvailable` does for the host view.
-#[cfg(target_os = "linux")]
-pub(super) struct ReclaimableCache(pub(super) memory_admission::provider::SharedMemoryProvider);
-
-#[cfg(target_os = "linux")]
-impl memory_admission::provider::MemoryProvider for ReclaimableCache {
-    fn used_fraction(&self) -> Result<f64, memory_admission::provider::ProviderError> {
-        Ok(self.stats()?.used_fraction())
-    }
-
-    fn stats(
-        &self,
-    ) -> Result<memory_admission::provider::MemoryStats, memory_admission::provider::ProviderError>
-    {
-        let mut stats = self.0.stats()?;
-        stats.available_bytes = stats
-            .available_bytes
-            .saturating_add(stats.page_cache_bytes)
-            .min(stats.total_bytes);
-        Ok(stats)
     }
 }
