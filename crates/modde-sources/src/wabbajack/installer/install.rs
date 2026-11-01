@@ -16,6 +16,7 @@ impl WabbajackInstaller {
         );
         let staging_store = StagingStore::new(&self.staging_dir);
         staging_store.prepare_resumable().await?;
+        self.sweep_stale_extraction_temp();
         let _diagnostics_heartbeat = self.diagnostics.as_ref().map(|diagnostics| {
             let cache = Arc::clone(&self.byte_cache);
             DiagnosticsHeartbeatGuard(Some(

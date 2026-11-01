@@ -146,6 +146,18 @@ impl StagingStore {
             || tokio::fs::metadata(compressed_path(&logical)).await.is_ok()
     }
 
+    /// Cheap existence check that also rejects a plain output whose on-disk
+    /// size differs from the manifest size (stat only). `expected_size == 0`
+    /// means unknown. Compressed outputs have no cheap logical size, so they
+    /// are accepted on existence alone.
+    pub async fn logical_exists_with_size(&self, relative: &str, expected_size: u64) -> bool {
+        let logical = self.logical_path(relative);
+        if let Ok(metadata) = tokio::fs::metadata(&logical).await {
+            return expected_size == 0 || metadata.len() == expected_size;
+        }
+        tokio::fs::metadata(compressed_path(&logical)).await.is_ok()
+    }
+
     pub async fn hash_logical_file(&self, relative: &str) -> Result<u64> {
         let root = self.root.clone();
         let relative = normalize_relative(relative);

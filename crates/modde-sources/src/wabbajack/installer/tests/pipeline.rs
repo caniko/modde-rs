@@ -394,3 +394,99 @@ async fn nested_archives_feed_copies_and_patches() {
         );
     }
 }
+
+/// One-file zip install into `staging`, with `tmp_dir` as the sweep base.
+async fn install_single_file(
+    dir: &std::path::Path,
+    staging: &std::path::Path,
+    tmp_dir: Option<PathBuf>,
+) {
+    use modde_core::manifest::wabbajack::{ArchiveEntry, RawDirective};
+
+    let archive = zip_bytes(&[("file.txt", b"correct")]);
+    let hash = xxh64(&archive, 0);
+    let store = dir.join("store");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join(format!("{hash:016x}.archive")), &archive).unwrap();
+    let manifest = WabbajackManifest {
+        archives: vec![ArchiveEntry {
+            hash,
+            name: "source.zip".into(),
+            size: archive.len() as u64,
+            state: Some(ArchiveState::ManualDownloader {
+                url: "https://example.test/source.zip".into(),
+                prompt: String::new(),
+            }),
+        }],
+        directives: vec![RawDirective::FromArchive {
+            archive_hash_path: vec![
+                serde_json::Value::Number(hash.into()),
+                serde_json::Value::String("file.txt".into()),
+            ],
+            to: "mods/r/file.txt".into(),
+            size: 7,
+        }],
+        ..minimal_manifest()
+    };
+    let wabbajack_path = dir.join("resume.wabbajack");
+    create_zip_file(&wabbajack_path, &[]);
+    let mut inst = WabbajackInstaller::new(manifest, wabbajack_path, store, staging.to_path_buf());
+    inst.apply_memory_provider = Some(admission::fixture_provider());
+    inst.tmp_dir = tmp_dir;
+    inst.add_source(crate::AnySource::Manual(crate::manual::ManualSource::new()));
+    let (progress_tx, _progress_rx) = mpsc::unbounded_channel();
+    inst.install(progress_tx).await.unwrap();
+}
+
+#[tokio::test]
+async fn resume_reextracts_wrong_sized_output_but_adopts_correct_tree() {
+    let dir = tempfile::tempdir().unwrap();
+    let staging = dir.path().join("staging");
+    let output = staging.join("mods/r/file.txt");
+
+    install_single_file(dir.path(), &staging, None).await;
+    assert_eq!(std::fs::read(&output).unwrap(), b"correct");
+    assert!(
+        std::fs::read_dir(staging.join("_state/archive-batches"))
+            .unwrap()
+            .next()
+            .is_some(),
+        "sentinel written"
+    );
+
+    // Correct size, different bytes: the batch is adopted, not re-extracted.
+    std::fs::write(&output, b"ADOPTED").unwrap();
+    install_single_file(dir.path(), &staging, None).await;
+    assert_eq!(std::fs::read(&output).unwrap(), b"ADOPTED");
+
+    // Wrong size (old nested-BSA bug) with a valid sentinel: re-extracted.
+    std::fs::write(&output, b"whole outer archive blob").unwrap();
+    install_single_file(dir.path(), &staging, None).await;
+    assert_eq!(std::fs::read(&output).unwrap(), b"correct");
+}
+
+#[tokio::test]
+async fn install_start_sweeps_only_stale_legacy_extract_dirs() {
+    let dir = tempfile::tempdir().unwrap();
+    let tmp = dir.path().join("tmp");
+    let age = |name: &str, days: u64| {
+        let path = tmp.join(name);
+        std::fs::create_dir_all(path.join("nested")).unwrap();
+        std::fs::write(path.join("nested/f"), b"x").unwrap();
+        let old = SystemTime::now() - std::time::Duration::from_hours(days * 24);
+        std::fs::File::open(&path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        path
+    };
+    let stale = age("modde-extract-stale", 30);
+    let live = age("modde-extract-live", 0);
+    let unrelated = age("other-old-dir", 30);
+
+    install_single_file(dir.path(), &dir.path().join("staging"), Some(tmp)).await;
+
+    assert!(!stale.exists(), "stale legacy dir swept");
+    assert!(live.exists(), "recently used dir kept");
+    assert!(unrelated.exists(), "non-extract dir untouched");
+}

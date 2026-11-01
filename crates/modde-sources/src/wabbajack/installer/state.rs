@@ -123,12 +123,14 @@ impl WabbajackInstaller {
     pub(super) async fn archive_batch_outputs_exist(&self, batch: &ArchiveInstallBatch) -> bool {
         let staging_store = StagingStore::new(&self.staging_dir);
         for indexed in &batch.directives {
-            let to = match &indexed.directive {
-                InstallDirective::FromArchive { to, .. }
-                | InstallDirective::PatchedFromArchive { to, .. } => to,
+            let (to, size) = match &indexed.directive {
+                InstallDirective::FromArchive { to, size, .. }
+                | InstallDirective::PatchedFromArchive { to, size, .. } => (to, *size),
                 _ => continue,
             };
-            if !staging_store.logical_exists(to).await {
+            // A wrong-sized output (e.g. a whole outer BSA written by an old
+            // build) invalidates the batch so it is re-extracted.
+            if !staging_store.logical_exists_with_size(to, size).await {
                 return false;
             }
         }
@@ -205,5 +207,59 @@ impl WabbajackInstaller {
         self.staging_dir
             .join("_state/create-bsa")
             .join(format!("{directive_index}.json"))
+    }
+}
+
+/// Prefix of extraction dirs created by Modde builds before 2b82500. Those
+/// builds `keep()`-leaked them (never cleaned); current code creates none.
+const LEGACY_EXTRACT_PREFIX: &str = "modde-extract-";
+/// Wabbajack installs take no instance lock, so ownership is decided by age: a
+/// dir untouched this long cannot belong to a live install.
+const STALE_EXTRACT_AGE: std::time::Duration = std::time::Duration::from_hours(168);
+
+/// Remove stale `modde-extract-*` dirs under `tmp_base`; returns how many.
+/// Best-effort: failures are logged, never fatal to the install.
+pub(super) fn sweep_stale_extract_dirs(tmp_base: &Path, max_age: std::time::Duration) -> usize {
+    let Ok(entries) = std::fs::read_dir(tmp_base) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let stale = entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(LEGACY_EXTRACT_PREFIX)
+            && entry.file_type().is_ok_and(|t| t.is_dir())
+            && entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|m| m.elapsed().is_ok_and(|age| age >= max_age));
+        if stale {
+            match std::fs::remove_dir_all(&path) {
+                Ok(()) => removed += 1,
+                Err(e) => warn!(
+                    "failed to remove stale extraction dir {}: {e}",
+                    path.display()
+                ),
+            }
+        }
+    }
+    removed
+}
+
+impl WabbajackInstaller {
+    /// Install-start sweep of leaked extraction dirs in `<modde data>/tmp`.
+    pub(super) fn sweep_stale_extraction_temp(&self) {
+        #[cfg(test)]
+        let Some(base) = self.tmp_dir.clone() else {
+            return;
+        };
+        #[cfg(not(test))]
+        let base = modde_core::paths::modde_data_dir().join("tmp");
+        let removed = sweep_stale_extract_dirs(&base, STALE_EXTRACT_AGE);
+        if removed > 0 {
+            info!(removed, "removed stale extraction temp dirs");
+        }
     }
 }

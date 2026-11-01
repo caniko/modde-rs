@@ -56,6 +56,7 @@ macos-integrations = ["dep:which"]
 windows-integrations = ["modde-core/windows-integrations", "dep:which"]
 
 [dependencies]
+tempfile = { workspace = true }
 modde-core = { workspace = true }
 fomod-oxide = { workspace = true }
 anyhow = { workspace = true }
@@ -81,5 +82,4 @@ libc = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
-tempfile = { workspace = true }
 tracing-test = { version = "0.2.6", features = ["no-env-filter"] }
