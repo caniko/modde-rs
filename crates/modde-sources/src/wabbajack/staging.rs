@@ -148,14 +148,22 @@ impl StagingStore {
 
     /// Cheap existence check that also rejects a plain output whose on-disk
     /// size differs from the manifest size (stat only). `expected_size == 0`
-    /// means unknown. Compressed outputs have no cheap logical size, so they
-    /// are accepted on existence alone.
+    /// means unknown. Compressed outputs are checked via the zstd frame
+    /// header's content size when it records one.
     pub async fn logical_exists_with_size(&self, relative: &str, expected_size: u64) -> bool {
         let logical = self.logical_path(relative);
         if let Ok(metadata) = tokio::fs::metadata(&logical).await {
             return expected_size == 0 || metadata.len() == expected_size;
         }
-        tokio::fs::metadata(compressed_path(&logical)).await.is_ok()
+        let compressed = compressed_path(&logical);
+        if tokio::fs::metadata(&compressed).await.is_err() {
+            return false;
+        }
+        // Frame header only; unknown content size (older frames) is accepted.
+        match zstd_content_size(&compressed).await {
+            Some(size) => expected_size == 0 || size == expected_size,
+            None => true,
+        }
     }
 
     pub async fn hash_logical_file(&self, relative: &str) -> Result<u64> {
@@ -457,11 +465,23 @@ fn eligible_for_compression_path(
     expected_size.is_none_or(|size| size >= policy.min_bytes)
 }
 
+/// Decoded size from the first zstd frame header (reads at most 18 bytes).
+async fn zstd_content_size(path: &Path) -> Option<u64> {
+    use tokio::io::AsyncReadExt;
+    let mut header = [0_u8; 18]; // ZSTD_FRAMEHEADERSIZE_MAX
+    let mut file = tokio::fs::File::open(path).await.ok()?;
+    let n = file.read(&mut header).await.ok()?;
+    zstd::zstd_safe::get_frame_content_size(&header[..n]).ok()?
+}
+
 fn compress_file(src: &Path, dest: &Path, level: i32, workers: u32) -> Result<()> {
     let input = File::open(src).with_context(|| format!("failed to open {}", src.display()))?;
     let output =
         File::create(dest).with_context(|| format!("failed to create {}", dest.display()))?;
     let mut encoder = zstd::stream::write::Encoder::new(BufWriter::new(output), level)?;
+    // Record the content size in the frame header so resume can validate the
+    // decoded size from the header alone.
+    encoder.set_pledged_src_size(Some(input.metadata()?.len()))?;
     encoder.multithread(workers)?;
     let mut reader = BufReader::new(input);
     std::io::copy(&mut reader, &mut encoder)?;

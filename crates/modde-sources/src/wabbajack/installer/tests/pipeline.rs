@@ -474,19 +474,56 @@ async fn install_start_sweeps_only_stale_legacy_extract_dirs() {
         std::fs::create_dir_all(path.join("nested")).unwrap();
         std::fs::write(path.join("nested/f"), b"x").unwrap();
         let old = SystemTime::now() - std::time::Duration::from_hours(days * 24);
-        std::fs::File::open(&path)
-            .unwrap()
-            .set_modified(old)
-            .unwrap();
+        for p in [path.join("nested/f"), path.join("nested"), path.clone()] {
+            std::fs::File::open(p).unwrap().set_modified(old).unwrap();
+        }
         path
     };
     let stale = age("modde-extract-stale", 30);
     let live = age("modde-extract-live", 0);
     let unrelated = age("other-old-dir", 30);
+    // Old root, fresh descendant: an install may still be writing here.
+    let busy = age("modde-extract-busy", 30);
+    std::fs::write(busy.join("nested/fresh"), b"y").unwrap();
+    std::fs::File::open(busy.join("nested"))
+        .unwrap()
+        .set_modified(SystemTime::now())
+        .unwrap();
+    std::fs::File::open(&busy)
+        .unwrap()
+        .set_modified(SystemTime::now() - std::time::Duration::from_hours(720))
+        .unwrap();
 
     install_single_file(dir.path(), &dir.path().join("staging"), Some(tmp)).await;
 
     assert!(!stale.exists(), "stale legacy dir swept");
     assert!(live.exists(), "recently used dir kept");
+    assert!(busy.exists(), "dir with fresh descendant kept");
     assert!(unrelated.exists(), "non-extract dir untouched");
+}
+
+#[tokio::test]
+async fn compressed_output_size_is_checked_from_frame_header() {
+    let dir = tempfile::tempdir().unwrap();
+    let staging = dir.path().join("staging");
+    install_single_file(dir.path(), &staging, None).await;
+    let output = staging.join("mods/r/file.txt");
+    let compress = |data: &[u8]| {
+        let mut enc = zstd::stream::write::Encoder::new(Vec::new(), 1).unwrap();
+        enc.set_pledged_src_size(Some(data.len() as u64)).unwrap();
+        std::io::Write::write_all(&mut enc, data).unwrap();
+        enc.finish().unwrap()
+    };
+    std::fs::remove_file(&output).unwrap();
+    let zst = compressed_path(&output);
+
+    // Correct decoded size (7): adopted, not re-extracted.
+    std::fs::write(&zst, compress(b"ADOPTED")).unwrap();
+    install_single_file(dir.path(), &staging, None).await;
+    assert!(!output.exists(), "correct compressed output adopted");
+
+    // Wrong decoded size: batch invalid, re-extracted.
+    std::fs::write(&zst, compress(b"whole outer archive blob")).unwrap();
+    install_single_file(dir.path(), &staging, None).await;
+    assert_eq!(std::fs::read(&output).unwrap(), b"correct");
 }

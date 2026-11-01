@@ -231,10 +231,7 @@ pub(super) fn sweep_stale_extract_dirs(tmp_base: &Path, max_age: std::time::Dura
             .to_string_lossy()
             .starts_with(LEGACY_EXTRACT_PREFIX)
             && entry.file_type().is_ok_and(|t| t.is_dir())
-            && entry
-                .metadata()
-                .and_then(|m| m.modified())
-                .is_ok_and(|m| m.elapsed().is_ok_and(|age| age >= max_age));
+            && !has_recent_entry(&path, max_age);
         if stale {
             match std::fs::remove_dir_all(&path) {
                 Ok(()) => removed += 1,
@@ -246,6 +243,28 @@ pub(super) fn sweep_stale_extract_dirs(tmp_base: &Path, max_age: std::time::Dura
         }
     }
     removed
+}
+
+/// True if `path` or any descendant was modified within `max_age` (or cannot
+/// be inspected). Metadata only; stops at the first recent entry.
+fn has_recent_entry(path: &Path, max_age: std::time::Duration) -> bool {
+    let recent = |m: std::io::Result<std::fs::Metadata>| {
+        m.and_then(|m| m.modified())
+            .map_or(true, |t| t.elapsed().map_or(true, |age| age < max_age))
+    };
+    if recent(std::fs::symlink_metadata(path)) {
+        return true;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return true;
+    };
+    entries.flatten().any(|e| {
+        if e.file_type().is_ok_and(|t| t.is_dir()) {
+            has_recent_entry(&e.path(), max_age)
+        } else {
+            recent(e.metadata())
+        }
+    })
 }
 
 impl WabbajackInstaller {
