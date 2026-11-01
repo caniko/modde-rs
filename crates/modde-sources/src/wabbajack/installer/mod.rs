@@ -195,6 +195,9 @@ pub struct WabbajackInstaller {
     archive_memory_max_bytes: u64,
     #[cfg(test)]
     apply_memory_provider: Option<memory_admission::provider::SharedMemoryProvider>,
+    /// Tests must never sweep the real Modde data dir; `None` disables the sweep.
+    #[cfg(test)]
+    tmp_dir: Option<PathBuf>,
 }
 
 impl WabbajackInstaller {
@@ -232,6 +235,8 @@ impl WabbajackInstaller {
                 .unwrap_or(DEFAULT_ARCHIVE_MEMORY_MAX_BYTES),
             #[cfg(test)]
             apply_memory_provider: None,
+            #[cfg(test)]
+            tmp_dir: None,
         }
     }
 
