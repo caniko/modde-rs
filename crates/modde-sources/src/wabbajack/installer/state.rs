@@ -258,12 +258,14 @@ fn has_recent_entry(path: &Path, max_age: std::time::Duration) -> bool {
     let Ok(entries) = std::fs::read_dir(path) else {
         return true;
     };
-    entries.flatten().any(|e| {
-        if e.file_type().is_ok_and(|t| t.is_dir()) {
-            has_recent_entry(&e.path(), max_age)
-        } else {
-            recent(e.metadata())
-        }
+    entries.into_iter().any(|e| {
+        e.map_or(true, |e| {
+            if e.file_type().is_ok_and(|t| t.is_dir()) {
+                has_recent_entry(&e.path(), max_age)
+            } else {
+                recent(e.metadata())
+            }
+        })
     })
 }
 
