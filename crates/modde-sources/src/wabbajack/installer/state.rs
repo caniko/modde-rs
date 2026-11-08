@@ -271,14 +271,18 @@ fn has_recent_entry(path: &Path, max_age: std::time::Duration) -> bool {
 
 impl WabbajackInstaller {
     /// Install-start sweep of leaked extraction dirs in `<modde data>/tmp`.
-    pub(super) fn sweep_stale_extraction_temp(&self) {
+    pub(super) async fn sweep_stale_extraction_temp(&self) {
         #[cfg(test)]
         let Some(base) = self.tmp_dir.clone() else {
             return;
         };
         #[cfg(not(test))]
         let base = modde_core::paths::modde_data_dir().join("tmp");
-        let removed = sweep_stale_extract_dirs(&base, STALE_EXTRACT_AGE);
+        // Leaked dirs can hold whole extracted archives; keep the walk off the runtime.
+        let removed =
+            tokio::task::spawn_blocking(move || sweep_stale_extract_dirs(&base, STALE_EXTRACT_AGE))
+                .await
+                .unwrap_or(0);
         if removed > 0 {
             info!(removed, "removed stale extraction temp dirs");
         }
