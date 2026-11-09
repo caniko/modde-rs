@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Release packaging**: Publish the Linux `tar.gz` archives from
+  `packages.release-bundle` instead of `tar` in the release workflow, and
+  append the bundle's generated `[package.metadata.binstall]` overrides to the
+  `modde` crate so `cargo binstall modde` fetches the release archives. Track
+  harbor-rs `6055d7d…` and declare the formatter and opencode LSP inputs it no
+  longer re-exports.
 - **Site builds**: Consume qualified Plinth `6f17df0…` through the existing
   Visual Rubric input path, including its private build-scoped compiler-cache
   fallback for hosted Pages builds. Retain the selected Visual Rubric source.

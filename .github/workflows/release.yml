@@ -320,6 +320,25 @@ jobs:
           . ./release-env
           export TAG VERSION IS_PRERELEASE
           mkdir -p release
+          df -h /
+          free_kib="$(df -Pk / | awk 'NR == 2 { print $4 }')"
+          test "$free_kib" -ge 8388608 || { echo "GitHub runner has less than 8 GiB free before Nix realization" >&2; exit 1; }
+          mkdir -p target
+          echo 'disk before bundle release-bundle'
+          df -h /
+          nix build '.#release-bundle' --out-link 'target/simit-release-bundle-0'
+          test -d 'target/simit-release-bundle-0'
+          while IFS= read -r file; do
+            name="$(basename "$file")"
+            test ! -e "release/$name" || { echo "release bundle asset collision: $name" >&2; exit 1; }
+            cp -L "$file" "release/$name"
+          done < <(find -L 'target/simit-release-bundle-0' -mindepth 1 -maxdepth 1 -type f -print | LC_ALL=C sort)
+          echo 'disk after bundle release-bundle'
+          df -h /
+          shopt -s nullglob
+          manifests=(release/*-release-manifest.json)
+          test "${#manifests[@]}" -eq 1 || { echo "expected exactly one release manifest from Nix bundles" >&2; exit 1; }
+          jq -e --arg version "$VERSION" '(.schemaVersion == 2) and (.version == $version) and (.artifacts | length > 0)' "${manifests[0]}" >/dev/null
           copy_nix_binary() {
             result_dir="$1"; binary="$2"; destination="$3"
             if [ -f "${result_dir}/bin/.${binary}-wrapped" ]; then cp "${result_dir}/bin/.${binary}-wrapped" "$destination"; else cp "${result_dir}/bin/${binary}" "$destination"; fi
@@ -329,7 +348,6 @@ jobs:
           mkdir -p target/modde-release/root-artifacts/release/linux-x86_64
           copy_nix_binary target/modde-release/root-artifacts/linux-result modde target/modde-release/root-artifacts/release/linux-x86_64/modde
           copy_nix_binary target/modde-release/root-artifacts/linux-result modde-ui target/modde-release/root-artifacts/release/linux-x86_64/modde-ui
-          tar czf "target/modde-release/root-artifacts/release/modde-${VERSION}-x86_64-linux.tar.gz" -C target/modde-release/root-artifacts/release/linux-x86_64 modde modde-ui
           cp target/modde-release/root-artifacts/release/linux-x86_64/modde "target/modde-release/root-artifacts/release/modde-${VERSION}-x86_64-linux"
           cp target/modde-release/root-artifacts/release/linux-x86_64/modde-ui "target/modde-release/root-artifacts/release/modde-ui-${VERSION}-x86_64-linux"
 
@@ -337,7 +355,6 @@ jobs:
           mkdir -p target/modde-release/root-artifacts/release/linux-aarch64
           copy_nix_binary target/modde-release/root-artifacts/aarch64-linux-result modde target/modde-release/root-artifacts/release/linux-aarch64/modde
           copy_nix_binary target/modde-release/root-artifacts/aarch64-linux-result modde-ui target/modde-release/root-artifacts/release/linux-aarch64/modde-ui
-          tar czf "target/modde-release/root-artifacts/release/modde-${VERSION}-aarch64-linux.tar.gz" -C target/modde-release/root-artifacts/release/linux-aarch64 modde modde-ui
           cp target/modde-release/root-artifacts/release/linux-aarch64/modde "target/modde-release/root-artifacts/release/modde-${VERSION}-aarch64-linux"
           cp target/modde-release/root-artifacts/release/linux-aarch64/modde-ui "target/modde-release/root-artifacts/release/modde-ui-${VERSION}-aarch64-linux"
 
@@ -365,9 +382,14 @@ jobs:
           sed -i "s/@SOURCE_TARBALL_SHA256@/${source_sha256}/" target/modde-release/root-artifacts/release/com.tartanoglu.modde.json
           nix run .#flatpak-cargo-generator -- Cargo.lock -o target/modde-release/root-artifacts/release/cargo-sources.json
           cp target/modde-release/root-artifacts/srpms/*.src.rpm target/modde-release/root-artifacts/release/ 2>/dev/null || true
-          rm -rf release
-          cp -a target/modde-release/root-artifacts/release ./release
+          mkdir -p release
+          cp -a target/modde-release/root-artifacts/release/. release/
 
+          rm -f target/simit-release-bundle-*
+          nix store gc
+          df -h /
+          free_kib="$(df -Pk / | awk 'NR == 2 { print $4 }')"
+          test "$free_kib" -ge 2097152 || { echo "GitHub runner has less than 2 GiB free before release publication" >&2; exit 1; }
       - name: Build Debian packages
         run: |
           set -euo pipefail
