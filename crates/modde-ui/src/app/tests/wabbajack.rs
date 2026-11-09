@@ -267,6 +267,8 @@ fn wabbajack_target_changes_recheck_without_overwriting_manual_game_dir() {
 
 #[test]
 fn wabbajack_start_install_requires_readiness_report() {
+    // StartInstall takes the shared mutation lease; serialize with tests that hold it.
+    let _guard = db_lock();
     let mut app = test_app();
     app.active_view = View::WabbajackInstaller(WabbajackInstallerState {
         file_path: Some(PathBuf::from("/tmp/list.wabbajack")),
@@ -286,6 +288,7 @@ fn wabbajack_start_install_requires_readiness_report() {
 
 #[test]
 fn wabbajack_start_install_uses_panel_target_when_ready() {
+    let _guard = db_lock();
     let mut app = test_app();
     app.active_profile = Some("active-profile".to_string());
     app.active_view = View::WabbajackInstaller(WabbajackInstallerState {
