@@ -58,18 +58,22 @@ pub(super) fn extract_zip_flat(archive_path: &Path, dest_dir: &Path) -> Result<(
 
 pub(super) fn extract_7z_flat(archive_path: &Path, dest_dir: &Path) -> Result<()> {
     let tmp_base = modde_core::paths::modde_data_dir().join("tmp");
-    std::fs::create_dir_all(&tmp_base)
+    extract_7z_flat_in(&tmp_base, archive_path, dest_dir)
+}
+
+/// The scratch dir is a `TempDir`, so it is removed on success, error and panic.
+pub(super) fn extract_7z_flat_in(
+    tmp_base: &Path,
+    archive_path: &Path,
+    dest_dir: &Path,
+) -> Result<()> {
+    std::fs::create_dir_all(tmp_base)
         .with_context(|| format!("failed to create {}", tmp_base.display()))?;
-    let extract_dir = tmp_base.join(format!(
-        "modde-optiscaler-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos()
-    ));
-    std::fs::create_dir_all(&extract_dir)
-        .with_context(|| format!("failed to create {}", extract_dir.display()))?;
-    let out_arg = format!("-o{}", extract_dir.display());
+    let extract_dir = tempfile::Builder::new()
+        .prefix("modde-optiscaler-")
+        .tempdir_in(tmp_base)
+        .with_context(|| format!("failed to create temp dir in {}", tmp_base.display()))?;
+    let out_arg = format!("-o{}", extract_dir.path().display());
     let archive_arg = archive_path.to_string_lossy().to_string();
     let mut extracted = false;
     for bin in ["7zz", "7z"] {
@@ -89,9 +93,7 @@ pub(super) fn extract_7z_flat(archive_path: &Path, dest_dir: &Path) -> Result<()
             archive_path.display()
         );
     }
-    let result = copy_optiscaler_payload_flat(&extract_dir, dest_dir);
-    let _ = std::fs::remove_dir_all(&extract_dir);
-    result
+    copy_optiscaler_payload_flat(extract_dir.path(), dest_dir)
 }
 
 pub(super) fn copy_optiscaler_payload_flat(source_root: &Path, dest_dir: &Path) -> Result<()> {

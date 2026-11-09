@@ -217,3 +217,38 @@ fn optiscaler_fp8_env_includes_proton_upgrade_and_emulation() {
             .any(|(k, v)| k == PROTON_FSR4_ENV_KEY && v == PROTON_FSR4_ENV_VALUE)
     );
 }
+
+#[test]
+fn optiscaler_7z_scratch_dir_is_removed_on_failure_and_success() {
+    use crate::tools::optiscaler::archive::extract_7z_flat_in;
+
+    let tmp = tempfile::tempdir().expect("tmp");
+    let base = tmp.path().join("tmp");
+    let dest = tmp.path().join("dest");
+    let leftovers = || std::fs::read_dir(&base).map_or(0, Iterator::count);
+
+    // Failure: nothing to extract.
+    assert!(extract_7z_flat_in(&base, &tmp.path().join("missing.7z"), &dest).is_err());
+    assert_eq!(leftovers(), 0);
+
+    // Success needs a real 7z binary to build the fixture; skip without one.
+    let payload = tmp.path().join("payload");
+    std::fs::create_dir_all(&payload).unwrap();
+    std::fs::write(payload.join("OptiScaler.dll"), b"dll").unwrap();
+    let archive = tmp.path().join("fixture.7z");
+    let built = ["7zz", "7z"].iter().any(|bin| {
+        std::process::Command::new(bin)
+            .arg("a")
+            .arg(&archive)
+            .arg(payload.join("OptiScaler.dll"))
+            .stdout(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    });
+    if !built {
+        return;
+    }
+    extract_7z_flat_in(&base, &archive, &dest).unwrap();
+    assert!(dest.join("OptiScaler.dll").exists());
+    assert_eq!(leftovers(), 0);
+}
