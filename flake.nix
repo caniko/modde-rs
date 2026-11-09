@@ -2,12 +2,25 @@
   description = "modde — cross-platform game mod manager";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=7a3328e186258dca31f9801227bc4e6fd8db4f36";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=6055d7d2b3a05d7d91d50938c7fb6f862a5eec85";
 
-    nixpkgs.follows = "harbor-rs/nixpkgs";
+    # Pinned back from harbor-rs's nixpkgs (8edc0c72) where mingwW64 openssl
+    # references a patch file the commit does not ship, breaking .#modde-windows.
+    nixpkgs.url = "github:NixOS/nixpkgs/c7def046b9a883d46974757852106483d741586f";
     rust-overlay.follows = "harbor-rs/rust-overlay";
     crane.follows = "harbor-rs/crane";
     flake-utils.url = "github:numtide/flake-utils";
+
+    # Harbor's dev partition keeps these locked to its own nixpkgs; consumers
+    # that format or run the opencode LSP shell declare them directly.
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nix-opencode-lsp = {
+      url = "git+https://github.com/caniko/nix-opencode-lsp.git?ref=trunk";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     nix-appimage = {
       url = "github:ralismark/nix-appimage";
@@ -57,6 +70,8 @@
     flake-utils,
     nix-appimage,
     nix-manager-core,
+    treefmt-nix,
+    nix-opencode-lsp,
     ...
   }: let
     mkOutputs = {
@@ -83,11 +98,11 @@
           toolchainProfile = "nightly";
         };
         inherit (toolchain) craneLib;
-        treefmtEval = harbor-rs.inputs.treefmt-nix.lib.evalModule pkgs (import ./nix/treefmt.nix {
+        treefmtEval = treefmt-nix.lib.evalModule pkgs (import ./nix/treefmt.nix {
           inherit harbor-rs;
           rustfmtPackage = toolchain.rustToolchain;
         });
-        opencodeLspShell = harbor-rs.inputs.nix-opencode-lsp.lib.mkShell {
+        opencodeLspShell = nix-opencode-lsp.lib.mkShell {
           inherit pkgs;
           rustAnalyzer = toolchain.rustToolchain;
         };
@@ -579,6 +594,58 @@
           if darwinCrossBuilderArm != null
           then darwinCrossBuilderArm.buildPackage darwinArmArgs
           else mkDarwinUnavailable "modde-darwin-aarch64";
+
+        # Published Linux archives are built here (not in the release workflow)
+        # so the cargo-binstall metadata and the shipped files share one
+        # source. Names and flat archive layout stay as published before.
+        releaseArchives = {
+          x86_64-linux = harbor-rs.lib.mkReleaseArchive {
+            inherit pkgs;
+            pname = "modde";
+            version = moddeVersion;
+            name = "modde-${moddeVersion}-x86_64-linux.tar.gz";
+            package = modde;
+            system = "x86_64-linux";
+            kind = "binary-archive";
+            consumable = true;
+            entries = {
+              modde = {
+                source = "${modde}/bin/.modde-wrapped";
+                mode = "0755";
+              };
+              modde-ui = {
+                source = "${modde}/bin/.modde-ui-wrapped";
+                mode = "0755";
+              };
+            };
+          };
+          aarch64-linux = harbor-rs.lib.mkReleaseArchive {
+            inherit pkgs;
+            pname = "modde";
+            version = moddeVersion;
+            name = "modde-${moddeVersion}-aarch64-linux.tar.gz";
+            package = modde-aarch64-linux;
+            system = "aarch64-linux";
+            kind = "binary-archive";
+            consumable = true;
+            entries = {
+              modde = {
+                source = "${modde-aarch64-linux}/bin/modde";
+                mode = "0755";
+              };
+              modde-ui = {
+                source = "${modde-aarch64-linux}/bin/modde-ui";
+                mode = "0755";
+              };
+            };
+          };
+        };
+        releaseBundle = harbor-rs.lib.mkReleaseBundle {
+          inherit pkgs;
+          pname = "modde";
+          version = moddeVersion;
+          artifacts = releaseArchives;
+        };
       in {
         packages =
           {
@@ -710,6 +777,13 @@
             inherit modde-aarch64-linux;
             inherit modde-darwin-aarch64;
             inherit modde-windows;
+          }
+          // lib.optionalAttrs (system == "x86_64-linux") {
+            # simit's release job builds .#release-bundle; the per-target
+            # archives stay addressable for scoped rebuilds.
+            release-bundle = releaseBundle;
+            release-archive-x86_64-linux = releaseArchives.x86_64-linux;
+            release-archive-aarch64-linux = releaseArchives.aarch64-linux;
           };
 
         formatter = treefmtEval.config.build.wrapper;
@@ -1671,6 +1745,13 @@
               };
             };
           };
+          # Keeps crates/modde-cli/Cargo.toml's [package.metadata.binstall]
+          # identical to the archives the release bundle publishes.
+          binstall-metadata = harbor-rs.lib.mkBinstallCheck {
+            inherit pkgs;
+            bundle = releaseBundle;
+            cargoToml = ./crates/modde-cli/Cargo.toml;
+          };
         };
 
         devShells =
@@ -2149,6 +2230,9 @@
         };
         release.artifacts = {
           version_attr = "modde";
+          # Linux tar.gz archives come from packages.release-bundle so the
+          # cargo-binstall metadata and the published files cannot drift.
+          prebuild_binaries = true;
           substituters = ["https://attic.candee.baby/canix" "https://cache.nixos.org"];
           trusted_public_keys = ["canix:lPzPzKrmYqW5Rxa5r0uQWvCqD3S5nx0h2eCy7XD5JM8=" "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="];
           supply_chain_command = "nix shell nixpkgs#cargo nixpkgs#rustc nixpkgs#cargo-deny -c cargo deny check -W unmaintained advisories bans sources licenses";
@@ -2175,7 +2259,6 @@
               mkdir -p target/modde-release/root-artifacts/release/linux-x86_64
               copy_nix_binary target/modde-release/root-artifacts/linux-result modde target/modde-release/root-artifacts/release/linux-x86_64/modde
               copy_nix_binary target/modde-release/root-artifacts/linux-result modde-ui target/modde-release/root-artifacts/release/linux-x86_64/modde-ui
-              tar czf "target/modde-release/root-artifacts/release/modde-''${VERSION}-x86_64-linux.tar.gz" -C target/modde-release/root-artifacts/release/linux-x86_64 modde modde-ui
               cp target/modde-release/root-artifacts/release/linux-x86_64/modde "target/modde-release/root-artifacts/release/modde-''${VERSION}-x86_64-linux"
               cp target/modde-release/root-artifacts/release/linux-x86_64/modde-ui "target/modde-release/root-artifacts/release/modde-ui-''${VERSION}-x86_64-linux"
 
@@ -2183,7 +2266,6 @@
               mkdir -p target/modde-release/root-artifacts/release/linux-aarch64
               copy_nix_binary target/modde-release/root-artifacts/aarch64-linux-result modde target/modde-release/root-artifacts/release/linux-aarch64/modde
               copy_nix_binary target/modde-release/root-artifacts/aarch64-linux-result modde-ui target/modde-release/root-artifacts/release/linux-aarch64/modde-ui
-              tar czf "target/modde-release/root-artifacts/release/modde-''${VERSION}-aarch64-linux.tar.gz" -C target/modde-release/root-artifacts/release/linux-aarch64 modde modde-ui
               cp target/modde-release/root-artifacts/release/linux-aarch64/modde "target/modde-release/root-artifacts/release/modde-''${VERSION}-aarch64-linux"
               cp target/modde-release/root-artifacts/release/linux-aarch64/modde-ui "target/modde-release/root-artifacts/release/modde-ui-''${VERSION}-aarch64-linux"
 
@@ -2211,8 +2293,8 @@
               sed -i "s/@SOURCE_TARBALL_SHA256@/''${source_sha256}/" target/modde-release/root-artifacts/release/com.tartanoglu.modde.json
               nix run .#flatpak-cargo-generator -- Cargo.lock -o target/modde-release/root-artifacts/release/cargo-sources.json
               cp target/modde-release/root-artifacts/srpms/*.src.rpm target/modde-release/root-artifacts/release/ 2>/dev/null || true
-              rm -rf release
-              cp -a target/modde-release/root-artifacts/release ./release
+              mkdir -p release
+              cp -a target/modde-release/root-artifacts/release/. release/
             ''
           ];
         };
