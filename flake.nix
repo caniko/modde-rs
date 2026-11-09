@@ -2,7 +2,7 @@
   description = "modde — cross-platform game mod manager";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=chore/bump-nixpkgs&rev=6772dde38e2ce1ca2adfd7df7628a927c9845cae";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=chore/bump-nixpkgs&rev=d5364e12bfa6fd413f0413b4d7bbb36b32dd7a30";
 
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
