@@ -130,6 +130,13 @@ impl PatcherStageRow {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatcherStageOutputRow {
+    pub profile_id: i64,
+    pub stage_name: String,
+    pub rel_path: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,11 +173,4 @@ mod tests {
                 .contains("patcher output mod cannot be empty")
         );
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PatcherStageOutputRow {
-    pub profile_id: i64,
-    pub stage_name: String,
-    pub rel_path: String,
 }
