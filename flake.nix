@@ -1750,6 +1750,12 @@
             bundle = releaseBundle;
             cargoToml = ./crates/modde-cli/Cargo.toml;
           };
+          # The Linux archives already ship modde-ui next to modde.
+          binstall-metadata-modde-ui = harbor-rs.lib.mkBinstallCheck {
+            inherit pkgs;
+            bundle = releaseBundle;
+            cargoToml = ./crates/modde-ui/Cargo.toml;
+          };
         };
 
         devShells =
