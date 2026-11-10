@@ -2,11 +2,9 @@
   description = "modde — cross-platform game mod manager";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=6055d7d2b3a05d7d91d50938c7fb6f862a5eec85";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=597f0f7574ac32639eba5c3f03f13fc9f9eb22c1";
 
-    # Pinned back from harbor-rs's nixpkgs (8edc0c72) where mingwW64 openssl
-    # references a patch file the commit does not ship, breaking .#modde-windows.
-    nixpkgs.url = "github:NixOS/nixpkgs/c7def046b9a883d46974757852106483d741586f";
+    nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
     crane.follows = "harbor-rs/crane";
     flake-utils.url = "github:numtide/flake-utils";
@@ -549,7 +547,7 @@
             doCheck = false;
           };
         windowsBuildInputs = with pkgs.pkgsCross.mingwW64; [
-          openssl
+          cross.mingwOpenssl
           windows.mcfgthreads
           windows.pthreads
         ];
