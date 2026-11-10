@@ -2,7 +2,7 @@
   description = "modde — cross-platform game mod manager";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=fix/mingw-openssl-missing-patch&rev=597f0f7574ac32639eba5c3f03f13fc9f9eb22c1";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=597f0f7574ac32639eba5c3f03f13fc9f9eb22c1";
 
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";

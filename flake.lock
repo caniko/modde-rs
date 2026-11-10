@@ -2044,14 +2044,14 @@
       "locked": {
         "lastModified": 1794292611,
         "narHash": "sha256-fxGAS3fCjvJCZtmUOSdg0DsafMv8AIKlMgEDtKwY7L4=",
-        "ref": "fix/mingw-openssl-missing-patch",
+        "ref": "trunk",
         "rev": "597f0f7574ac32639eba5c3f03f13fc9f9eb22c1",
         "revCount": 320,
         "type": "git",
         "url": "https://github.com/caniko/harbor-rs.git"
       },
       "original": {
-        "ref": "fix/mingw-openssl-missing-patch",
+        "ref": "trunk",
         "rev": "597f0f7574ac32639eba5c3f03f13fc9f9eb22c1",
         "type": "git",
         "url": "https://github.com/caniko/harbor-rs.git"
