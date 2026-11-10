@@ -2042,17 +2042,17 @@
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
-        "lastModified": 1794251925,
-        "narHash": "sha256-pBwN/8hXX6gXG72ELcIFmXC0Hv0kmKth0hAAQlhNrfY=",
-        "ref": "chore/bump-nixpkgs",
-        "rev": "d5364e12bfa6fd413f0413b4d7bbb36b32dd7a30",
-        "revCount": 321,
+        "lastModified": 1794292611,
+        "narHash": "sha256-fxGAS3fCjvJCZtmUOSdg0DsafMv8AIKlMgEDtKwY7L4=",
+        "ref": "fix/mingw-openssl-missing-patch",
+        "rev": "597f0f7574ac32639eba5c3f03f13fc9f9eb22c1",
+        "revCount": 320,
         "type": "git",
         "url": "https://github.com/caniko/harbor-rs.git"
       },
       "original": {
-        "ref": "chore/bump-nixpkgs",
-        "rev": "d5364e12bfa6fd413f0413b4d7bbb36b32dd7a30",
+        "ref": "fix/mingw-openssl-missing-patch",
+        "rev": "597f0f7574ac32639eba5c3f03f13fc9f9eb22c1",
         "type": "git",
         "url": "https://github.com/caniko/harbor-rs.git"
       }
@@ -2929,11 +2929,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1794042290,
-        "narHash": "sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U=",
+        "lastModified": 1791487292,
+        "narHash": "sha256-tqM7xDEsaeK1p6VvRygeZ9LkQRpUUkbRT02BHv6hnTM=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "f4a03c008967841f2a0b3cb7c436fc6fc31671f6",
+        "rev": "8edc0c72e3a38faf5434e40d1f19431125fe4b30",
         "type": "github"
       },
       "original": {
