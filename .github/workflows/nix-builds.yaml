@@ -27,6 +27,8 @@ jobs:
           - ".#simit-ci-generator"
           - ".#checks.x86_64-linux.library-regressions"
           - ".#checks.x86_64-linux.hm-runtime"
+          - ".#checks.x86_64-linux.binstall-metadata"
+          - ".#checks.x86_64-linux.binstall-metadata-modde-ui"
     env:
       NIX_CONFIG: "experimental-features = nix-command flakes"
     steps:
