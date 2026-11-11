@@ -2179,7 +2179,7 @@
           canonical_domain = "modde.tartanoglu.com";
           source_branch = "trunk";
         };
-        ci.nix_builds = [".#modde" ".#simit-ci-generator" ".#checks.x86_64-linux.library-regressions" ".#checks.x86_64-linux.hm-runtime"];
+        ci.nix_builds = [".#modde" ".#simit-ci-generator" ".#checks.x86_64-linux.library-regressions" ".#checks.x86_64-linux.hm-runtime" ".#checks.x86_64-linux.binstall-metadata" ".#checks.x86_64-linux.binstall-metadata-modde-ui"];
         ci.nix_build = {
           timeout_minutes = 90;
           max_parallel = 1;
