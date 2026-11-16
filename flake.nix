@@ -29,7 +29,7 @@
     # toolchain so the dev shell hits the closure simit's trunk prebuild
     # publishes to the canix Attic cache instead of compiling it.
     simit = {
-      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=9ffacf22c9b69385e370846ea55ce6226a26b8ad";
+      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=e69226f64697964c5bb7ad659ac8dfb363c6e7ec";
       inputs.flake-utils.url = "github:numtide/flake-utils";
       inputs.plinth.follows = "plinth";
     };
