@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   test:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     env:
       NIX_CONFIG: "experimental-features = nix-command flakes"
@@ -69,10 +71,16 @@ jobs:
         run: nix develop -c cargo clippy --workspace --all-targets --no-default-features -- --deny warnings
 
   gate-generated-workflows:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
+    env:
+      NIX_CONFIG: "experimental-features = nix-command flakes"
+      XDG_CACHE_HOME: "/tmp/.cache"
+      CARGO_HOME: "/tmp/.cargo"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -94,10 +102,16 @@ jobs:
         run: sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c simit init ci --platform github --ci-provider actions --runtime nix --workspace --workspace-strategy aggregate --runner ubuntu-latest --publish-crates=false --with-artifacts=false --check --diff && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c simit init release --platform github --ci-provider actions --check --diff
 
   gate-crate-compatibility:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
       contents: read
+    env:
+      NIX_CONFIG: "experimental-features = nix-command flakes"
+      XDG_CACHE_HOME: "/tmp/.cache"
+      CARGO_HOME: "/tmp/.cargo"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,10 +133,16 @@ jobs:
         run: bash .github/scripts/check-crate-compatibility.sh
 
   gate-library-qualification:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      NIX_CONFIG: "experimental-features = nix-command flakes"
+      XDG_CACHE_HOME: "/tmp/.cache"
+      CARGO_HOME: "/tmp/.cargo"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,10 +164,16 @@ jobs:
         run: bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c cargo xtask library-qualify --containment --jobs 4
 
   gate-library-package-lifecycle:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
       contents: read
+    env:
+      NIX_CONFIG: "experimental-features = nix-command flakes"
+      XDG_CACHE_HOME: "/tmp/.cache"
+      CARGO_HOME: "/tmp/.cargo"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -167,3 +193,57 @@ jobs:
 
       - name: Required gate library-package-lifecycle
         run: bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix build --no-update-lock-file --max-jobs 1 --cores 2 .#modde --out-link result-qualified-package && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c cargo xtask library-package-qualify --binary "$(readlink -f result-qualified-package)/bin/modde" --output "$RUNNER_TEMP/modde-package-receipt"
+
+  changes:
+    name: Classify changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify changed paths
+        id: classify
+        shell: bash
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # Root Markdown nobody builds is documentation.
+          classify() {
+            case "$1" in
+              */*) return 1 ;;
+              README.md) return 1 ;;
+              *.md) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          code=true
+          base=
+          # A branch push compares with its fork point, not its previous push, which
+          # may never have passed. Default-branch pushes qualify and publish every
+          # revision, so they always run.
+          if [ "$EVENT_NAME" = pull_request ]; then
+            base=$PR_BASE
+          elif [ "$EVENT_NAME" = push ]; then
+            case "$GITHUB_REF" in
+              "refs/heads/$DEFAULT_BRANCH") ;;
+              refs/heads/*) base=$(git merge-base "origin/$DEFAULT_BRANCH" HEAD 2>/dev/null) || base= ;;
+            esac
+          fi
+          # A missing or unreachable base, or an empty diff, has nothing to classify.
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null && changed=$(git diff --name-only "$base" HEAD --) && [ -n "$changed" ]; then
+            code=false
+            while IFS= read -r path; do
+              classify "$path" || { code=true; break; }
+            done <<< "$changed"
+          fi
+          printf 'code=%s\n' "$code" >> "$GITHUB_OUTPUT"

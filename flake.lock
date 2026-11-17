@@ -1633,6 +1633,7 @@
         "git-hooks": "git-hooks_6",
         "home-manager": "home-manager_2",
         "nix-bundle": "nix-bundle_3",
+        "nix-cache-pin": "nix-cache-pin",
         "nix-opencode-lsp": "nix-opencode-lsp_3",
         "nixpkgs": "nixpkgs_3",
         "nixpkgs-darwin": "nixpkgs-darwin_2",
@@ -1649,17 +1650,19 @@
         "uv2nix": "uv2nix"
       },
       "locked": {
-        "lastModified": 1791778105,
-        "narHash": "sha256-UC6/dm4WiJ37j59d4UEzyfBD1p+VZKltutvcinMVIUQ=",
+        "lastModified": 1794240040,
+        "narHash": "sha256-qwoci30KM0OHArqDRK5SemaaCmtOR1eOxsqTBQSeCmU=",
         "ref": "feat/harbor-monorepo-components",
-        "rev": "e8b1996580e4ecd51dd402edf4a16d9df88e3a1b",
-        "revCount": 832,
+        "rev": "9c7e7efb0196d644322d388e0fcce7ec4dea2077",
+        "revCount": 1001,
+        "submodules": true,
         "type": "git",
         "url": "https://github.com/caniko/harbor.git"
       },
       "original": {
         "ref": "feat/harbor-monorepo-components",
-        "rev": "e8b1996580e4ecd51dd402edf4a16d9df88e3a1b",
+        "rev": "9c7e7efb0196d644322d388e0fcce7ec4dea2077",
+        "submodules": true,
         "type": "git",
         "url": "https://github.com/caniko/harbor.git"
       }
@@ -2560,6 +2563,23 @@
       }
     },
     "nix-cache-pin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792571507,
+        "narHash": "sha256-8DdsRc5/cgwAtlHYEicNsMPgNCHR8qT/aurDteVkuQw=",
+        "owner": "caniko",
+        "repo": "nix-cache-pin",
+        "rev": "a69647e9be1afe5f9973732b9286b4e7de3b31b4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "caniko",
+        "ref": "0.3.0",
+        "repo": "nix-cache-pin",
+        "type": "github"
+      }
+    },
+    "nix-cache-pin_2": {
       "inputs": {
         "crane": "crane_6",
         "flake-parts": "flake-parts_15",
@@ -2585,7 +2605,7 @@
         "url": "https://github.com/caniko/nix-cache-pin.git"
       }
     },
-    "nix-cache-pin_2": {
+    "nix-cache-pin_3": {
       "inputs": {
         "crane": "crane_8",
         "flake-parts": "flake-parts_23",
@@ -3368,17 +3388,17 @@
     },
     "nixpkgs_3": {
       "locked": {
-        "lastModified": 1791011291,
-        "narHash": "sha256-V6OBJccNKBo/ktknxlJXZChPoI0NE2lembArBO3CE9k=",
+        "lastModified": 1791487292,
+        "narHash": "sha256-tqM7xDEsaeK1p6VvRygeZ9LkQRpUUkbRT02BHv6hnTM=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "73e728ddb6b7a12d18808f510813a13ee1fe4cce",
+        "rev": "8edc0c72e3a38faf5434e40d1f19431125fe4b30",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "73e728ddb6b7a12d18808f510813a13ee1fe4cce",
+        "rev": "8edc0c72e3a38faf5434e40d1f19431125fe4b30",
         "type": "github"
       }
     },
@@ -3654,7 +3674,7 @@
         "crane": "crane_5",
         "flake-parts": "flake-parts_11",
         "harbor-rs": "harbor-rs_4",
-        "nix-cache-pin": "nix-cache-pin",
+        "nix-cache-pin": "nix-cache-pin_2",
         "nix-pklx": "nix-pklx",
         "nixpkgs": [
           "visual-rubric",
@@ -3681,17 +3701,17 @@
     "plinth-source": {
       "flake": false,
       "locked": {
-        "lastModified": 1785581994,
-        "narHash": "sha256-KBemurUDJtFmwpSLyJh9PjufBii5ia6XThH+2mD6ptM=",
-        "ref": "fix/dioxus-0.7.10",
-        "rev": "4718cc09d9d1b54cc10e23e60c37b656bf7285a6",
-        "revCount": 235,
+        "lastModified": 1791804307,
+        "narHash": "sha256-6KgeSIF6U084TeSb3i8Pf57S8BkDa4Kk3cti+P9/s9g=",
+        "ref": "migrate/harbor-combined-20261012-features",
+        "rev": "534dfa6dd6217db97b7ccd313501120a3c34d912",
+        "revCount": 394,
         "type": "git",
         "url": "https://github.com/caniko/plinth.git"
       },
       "original": {
-        "ref": "fix/dioxus-0.7.10",
-        "rev": "4718cc09d9d1b54cc10e23e60c37b656bf7285a6",
+        "ref": "migrate/harbor-combined-20261012-features",
+        "rev": "534dfa6dd6217db97b7ccd313501120a3c34d912",
         "type": "git",
         "url": "https://github.com/caniko/plinth.git"
       }
@@ -3701,7 +3721,7 @@
         "crane": "crane_7",
         "flake-parts": "flake-parts_19",
         "harbor-rs": "harbor-rs_6",
-        "nix-cache-pin": "nix-cache-pin_2",
+        "nix-cache-pin": "nix-cache-pin_3",
         "nix-pklx": "nix-pklx_2",
         "nixpkgs": [
           "visual-rubric",
@@ -3932,17 +3952,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1789543870,
-        "narHash": "sha256-45ikFmtfgBZgMePIm4GevJ9VjDSWO3PGQgOuuwHDpes=",
+        "lastModified": 1791707771,
+        "narHash": "sha256-w3m8HtAVCfGTHw+gcCTAy7jFHSdGbokm8NngbeFrkek=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "35ca0490d13a3d38c4602d0eb9600a30fa63a367",
+        "rev": "c1cfa7a2c809d364ac1a7e9b3ec418afa3f19793",
         "type": "github"
       },
       "original": {
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "35ca0490d13a3d38c4602d0eb9600a30fa63a367",
+        "rev": "c1cfa7a2c809d364ac1a7e9b3ec418afa3f19793",
         "type": "github"
       }
     },
@@ -4088,17 +4108,17 @@
         "treefmt-nix": "treefmt-nix_7"
       },
       "locked": {
-        "lastModified": 1793028417,
-        "narHash": "sha256-GyG5lUjpfhcBDUmQo0bqnMtNR35zkCwiBtL0peXw1Yc=",
+        "lastModified": 1794759748,
+        "narHash": "sha256-DBIQrSguTlYZzhjK0g7689XSsRmoH81ooxdvfJLx3dA=",
         "ref": "trunk",
-        "rev": "9ffacf22c9b69385e370846ea55ce6226a26b8ad",
-        "revCount": 906,
+        "rev": "e69226f64697964c5bb7ad659ac8dfb363c6e7ec",
+        "revCount": 1149,
         "type": "git",
         "url": "https://github.com/caniko/simit.git"
       },
       "original": {
         "ref": "trunk",
-        "rev": "9ffacf22c9b69385e370846ea55ce6226a26b8ad",
+        "rev": "e69226f64697964c5bb7ad659ac8dfb363c6e7ec",
         "type": "git",
         "url": "https://github.com/caniko/simit.git"
       }
@@ -4106,17 +4126,17 @@
     "simit_2": {
       "flake": false,
       "locked": {
-        "lastModified": 1791535755,
-        "narHash": "sha256-IB7szOLGEYfXv37iKi4tDxVRlad0MWpHStGDjwTxk5s=",
-        "ref": "feat/harbor-monorepo-components",
-        "rev": "f30d82931ea3689de3c3ea9a0ab0f0e0bfd10b8d",
-        "revCount": 426,
+        "lastModified": 1792754497,
+        "narHash": "sha256-qeeUiiqO8HQO8BPbME1sktGM3yuStkBXdV/MUJdjVZI=",
+        "ref": "trunk",
+        "rev": "4c6841cce19327927ea8a8f6e856276dd5c878f0",
+        "revCount": 858,
         "type": "git",
         "url": "https://github.com/caniko/simit.git"
       },
       "original": {
-        "ref": "feat/harbor-monorepo-components",
-        "rev": "f30d82931ea3689de3c3ea9a0ab0f0e0bfd10b8d",
+        "ref": "trunk",
+        "rev": "4c6841cce19327927ea8a8f6e856276dd5c878f0",
         "type": "git",
         "url": "https://github.com/caniko/simit.git"
       }

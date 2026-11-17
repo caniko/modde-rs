@@ -26,13 +26,23 @@ on:
     tags:
       - "[0-9]*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to republish channels for (leave empty for a plain dispatch)
+        required: false
+        type: string
+      channels:
+        description: "Comma-separated channels to republish with tag, e.g. winget,chocolatey"
+        required: false
+        type: string
 
 concurrency:
-  group: ${{ github.workflow_ref }}-${{ github.ref }}
+  group: ${{ github.workflow_ref }}-${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || github.ref }}
   cancel-in-progress: false
 
 jobs:
   validate:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.tag == '' }}
     permissions:
       contents: read
     timeout-minutes: 360
@@ -43,7 +53,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -128,12 +138,14 @@ jobs:
           bash .github/scripts/prepare-containment.sh && sudo mkdir -p /var/cache/sccache && sudo chmod 1777 /var/cache/sccache && printf '%s\n' 'extra-sandbox-paths = /var/cache/sccache' 'max-jobs = 1' 'cores = 2' | sudo tee -a /etc/nix/nix.conf && nix build --no-update-lock-file --max-jobs 1 --cores 2 .#modde --out-link result-qualified-package && nix develop --no-update-lock-file --max-jobs 1 --cores 2 -c cargo xtask library-package-qualify --binary "$(readlink -f result-qualified-package)/bin/modde" --output "$RUNNER_TEMP/modde-package-receipt"
   prebuild:
     needs: validate
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.tag == '' }}
     uses: ./.github/workflows/prebuild.yaml
     with:
       release: true
     secrets:
       attic_token: ${{ secrets.ATTIC_TOKEN }}
   release:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.tag == '' }}
     needs: [validate, prebuild]
     runs-on: ubuntu-latest
     permissions:
@@ -145,7 +157,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -548,10 +560,13 @@ jobs:
           done < <(printf '%s\n' "${files[@]}" | LC_ALL=C sort -u)
           SCRIPT
       - name: Probe downstream publisher state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           . ./release-env
           : > release-publisher-state.env
+          gh_auth=(); if [ -n "${GITHUB_TOKEN:-}" ]; then gh_auth=(-H "Authorization: Bearer $GITHUB_TOKEN"); fi
           write_state() {
             channel="$1"; state="$2"; detail="$3"
             var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
@@ -600,8 +615,11 @@ jobs:
           stable_or_state chocolatey 'modde' bash -c 'curl -fsSL "https://community.chocolatey.org/api/v2/Packages()?%24filter=${CHOCO_FILTER}" | grep -q "<entry>"'
           stable_or_state homebrew 'https://codeberg.org/caniko/homebrew-modde.git' probe_git_file 'https://codeberg.org/caniko/homebrew-modde.git' HEAD 'Formula/modde.rb'
           stable_or_state scoop 'https://github.com/caniko/scoop-modde.git' probe_git_file 'https://github.com/caniko/scoop-modde.git' HEAD 'bucket/modde.json'
-          stable_or_state flathub 'flathub/com.tartanoglu.modde' curl -fsSL 'https://api.github.com/repos/flathub/com.tartanoglu.modde'
-          stable_or_state winget 'Caniko.Modde' curl -fsSL 'https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/c/Caniko/Modde'
+          stable_or_state flathub 'flathub/com.tartanoglu.modde' curl -fsSL "${gh_auth[@]}" 'https://api.github.com/repos/flathub/com.tartanoglu.modde'
+          winget_code="$(curl -sS -o /dev/null -w '%{http_code}' "${gh_auth[@]}" 'https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/c/Caniko/Modde' || true)"
+          case "$winget_code" in 200) winget_state=active-required ;; 404) winget_state=inactive-soft ;; *) winget_state=probe-failed ;; esac
+          if [ "$IS_PRERELEASE" = "true" ]; then winget_state=skipped-prerelease; fi
+          write_state winget "$winget_state" 'Caniko.Modde'
       - name: Publish APT repository
         env:
           APT_REPO_GPG_KEY: ${{ secrets.MODDE_APT_REPO_GPG_KEY }}
@@ -655,7 +673,7 @@ jobs:
             channel="$1"; message="$2"
             var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
             state="${!var:-inactive-soft}"
-            if [ "$state" = active-required ]; then echo "::error::${channel}: ${message}" >&2; exit 1; fi
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
             echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
             exit 0
           }
@@ -724,7 +742,7 @@ jobs:
             channel="$1"; message="$2"
             var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
             state="${!var:-inactive-soft}"
-            if [ "$state" = active-required ]; then echo "::error::${channel}: ${message}" >&2; exit 1; fi
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
             echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
             exit 0
           }
@@ -760,22 +778,142 @@ jobs:
             channel="$1"; message="$2"
             var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
             state="${!var:-inactive-soft}"
-            if [ "$state" = active-required ]; then echo "::error::${channel}: ${message}" >&2; exit 1; fi
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
             echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
             exit 0
           }
           if [ -z "${WINGET_PAT:-}" ]; then publisher_missing winget 'WINGET_PAT unset'; fi
           ZIP_NAME="modde-${VERSION}-x86_64-windows.zip"; ZIP_URL="https://github.com/caniko/modde-rs/releases/download/${TAG}/${ZIP_NAME}"
           test -s "release/${ZIP_NAME}" || publisher_missing winget "missing release/${ZIP_NAME}"
-          export ZIP_URL VERSION WINGET_PAT
-          nix shell nixpkgs#curl nixpkgs#jq nixpkgs#unzip nixpkgs#wineWow64Packages.stable nixpkgs#util-linux -c bash <<'SCRIPT'
+          export ZIP_NAME ZIP_URL VERSION WINGET_PAT PUBLISH_WINGET_STATE
+          case "${PUBLISH_WINGET_STATE:-}" in active-required|inactive-soft) ;; *) echo "::error::winget: winget-pkgs probe was inconclusive (${PUBLISH_WINGET_STATE:-unset}); not guessing between a new version and a first submission." >&2; exit 1 ;; esac
+          nix shell nixpkgs#curl nixpkgs#jq -c bash <<'SCRIPT' || publisher_missing winget 'GitHub API submission failed'
           set -euo pipefail
           tmpdir="$(mktemp -d)"; trap 'rm -rf "$tmpdir"' EXIT
-          export WINEPREFIX="$tmpdir/wine"; export WINEDEBUG=-all; export TERM=xterm
-          release_json="$(curl -fsSL https://api.github.com/repos/microsoft/winget-create/releases/latest)"
-          url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "wingetcreate.exe") | .browser_download_url' | head -n 1)"
-          curl -fsSL -o "$tmpdir/wingetcreate.exe" "$url"
-          wine "$tmpdir/wingetcreate.exe" update Caniko.Modde --version "$VERSION" --urls "${ZIP_URL}|x64" --token "$WINGET_PAT" --submit
+          ID='Caniko.Modde'; MANIFEST_DIR='manifests/c/Caniko/Modde'; state="${PUBLISH_WINGET_STATE:-}"
+          # yaml(): double-quoted YAML scalar; f KEY VALUE writes one field; hdr TYPE the schema header.
+          yaml() { local s="${1//\\/\\\\}"; printf '"%s"' "${s//\"/\\\"}"; }
+          f() { printf '%s: %s\n' "$1" "$(yaml "$2")"; }
+          # shellcheck disable=SC2016
+          hdr() { printf '# yaml-language-server: $schema=https://aka.ms/winget-manifest.%s.1.12.0.schema.json\n# Created with simit\n\n' "$1"; }
+          dir="$tmpdir/"'manifests/c/Caniko/Modde'"/$VERSION"; mkdir -p "$dir"
+          sha="$(sha256sum "release/${ZIP_NAME}" | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')"
+          { hdr version; f PackageIdentifier 'Caniko.Modde'; f PackageVersion "$VERSION"; echo 'DefaultLocale: en-US'; echo 'ManifestType: version'; echo 'ManifestVersion: 1.12.0'; } > "$dir"/'Caniko.Modde'.yaml
+          { hdr installer; f PackageIdentifier 'Caniko.Modde'; f PackageVersion "$VERSION"; echo 'InstallerType: zip'; echo 'NestedInstallerType: portable'; echo 'Installers:'; echo '- Architecture: x64'; echo '  NestedInstallerFiles:'; printf '%s\n' "  - RelativeFilePath: $(yaml 'modde.exe')" "    PortableCommandAlias: $(yaml 'modde')"; printf '%s\n' "  InstallerUrl: $(yaml "$ZIP_URL")" "  InstallerSha256: $sha"; echo 'ManifestType: installer'; echo 'ManifestVersion: 1.12.0'; } > "$dir"/'Caniko.Modde'.installer.yaml
+          { hdr defaultLocale; f PackageIdentifier 'Caniko.Modde'; f PackageVersion "$VERSION"; echo 'PackageLocale: en-US'; f Publisher 'Caniko'; f PublisherUrl 'https://github.com/caniko'; f PackageName 'Modde'; f PackageUrl 'https://github.com/caniko/modde-rs'; f License 'GPL-3.0'; f ShortDescription 'CLI interface for modde'; echo 'ManifestType: defaultLocale'; echo 'ManifestVersion: 1.12.0'; } > "$dir"/'Caniko.Modde'.locale.en-US.yaml
+          # Submit the manifests in "$dir" to microsoft/winget-pkgs through the GitHub
+          # REST API as the WINGET_PAT user. Needs curl and jq.
+          # Inputs: ID MANIFEST_DIR VERSION ZIP_URL WINGET_PAT, state (active-required when
+          # the package already exists upstream) and dir (the generated manifest files).
+          UP=microsoft/winget-pkgs
+          umask 077
+          # The token reaches curl through this 0600 header file, never through argv.
+          printf 'Authorization: Bearer %s\n' "$WINGET_PAT" > "$tmpdir/auth"
+          printf '{}' > "$tmpdir/empty.json"
+          code=; last=
+          # api METHOD PATH [BODYFILE]: body lands in $tmpdir/resp, status in $code, non-2xx returns 1.
+          api() {
+            local a=(-sS --retry 3 -o "$tmpdir/resp" -w '%{http_code}' -X "$1"
+              -H "@$tmpdir/auth" -H 'Accept: application/vnd.github+json'
+              -H 'X-GitHub-Api-Version: 2022-11-28' -H 'Content-Type: application/json')
+            [ -z "${3:-}" ] || a+=(--data-binary "@$3")
+            last="$1 $2"
+            code="$(curl "${a[@]}" "https://api.github.com$2")" || code=000
+            case "$code" in 2??) ;; *) return 1 ;; esac
+          }
+          fail() { echo "::error::winget: $last -> HTTP $code: $(jq -r '.message // empty' "$tmpdir/resp" 2>/dev/null)" >&2; exit 1; }
+          must() { api "$@" || fail; }
+          val() { jq -r "$1" "$tmpdir/resp"; }
+
+          # Nothing to do when this version is already upstream.
+          api GET "/repos/$UP/contents/$MANIFEST_DIR/$VERSION" || true
+          case "$code" in
+            200) echo "winget: $ID $VERSION is already published in $UP"; exit 0 ;;
+            404) ;;
+            *) fail ;;
+          esac
+          # New package or new version: the package directory decides.
+          if [ -z "$state" ]; then
+            api GET "/repos/$UP/contents/$MANIFEST_DIR" || true
+            case "$code" in 200) state=active-required ;; 404) state=inactive-soft ;; *) fail ;; esac
+          fi
+          if [ "$state" = active-required ]; then kind='New version'; else kind='New package'; fi
+          title="$kind: $ID version $VERSION"
+
+          must GET /user; login="$(val .login)"
+          must GET "/repos/$UP"; base="$(val .default_branch)"
+          branch="$(printf '%s-%s' "$ID" "$VERSION" | tr -c 'A-Za-z0-9._-' '-')"
+          # A PR that is still open is a success. When its head is this branch on the
+          # token user's own fork, the regenerated manifests are moved onto it below.
+          must GET "/repos/$UP/pulls?head=$login:$branch&state=open"
+          pr="$(val '.[0].html_url // empty')"
+          refresh=
+          if [ -n "$pr" ]; then
+            if jq -e --arg b "$branch" --arg f "${login,,}/winget-pkgs" \
+              '.[0] | .head.ref == $b and ((.head.repo.full_name // "") | ascii_downcase) == $f' "$tmpdir/resp" > /dev/null; then
+              refresh=1
+            else
+              echo "winget: PR already open: $pr"; exit 0
+            fi
+          fi
+
+          # POST /forks is idempotent; the fork can take a while to appear.
+          must POST "/repos/$UP/forks" "$tmpdir/empty.json"
+          fork="/repos/$login/winget-pkgs"
+          n=0
+          until api GET "$fork"; do
+            n=$((n + 1))
+            [ "$n" -lt 24 ] || { echo "::error::winget: fork $login/winget-pkgs did not appear within 2 minutes" >&2; exit 1; }
+            sleep 5
+          done
+
+          must GET "/repos/$UP/git/ref/heads/$base"; head="$(val .object.sha)"
+          must GET "/repos/$UP/git/commits/$head"; base_tree="$(val .tree.sha)"
+          # A lagging fork may not have the upstream commit yet; sync it first.
+          api GET "$fork/git/commits/$head" || {
+            jq -n --arg b "$base" '{branch: $b}' > "$tmpdir/b"
+            must POST "$fork/merge-upstream" "$tmpdir/b"
+          }
+
+          # One commit holding the three manifests: blobs -> tree on the upstream tree -> commit -> ref.
+          entries='[]'
+          for f in "$dir"/*.yaml; do
+            jq -n --rawfile c "$f" '{content: $c, encoding: "utf-8"}' > "$tmpdir/b"
+            must POST "$fork/git/blobs" "$tmpdir/b"
+            entries="$(jq -c --arg p "$MANIFEST_DIR/$VERSION/${f##*/}" --arg s "$(val .sha)" \
+              '. + [{path: $p, mode: "100644", type: "blob", sha: $s}]' <<<"$entries")"
+          done
+          if [ -n "$refresh" ]; then
+            # Identical blobs on the PR branch mean the PR already carries these manifests.
+            want="$(jq -cS 'map({(.path | split("/") | last): .sha}) | add' <<<"$entries")"
+            if api GET "$fork/contents/$MANIFEST_DIR/$VERSION?ref=$branch" \
+              && [ "$(jq -cS 'map({(.name): .sha}) | add' "$tmpdir/resp")" = "$want" ]; then
+              echo "winget: PR already open and up to date: $pr"; exit 0
+            fi
+          fi
+          jq -n --arg b "$base_tree" --argjson e "$entries" '{base_tree: $b, tree: $e}' > "$tmpdir/b"
+          must POST "$fork/git/trees" "$tmpdir/b"; tree="$(val .sha)"
+          jq -n --arg m "$title" --arg t "$tree" --arg p "$head" '{message: $m, tree: $t, parents: [$p]}' > "$tmpdir/b"
+          must POST "$fork/git/commits" "$tmpdir/b"; commit="$(val .sha)"
+          if [ -n "$refresh" ]; then
+            # Keep the PR: force-move its branch to the commit with the new manifests.
+            jq -n --arg s "$commit" '{sha: $s, force: true}' > "$tmpdir/b"
+            must PATCH "$fork/git/refs/heads/$branch" "$tmpdir/b"
+            echo "winget: refreshed $pr with the regenerated manifests"; exit 0
+          fi
+          jq -n --arg r "refs/heads/$branch" --arg s "$commit" '{ref: $r, sha: $s}' > "$tmpdir/b"
+          api POST "$fork/git/refs" "$tmpdir/b" || {
+            [ "$code" != 422 ] && fail
+            # The branch survives from an earlier run whose PR was closed: move it.
+            jq -n --arg s "$commit" '{sha: $s, force: true}' > "$tmpdir/b"
+            must PATCH "$fork/git/refs/heads/$branch" "$tmpdir/b"
+          }
+
+          jq -n --arg t "$title" --arg h "$login:$branch" --arg b "$base" \
+            --arg body "Automated submission of $ID $VERSION from $ZIP_URL, generated by simit." \
+            '{title: $t, head: $h, base: $b, body: $body, maintainer_can_modify: true}' > "$tmpdir/b"
+          must POST "/repos/$UP/pulls" "$tmpdir/b"
+          echo "winget: opened $(val .html_url)"
           SCRIPT
       - name: Publish Homebrew tap
         env:
@@ -790,7 +928,7 @@ jobs:
             channel="$1"; message="$2"
             var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
             state="${!var:-inactive-soft}"
-            if [ "$state" = active-required ]; then echo "::error::${channel}: ${message}" >&2; exit 1; fi
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
             echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
             exit 0
           }
@@ -850,7 +988,7 @@ jobs:
             channel="$1"; message="$2"
             var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
             state="${!var:-inactive-soft}"
-            if [ "$state" = active-required ]; then echo "::error::${channel}: ${message}" >&2; exit 1; fi
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
             echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
             exit 0
           }
@@ -878,7 +1016,7 @@ jobs:
             channel="$1"; message="$2"
             var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
             state="${!var:-inactive-soft}"
-            if [ "$state" = active-required ]; then echo "::error::${channel}: ${message}" >&2; exit 1; fi
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
             echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
             exit 0
           }
@@ -953,7 +1091,633 @@ jobs:
             channel="$1"; message="$2"
             var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
             state="${!var:-inactive-soft}"
-            if [ "$state" = active-required ]; then echo "::error::${channel}: ${message}" >&2; exit 1; fi
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
+            echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
+            exit 0
+          }
+          if [ -z "${CHOCOLATEY_API_KEY:-}" ]; then publisher_missing chocolatey 'CHOCOLATEY_API_KEY unset'; fi
+          ZIP="release/modde-${VERSION}-x86_64-windows.zip"; test -s "$ZIP" || publisher_missing chocolatey "missing $ZIP"
+          if [ "${CHOCO_CANDIDATE_CACHE_HIT:-}" != true ]; then echo 'Chocolatey candidate persistence was not verified.' >&2; exit 1; fi
+          nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey -c simit dist chocolatey bump \
+            --version "$VERSION" \
+            --package-dir chocolatey-package \
+            --archive "x64=$ZIP" \
+            --choco-name 'modde' \
+            --choco-id 'modde' \
+            --choco-title 'modde' \
+            --choco-authors 'Can H. Tartanoglu' \
+            --choco-description 'Cross-platform game mod manager' \
+            --choco-project-url 'https://modde.tartanoglu.com' \
+            --choco-license-url 'https://raw.githubusercontent.com/caniko/modde-rs/trunk/LICENSE' \
+            --choco-download-repo 'caniko/modde-rs' \
+            --choco-archive-pattern 'modde-{version}-{arch}-windows.zip' \
+            --push \
+            --push-source "$CHOCO_PUSH_SOURCE" \
+            --api-key-env CHOCOLATEY_API_KEY
+  republish:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Select channels to republish
+        id: republish
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_CHANNELS: ${{ inputs.channels }}
+        run: |
+          set -euo pipefail
+          known=' aur flathub winget homebrew scoop chocolatey '
+          version="$INPUT_TAG"
+          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta|alpha)\.[0-9]+)?$' || { echo "::error::tag '$INPUT_TAG' is not a release tag" >&2; exit 1; }
+          selected=','
+          IFS=',' read -ra requested <<< "$INPUT_CHANNELS"
+          for raw in "${requested[@]}"; do
+            channel="$(printf '%s' "$raw" | tr -d '[:space:]')"
+            [ -n "$channel" ] || continue
+            case "$known" in *" $channel "*) ;; *) echo "::error::channel '$channel' is unknown, not configured here or not republishable; choose from:$known" >&2; exit 1;; esac
+            case "$selected" in *",$channel,"*) ;; *) selected="$selected$channel,";; esac
+          done
+          [ "$selected" != ',' ] || { echo '::error::channels is empty; choose from:'"$known" >&2; exit 1; }
+          for channel in $known; do
+            case "$selected" in *",$channel,"*) echo "$channel=true" >> "$GITHUB_OUTPUT";; esac
+          done
+          echo "channels=${selected#,}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            max-jobs = 1
+            cores = 2
+            substituters = https://attic.candee.baby/canix https://cache.nixos.org
+            trusted-public-keys = canix:lPzPzKrmYqW5Rxa5r0uQWvCqD3S5nx0h2eCy7XD5JM8= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+
+      - name: Configure GitHub input transport
+        run: |
+          git config --global --add url.https://github.com/.insteadOf ssh://git@github.com/
+          git config --global --add url.https://github.com/.insteadOf git@github.com:
+
+      - name: Validate tag
+        id: validate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="$INPUT_TAG"
+          TAG="$VERSION"
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta|alpha)\.[0-9]+)?$'
+          git_fetch() {
+            if [ -n "${GITHUB_TOKEN:-}" ]; then
+              auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+              git -c "http.extraHeader=$auth_header" fetch "$@"
+            else
+              git fetch "$@"
+            fi
+          }
+          git_fetch --force --tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          tag_worktree="$(mktemp -d)"
+          rmdir "$tag_worktree"
+          cleanup_validation() {
+            if [ -n "${tag_worktree:-}" ]; then git worktree remove --force "$tag_worktree" >/dev/null 2>&1 || rm -rf "$tag_worktree"; fi
+            if [ -n "${GNUPGHOME:-}" ]; then rm -rf "$GNUPGHOME"; fi
+          }
+          trap cleanup_validation EXIT
+          GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
+          git_fetch --no-tags origin HEAD
+          git show "FETCH_HEAD:keys/maintainers.gpg" > "$GNUPGHOME/maintainers.gpg"
+          test -s "$GNUPGHOME/maintainers.gpg"
+          gpg --batch --import "$GNUPGHOME/maintainers.gpg"
+          git verify-tag "$TAG"
+          signed_tag_name="$(git cat-file tag "refs/tags/$TAG" | sed -n '1,/^$/s/^tag //p')"
+          test "$signed_tag_name" = "$TAG" || { echo 'Signed tag object name differs from the release label' >&2; exit 1; }
+          validated_sha="$(git rev-parse --verify "refs/tags/${TAG}^{commit}")"
+          checkout_sha="$(git rev-parse --verify HEAD)"
+          test "$validated_sha" = "$checkout_sha" || { echo "Signed tag commit does not match the checked-out tag" >&2; exit 1; }
+          printf 'sha=%s\n' "$validated_sha" >> "$GITHUB_OUTPUT"
+          git worktree add --detach "$tag_worktree" "$validated_sha"
+          test "$(nix eval --raw "$tag_worktree#modde.version")" = "$VERSION"
+          if ! grep -q "^## \[$VERSION\] - [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]" "$tag_worktree/CHANGELOG.md"; then
+            echo "CHANGELOG.md missing section for $VERSION" >&2
+            exit 1
+          fi
+
+          IS_PRERELEASE=false
+          if printf '%s\n' "$VERSION" | grep -Eq -- '-(rc|beta|alpha)\.[0-9]+$'; then IS_PRERELEASE=true; fi
+
+          git checkout --detach "$validated_sha"
+          { printf 'TAG=%s\n' "$TAG"; printf 'VERSION=%s\n' "$VERSION"; printf 'IS_PRERELEASE=%s\n' "$IS_PRERELEASE"; } > release-env
+      - name: Download and verify release assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_API: https://api.github.com
+          GITHUB_REPO: caniko/modde-rs
+          REPUBLISH_CHANNELS: ${{ steps.republish.outputs.channels }}
+        run: |
+          set -euo pipefail
+          nix shell nixpkgs#curl nixpkgs#jq nixpkgs#minisign -c bash <<'SCRIPT'
+          set -euo pipefail
+          . ./release-env
+          mkdir -p release
+          curl -sS --fail -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "$GITHUB_API/repos/$GITHUB_REPO/releases/tags/$TAG" > release.json
+          fetch() {
+            id="$(jq -r --arg n "$1" '[.assets[] | select(.name == $n)][0].id // empty' release.json)"
+            [ -n "$id" ] || { echo "::error::release $TAG has no asset $1" >&2; exit 1; }
+            curl -sS --fail -L -H "Authorization: Bearer $GITHUB_TOKEN" -H 'Accept: application/octet-stream' -o "release/$1" "$GITHUB_API/repos/$GITHUB_REPO/releases/assets/$id"
+          }
+          fetch SHA256SUMS.txt
+          fetch SHA256SUMS.txt.minisig
+          test -s keys/minisign.pub
+          minisign -V -m release/SHA256SUMS.txt -x release/SHA256SUMS.txt.minisig -p keys/minisign.pub
+          need=()
+          case ",$REPUBLISH_CHANNELS," in *,flathub,*) need+=("com.tartanoglu.modde.json"); need+=("cargo-sources.json"); ;; esac
+          case ",$REPUBLISH_CHANNELS," in *,winget,*) need+=("modde-${VERSION}-x86_64-windows.zip"); ;; esac
+          case ",$REPUBLISH_CHANNELS," in *,homebrew,*) need+=("modde-${VERSION}-aarch64-darwin.tar.gz"); need+=("modde-${VERSION}-aarch64-linux.tar.gz"); need+=("modde-${VERSION}-x86_64-linux.tar.gz"); ;; esac
+          case ",$REPUBLISH_CHANNELS," in *,scoop,*) need+=("modde-${VERSION}-x86_64-windows.zip"); ;; esac
+          case ",$REPUBLISH_CHANNELS," in *,chocolatey,*) need+=("modde-${VERSION}-x86_64-windows.zip"); ;; esac
+          mapfile -t listed < <(awk '{print $2}' release/SHA256SUMS.txt)
+          : > release-selected.sums
+          for pattern in "${need[@]}"; do
+            found=0
+            for name in "${listed[@]}"; do
+              case "$name" in */* | '') echo "::error::unsafe name in SHA256SUMS.txt: $name" >&2; exit 1;; esac
+              # shellcheck disable=SC2254
+              case "$name" in $pattern) fetch "$name"; awk -v n="$name" '$2 == n' release/SHA256SUMS.txt >> release-selected.sums; found=1;; esac
+            done
+            [ "$found" = 1 ] || { echo "::error::SHA256SUMS.txt lists no asset matching $pattern" >&2; exit 1; }
+          done
+          if [ "${#need[@]}" -gt 0 ]; then (cd release && sha256sum -c --strict ../release-selected.sums); fi
+          SCRIPT
+      - name: Probe downstream publisher state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . ./release-env
+          : > release-publisher-state.env
+          gh_auth=(); if [ -n "${GITHUB_TOKEN:-}" ]; then gh_auth=(-H "Authorization: Bearer $GITHUB_TOKEN"); fi
+          write_state() {
+            channel="$1"; state="$2"; detail="$3"
+            var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
+            printf '%s=%s\n' "$var" "$state" >> release-publisher-state.env
+            printf '%-10s %s %s\n' "$channel" "$state" "$detail"
+          }
+          public_git_url() {
+            case "$1" in
+              ssh://git@codeberg.org/*) path="${1#ssh://git@codeberg.org/}"; printf 'https://codeberg.org/%s\n' "$path" ;;
+              git@codeberg.org:*) path="${1#git@codeberg.org:}"; printf 'https://codeberg.org/%s\n' "$path" ;;
+              ssh://git@codefloe.com/*) path="${1#ssh://git@codefloe.com/}"; printf 'https://codefloe.com/%s\n' "$path" ;;
+              git@codefloe.com:*) path="${1#git@codefloe.com:}"; printf 'https://codefloe.com/%s\n' "$path" ;;
+              ssh://git@github.com/*) path="${1#ssh://git@github.com/}"; printf 'https://github.com/%s\n' "$path" ;;
+              git@github.com:*) path="${1#git@github.com:}"; printf 'https://github.com/%s\n' "$path" ;;
+              *) printf '%s\n' "$1" ;;
+            esac
+          }
+          probe_git_file() {
+            repo="$1"; ref="$2"; path="$3"
+            tmp="$(mktemp -d)"
+            trap 'rm -rf "$tmp"' RETURN
+            git clone --depth 1 --branch "$ref" "$(public_git_url "$repo")" "$tmp/repo" >/dev/null 2>&1 && test -e "$tmp/repo/$path"
+          }
+          probe_git_tree() {
+            repo="$1"; ref="$2"; path_a="$3"; path_b="$4"; tmp="$(mktemp -d)"
+            trap 'rm -rf "$tmp"' RETURN
+            git clone --depth 1 --branch "$ref" "$(public_git_url "$repo")" "$tmp/repo" >/dev/null 2>&1 && test -e "$tmp/repo/$path_a" && test -e "$tmp/repo/$path_b"
+          }
+          active_or_soft() {
+            channel="$1"; detail="$2"; shift 2
+            if "$@"; then write_state "$channel" active-required "$detail"; else write_state "$channel" inactive-soft "$detail"; fi
+          }
+          stable_or_state() {
+            channel="$1"; detail="$2"; shift 2
+            if [ "$IS_PRERELEASE" = "true" ]; then write_state "$channel" skipped-prerelease "$detail"; else active_or_soft "$channel" "$detail" "$@"; fi
+          }
+          stable_or_state apt 'ssh://git@github.com/caniko/apt-modde.git pages' probe_git_tree 'ssh://git@github.com/caniko/apt-modde.git' 'pages' dists pool
+          stable_or_state aur 'modde' bash -c 'git ls-remote --exit-code '\''https://aur.archlinux.org/modde.git'\'' HEAD >/dev/null 2>&1 && git ls-remote --exit-code '\''https://aur.archlinux.org/modde-bin.git'\'' HEAD >/dev/null 2>&1 && git ls-remote --exit-code '\''https://aur.archlinux.org/modde-git.git'\'' HEAD >/dev/null 2>&1'
+          COPR_PROBE_PROJECT='caniko/modde-rs'
+          if [ "$IS_PRERELEASE" = "true" ]; then COPR_PROBE_PROJECT='caniko/modde-rs-testing'; fi
+          active_or_soft copr "$COPR_PROBE_PROJECT" curl -fsSL "https://copr.fedorainfracloud.org/coprs/${COPR_PROBE_PROJECT}/"
+          CHOCO_FILTER="$(printf '%s' 'Id eq '\''modde'\'' and IsLatestVersion' | jq -sRr @uri)"
+          export CHOCO_FILTER
+          # Expand the filter in the child shell.
+          # shellcheck disable=SC2016
+          stable_or_state chocolatey 'modde' bash -c 'curl -fsSL "https://community.chocolatey.org/api/v2/Packages()?%24filter=${CHOCO_FILTER}" | grep -q "<entry>"'
+          stable_or_state homebrew 'https://codeberg.org/caniko/homebrew-modde.git' probe_git_file 'https://codeberg.org/caniko/homebrew-modde.git' HEAD 'Formula/modde.rb'
+          stable_or_state scoop 'https://github.com/caniko/scoop-modde.git' probe_git_file 'https://github.com/caniko/scoop-modde.git' HEAD 'bucket/modde.json'
+          stable_or_state flathub 'flathub/com.tartanoglu.modde' curl -fsSL "${gh_auth[@]}" 'https://api.github.com/repos/flathub/com.tartanoglu.modde'
+          winget_code="$(curl -sS -o /dev/null -w '%{http_code}' "${gh_auth[@]}" 'https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/c/Caniko/Modde' || true)"
+          case "$winget_code" in 200) winget_state=active-required ;; 404) winget_state=inactive-soft ;; *) winget_state=probe-failed ;; esac
+          if [ "$IS_PRERELEASE" = "true" ]; then winget_state=skipped-prerelease; fi
+          write_state winget "$winget_state" 'Caniko.Modde'
+      - name: Publish AUR packages
+        if: steps.republish.outputs.aur == 'true'
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          . ./release-env
+          if [ "$IS_PRERELEASE" = "true" ]; then echo "Prerelease ${VERSION}; skipping AUR packages."; exit 0; fi
+          if [ -f release-publisher-state.env ]; then . ./release-publisher-state.env; fi
+          publisher_missing() {
+            channel="$1"; message="$2"
+            var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
+            state="${!var:-inactive-soft}"
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
+            echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
+            exit 0
+          }
+          if [ -z "${AUR_SSH_KEY:-}" ]; then publisher_missing aur 'AUR_SSH_KEY unset'; fi
+          nix shell nixpkgs#git nixpkgs#openssh nixpkgs#pacman nixpkgs#util-linux -c bash <<'SCRIPT'
+          set -euo pipefail
+          . ./release-env
+          AUR_HOST='aur.archlinux.org'; AUR_SSH="$HOME/.ssh/aur"
+          MAKEPKG_CONF="$(dirname "$(dirname "$(command -v makepkg)")")/etc/makepkg.conf"; test -r "$MAKEPKG_CONF"
+          print_srcinfo() (
+            set -euo pipefail
+            pkgdir="$1"
+            owner=''
+            trap 'status=$?; rm -f "$pkgdir/.SRCINFO.tmp"; if [ -n "$owner" ]; then chown -R "$owner" "$pkgdir" || exit 1; fi; exit "$status"' EXIT
+            if [ "$(id -u)" -eq 0 ]; then
+              owner="$(stat -c '%u:%g' "$pkgdir")"
+              chown -R 65534:65534 "$pkgdir"
+              (cd "$pkgdir" && setpriv --reuid=65534 --regid=65534 --clear-groups makepkg --config "$MAKEPKG_CONF" --printsrcinfo) > "$pkgdir/.SRCINFO.tmp"
+            else
+              (cd "$pkgdir" && makepkg --config "$MAKEPKG_CONF" --printsrcinfo) > "$pkgdir/.SRCINFO.tmp"
+            fi
+            test -s "$pkgdir/.SRCINFO.tmp"
+            mv "$pkgdir/.SRCINFO.tmp" "$pkgdir/.SRCINFO"
+          )
+          checksum_for() { awk -v a="$1" '$2 == a { print $1 }' release/SHA256SUMS.txt; }
+          source_sha="$(checksum_for "modde-rs-${VERSION}.tar.gz")"
+          bin_sha="$(checksum_for "modde-${VERSION}-x86_64-linux.tar.gz")"; test -n "$bin_sha"
+          test -n "$source_sha"
+          install -d -m 700 "$HOME/.ssh"; printf '%s\n' "$AUR_SSH_KEY" > "$AUR_SSH"; chmod 600 "$AUR_SSH"
+          ssh-keyscan "$AUR_HOST" >> "$HOME/.ssh/known_hosts"; chmod 600 "$HOME/.ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $AUR_SSH -o IdentitiesOnly=yes"
+          publish_pkg() {
+            pkg="$1"
+            repo="ssh://aur@aur.archlinux.org/${pkg}.git"
+            rm -rf "aur-${pkg}"
+            if ! git clone "$repo" "aur-${pkg}"; then mkdir "aur-${pkg}"; git -C "aur-${pkg}" init; git -C "aur-${pkg}" remote add origin "$repo"; fi
+            git -C "aur-${pkg}" checkout -B master
+            cp "dist/aur/${pkg}/PKGBUILD" "aur-${pkg}/PKGBUILD"
+            case "$pkg" in
+              modde)
+                sed -i -e "s/^pkgver=.*/pkgver=${VERSION}/" -e 's/^pkgrel=.*/pkgrel=1/' "aur-${pkg}/PKGBUILD"
+                awk -v sha="$source_sha" '/^sha256sums=/{print "sha256sums=(\047" sha "\047)"; next} {print}' "aur-${pkg}/PKGBUILD" > "aur-${pkg}/PKGBUILD.new"; mv "aur-${pkg}/PKGBUILD.new" "aur-${pkg}/PKGBUILD" ;;
+              modde-bin)
+                sed -i -e "s/^pkgver=.*/pkgver=${VERSION}/" -e 's/^pkgrel=.*/pkgrel=1/' "aur-${pkg}/PKGBUILD"
+                awk -v b="$bin_sha" -v s="$source_sha" '/^sha256sums=/{print "sha256sums=(\047" b "\047"; print "            \047" s "\047)"; skip=1; next} skip && /^[[:space:]]*\047/{next} {skip=0; print}' "aur-${pkg}/PKGBUILD" > "aur-${pkg}/PKGBUILD.new"; mv "aur-${pkg}/PKGBUILD.new" "aur-${pkg}/PKGBUILD" ;;
+              modde-git) ;;
+              *) echo "unknown AUR package: $pkg" >&2; exit 1 ;;
+            esac
+            print_srcinfo "aur-${pkg}"
+            git -C "aur-${pkg}" add PKGBUILD .SRCINFO
+            if git -C "aur-${pkg}" diff --cached --quiet; then echo "AUR ${pkg} already at ${VERSION}"; return 0; fi
+            git -C "aur-${pkg}" -c user.email='ci@localhost' -c user.name='release bot' commit -m "${VERSION}"
+            git -C "aur-${pkg}" push origin HEAD:master
+          }
+          for pkg in modde modde-bin modde-git; do publish_pkg "$pkg"; done
+          SCRIPT
+      - name: Publish Flathub update PR
+        if: steps.republish.outputs.flathub == 'true'
+        env:
+          FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          . ./release-env
+          if [ "$IS_PRERELEASE" = "true" ]; then echo "Prerelease ${VERSION}; skipping Flathub update."; exit 0; fi
+          if [ -f release-publisher-state.env ]; then . ./release-publisher-state.env; fi
+          publisher_missing() {
+            channel="$1"; message="$2"
+            var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
+            state="${!var:-inactive-soft}"
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
+            echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
+            exit 0
+          }
+          if [ -z "${FLATHUB_TOKEN:-}" ]; then publisher_missing flathub 'FLATHUB_TOKEN unset'; fi
+          test -s "release/com.tartanoglu.modde.json" || publisher_missing flathub "missing release/com.tartanoglu.modde.json"
+          test -s "release/cargo-sources.json" || publisher_missing flathub "missing release/cargo-sources.json"
+          nix shell nixpkgs#curl nixpkgs#git nixpkgs#jq -c bash <<'SCRIPT'
+          set -euo pipefail
+          . ./release-env
+          credential_helper='!f() { echo username=x-access-token; echo "password=$FLATHUB_TOKEN"; }; f'
+          rm -rf flathub-repo; git -c credential.helper="$credential_helper" clone https://github.com/flathub/com.tartanoglu.modde.git flathub-repo
+          cd flathub-repo
+          git config credential.helper "$credential_helper"; git config user.email 'ci@localhost'; git config user.name 'release bot'
+          git checkout -B "release/${VERSION}"
+          cp ../release/com.tartanoglu.modde.json ../release/cargo-sources.json .
+          if [ -z "$(git status --porcelain -- com.tartanoglu.modde.json cargo-sources.json)" ]; then echo 'manifest unchanged'; exit 0; fi
+          git add com.tartanoglu.modde.json cargo-sources.json; git commit -m "${VERSION}"; git push --force-with-lease origin "release/${VERSION}"
+          payload="$(jq -n --arg title "${VERSION}" --arg head "release/${VERSION}" --arg base "master" --arg body "Update to ${VERSION}." '{title: $title, head: $head, base: $base, body: $body}')"
+          status="$(curl -sS -o pr.json -w '%{http_code}' -H "Authorization: Bearer ${FLATHUB_TOKEN}" -H 'Accept: application/vnd.github+json' -d "$payload" https://api.github.com/repos/flathub/com.tartanoglu.modde/pulls)"
+          if [ "$status" -eq 422 ]; then echo 'PR exists or rejected'; jq -r '.message' pr.json; exit 0; fi
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then cat pr.json; exit 1; fi
+          jq -r '.html_url' pr.json
+          SCRIPT
+      - name: Publish winget manifest PR
+        if: steps.republish.outputs.winget == 'true'
+        env:
+          WINGET_PAT: ${{ secrets.WINGET_PAT }}
+        run: |
+          set -euo pipefail
+          . ./release-env
+          if [ "$IS_PRERELEASE" = "true" ]; then echo "Prerelease ${VERSION}; skipping winget manifest update."; exit 0; fi
+          if [ -f release-publisher-state.env ]; then . ./release-publisher-state.env; fi
+          publisher_missing() {
+            channel="$1"; message="$2"
+            var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
+            state="${!var:-inactive-soft}"
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
+            echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
+            exit 0
+          }
+          if [ -z "${WINGET_PAT:-}" ]; then publisher_missing winget 'WINGET_PAT unset'; fi
+          ZIP_NAME="modde-${VERSION}-x86_64-windows.zip"; ZIP_URL="https://github.com/caniko/modde-rs/releases/download/${TAG}/${ZIP_NAME}"
+          test -s "release/${ZIP_NAME}" || publisher_missing winget "missing release/${ZIP_NAME}"
+          export ZIP_NAME ZIP_URL VERSION WINGET_PAT PUBLISH_WINGET_STATE
+          case "${PUBLISH_WINGET_STATE:-}" in active-required|inactive-soft) ;; *) echo "::error::winget: winget-pkgs probe was inconclusive (${PUBLISH_WINGET_STATE:-unset}); not guessing between a new version and a first submission." >&2; exit 1 ;; esac
+          nix shell nixpkgs#curl nixpkgs#jq -c bash <<'SCRIPT' || publisher_missing winget 'GitHub API submission failed'
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"; trap 'rm -rf "$tmpdir"' EXIT
+          ID='Caniko.Modde'; MANIFEST_DIR='manifests/c/Caniko/Modde'; state="${PUBLISH_WINGET_STATE:-}"
+          # yaml(): double-quoted YAML scalar; f KEY VALUE writes one field; hdr TYPE the schema header.
+          yaml() { local s="${1//\\/\\\\}"; printf '"%s"' "${s//\"/\\\"}"; }
+          f() { printf '%s: %s\n' "$1" "$(yaml "$2")"; }
+          # shellcheck disable=SC2016
+          hdr() { printf '# yaml-language-server: $schema=https://aka.ms/winget-manifest.%s.1.12.0.schema.json\n# Created with simit\n\n' "$1"; }
+          dir="$tmpdir/"'manifests/c/Caniko/Modde'"/$VERSION"; mkdir -p "$dir"
+          sha="$(sha256sum "release/${ZIP_NAME}" | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')"
+          { hdr version; f PackageIdentifier 'Caniko.Modde'; f PackageVersion "$VERSION"; echo 'DefaultLocale: en-US'; echo 'ManifestType: version'; echo 'ManifestVersion: 1.12.0'; } > "$dir"/'Caniko.Modde'.yaml
+          { hdr installer; f PackageIdentifier 'Caniko.Modde'; f PackageVersion "$VERSION"; echo 'InstallerType: zip'; echo 'NestedInstallerType: portable'; echo 'Installers:'; echo '- Architecture: x64'; echo '  NestedInstallerFiles:'; printf '%s\n' "  - RelativeFilePath: $(yaml 'modde.exe')" "    PortableCommandAlias: $(yaml 'modde')"; printf '%s\n' "  InstallerUrl: $(yaml "$ZIP_URL")" "  InstallerSha256: $sha"; echo 'ManifestType: installer'; echo 'ManifestVersion: 1.12.0'; } > "$dir"/'Caniko.Modde'.installer.yaml
+          { hdr defaultLocale; f PackageIdentifier 'Caniko.Modde'; f PackageVersion "$VERSION"; echo 'PackageLocale: en-US'; f Publisher 'Caniko'; f PublisherUrl 'https://github.com/caniko'; f PackageName 'Modde'; f PackageUrl 'https://github.com/caniko/modde-rs'; f License 'GPL-3.0'; f ShortDescription 'CLI interface for modde'; echo 'ManifestType: defaultLocale'; echo 'ManifestVersion: 1.12.0'; } > "$dir"/'Caniko.Modde'.locale.en-US.yaml
+          # Submit the manifests in "$dir" to microsoft/winget-pkgs through the GitHub
+          # REST API as the WINGET_PAT user. Needs curl and jq.
+          # Inputs: ID MANIFEST_DIR VERSION ZIP_URL WINGET_PAT, state (active-required when
+          # the package already exists upstream) and dir (the generated manifest files).
+          UP=microsoft/winget-pkgs
+          umask 077
+          # The token reaches curl through this 0600 header file, never through argv.
+          printf 'Authorization: Bearer %s\n' "$WINGET_PAT" > "$tmpdir/auth"
+          printf '{}' > "$tmpdir/empty.json"
+          code=; last=
+          # api METHOD PATH [BODYFILE]: body lands in $tmpdir/resp, status in $code, non-2xx returns 1.
+          api() {
+            local a=(-sS --retry 3 -o "$tmpdir/resp" -w '%{http_code}' -X "$1"
+              -H "@$tmpdir/auth" -H 'Accept: application/vnd.github+json'
+              -H 'X-GitHub-Api-Version: 2022-11-28' -H 'Content-Type: application/json')
+            [ -z "${3:-}" ] || a+=(--data-binary "@$3")
+            last="$1 $2"
+            code="$(curl "${a[@]}" "https://api.github.com$2")" || code=000
+            case "$code" in 2??) ;; *) return 1 ;; esac
+          }
+          fail() { echo "::error::winget: $last -> HTTP $code: $(jq -r '.message // empty' "$tmpdir/resp" 2>/dev/null)" >&2; exit 1; }
+          must() { api "$@" || fail; }
+          val() { jq -r "$1" "$tmpdir/resp"; }
+
+          # Nothing to do when this version is already upstream.
+          api GET "/repos/$UP/contents/$MANIFEST_DIR/$VERSION" || true
+          case "$code" in
+            200) echo "winget: $ID $VERSION is already published in $UP"; exit 0 ;;
+            404) ;;
+            *) fail ;;
+          esac
+          # New package or new version: the package directory decides.
+          if [ -z "$state" ]; then
+            api GET "/repos/$UP/contents/$MANIFEST_DIR" || true
+            case "$code" in 200) state=active-required ;; 404) state=inactive-soft ;; *) fail ;; esac
+          fi
+          if [ "$state" = active-required ]; then kind='New version'; else kind='New package'; fi
+          title="$kind: $ID version $VERSION"
+
+          must GET /user; login="$(val .login)"
+          must GET "/repos/$UP"; base="$(val .default_branch)"
+          branch="$(printf '%s-%s' "$ID" "$VERSION" | tr -c 'A-Za-z0-9._-' '-')"
+          # A PR that is still open is a success. When its head is this branch on the
+          # token user's own fork, the regenerated manifests are moved onto it below.
+          must GET "/repos/$UP/pulls?head=$login:$branch&state=open"
+          pr="$(val '.[0].html_url // empty')"
+          refresh=
+          if [ -n "$pr" ]; then
+            if jq -e --arg b "$branch" --arg f "${login,,}/winget-pkgs" \
+              '.[0] | .head.ref == $b and ((.head.repo.full_name // "") | ascii_downcase) == $f' "$tmpdir/resp" > /dev/null; then
+              refresh=1
+            else
+              echo "winget: PR already open: $pr"; exit 0
+            fi
+          fi
+
+          # POST /forks is idempotent; the fork can take a while to appear.
+          must POST "/repos/$UP/forks" "$tmpdir/empty.json"
+          fork="/repos/$login/winget-pkgs"
+          n=0
+          until api GET "$fork"; do
+            n=$((n + 1))
+            [ "$n" -lt 24 ] || { echo "::error::winget: fork $login/winget-pkgs did not appear within 2 minutes" >&2; exit 1; }
+            sleep 5
+          done
+
+          must GET "/repos/$UP/git/ref/heads/$base"; head="$(val .object.sha)"
+          must GET "/repos/$UP/git/commits/$head"; base_tree="$(val .tree.sha)"
+          # A lagging fork may not have the upstream commit yet; sync it first.
+          api GET "$fork/git/commits/$head" || {
+            jq -n --arg b "$base" '{branch: $b}' > "$tmpdir/b"
+            must POST "$fork/merge-upstream" "$tmpdir/b"
+          }
+
+          # One commit holding the three manifests: blobs -> tree on the upstream tree -> commit -> ref.
+          entries='[]'
+          for f in "$dir"/*.yaml; do
+            jq -n --rawfile c "$f" '{content: $c, encoding: "utf-8"}' > "$tmpdir/b"
+            must POST "$fork/git/blobs" "$tmpdir/b"
+            entries="$(jq -c --arg p "$MANIFEST_DIR/$VERSION/${f##*/}" --arg s "$(val .sha)" \
+              '. + [{path: $p, mode: "100644", type: "blob", sha: $s}]' <<<"$entries")"
+          done
+          if [ -n "$refresh" ]; then
+            # Identical blobs on the PR branch mean the PR already carries these manifests.
+            want="$(jq -cS 'map({(.path | split("/") | last): .sha}) | add' <<<"$entries")"
+            if api GET "$fork/contents/$MANIFEST_DIR/$VERSION?ref=$branch" \
+              && [ "$(jq -cS 'map({(.name): .sha}) | add' "$tmpdir/resp")" = "$want" ]; then
+              echo "winget: PR already open and up to date: $pr"; exit 0
+            fi
+          fi
+          jq -n --arg b "$base_tree" --argjson e "$entries" '{base_tree: $b, tree: $e}' > "$tmpdir/b"
+          must POST "$fork/git/trees" "$tmpdir/b"; tree="$(val .sha)"
+          jq -n --arg m "$title" --arg t "$tree" --arg p "$head" '{message: $m, tree: $t, parents: [$p]}' > "$tmpdir/b"
+          must POST "$fork/git/commits" "$tmpdir/b"; commit="$(val .sha)"
+          if [ -n "$refresh" ]; then
+            # Keep the PR: force-move its branch to the commit with the new manifests.
+            jq -n --arg s "$commit" '{sha: $s, force: true}' > "$tmpdir/b"
+            must PATCH "$fork/git/refs/heads/$branch" "$tmpdir/b"
+            echo "winget: refreshed $pr with the regenerated manifests"; exit 0
+          fi
+          jq -n --arg r "refs/heads/$branch" --arg s "$commit" '{ref: $r, sha: $s}' > "$tmpdir/b"
+          api POST "$fork/git/refs" "$tmpdir/b" || {
+            [ "$code" != 422 ] && fail
+            # The branch survives from an earlier run whose PR was closed: move it.
+            jq -n --arg s "$commit" '{sha: $s, force: true}' > "$tmpdir/b"
+            must PATCH "$fork/git/refs/heads/$branch" "$tmpdir/b"
+          }
+
+          jq -n --arg t "$title" --arg h "$login:$branch" --arg b "$base" \
+            --arg body "Automated submission of $ID $VERSION from $ZIP_URL, generated by simit." \
+            '{title: $t, head: $h, base: $b, body: $body, maintainer_can_modify: true}' > "$tmpdir/b"
+          must POST "/repos/$UP/pulls" "$tmpdir/b"
+          echo "winget: opened $(val .html_url)"
+          SCRIPT
+      - name: Publish Homebrew tap
+        if: steps.republish.outputs.homebrew == 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.homebrew_tap_token }}
+          HOMEBREW_TAP_URL: https://codeberg.org/caniko/homebrew-modde.git
+        run: |
+          set -euo pipefail
+          . ./release-env
+          if [ "$IS_PRERELEASE" = "true" ]; then echo "Prerelease ${VERSION}; skipping Homebrew tap update."; exit 0; fi
+          if [ -f release-publisher-state.env ]; then . ./release-publisher-state.env; fi
+          publisher_missing() {
+            channel="$1"; message="$2"
+            var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
+            state="${!var:-inactive-soft}"
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
+            echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
+            exit 0
+          }
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then publisher_missing homebrew 'HOMEBREW_TAP_TOKEN unset'; fi
+          test -s "release/modde-${VERSION}-aarch64-darwin.tar.gz" || publisher_missing homebrew "missing release/modde-${VERSION}-aarch64-darwin.tar.gz"
+          test -s "release/modde-${VERSION}-aarch64-linux.tar.gz" || publisher_missing homebrew "missing release/modde-${VERSION}-aarch64-linux.tar.gz"
+          test -s "release/modde-${VERSION}-x86_64-linux.tar.gz" || publisher_missing homebrew "missing release/modde-${VERSION}-x86_64-linux.tar.gz"
+          # Git expands the token when invoking this credential helper.
+          # shellcheck disable=SC2016
+          credential_helper='!f() { echo username=x-access-token; echo "password=$HOMEBREW_TAP_TOKEN"; }; f'
+          rm -rf tap; git -c credential.helper="$credential_helper" clone "$HOMEBREW_TAP_URL" tap
+          cd tap; git config credential.helper "$credential_helper"; git config user.email 'ci@localhost'; git config user.name 'release bot'
+          git remote set-head origin -a; DEFAULT_BRANCH="$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's|^origin/||')"; git checkout "$DEFAULT_BRANCH"; cd ..
+          nix run '.#harbor-rs' -- brew bump \
+            --name modde \
+            --version "$VERSION" \
+            --description 'Cross-platform game mod manager' \
+            --homepage 'https://modde.tartanoglu.com' \
+            --license GPL-3.0-only \
+            --archive "darwin_arm=https://github.com/caniko/modde-rs/releases/download/${TAG}/modde-${VERSION}-aarch64-darwin.tar.gz,release/modde-${VERSION}-aarch64-darwin.tar.gz" \
+            --archive "linux_arm=https://github.com/caniko/modde-rs/releases/download/${TAG}/modde-${VERSION}-aarch64-linux.tar.gz,release/modde-${VERSION}-aarch64-linux.tar.gz" \
+            --archive "linux_intel=https://github.com/caniko/modde-rs/releases/download/${TAG}/modde-${VERSION}-x86_64-linux.tar.gz,release/modde-${VERSION}-x86_64-linux.tar.gz" \
+            --binary modde \
+            --binary modde-ui \
+            --tap "$PWD/tap"
+          cd tap
+          if [ -z "$(git status --porcelain -- Formula/modde.rb)" ]; then echo 'tap unchanged'; exit 0; fi
+          git add Formula/modde.rb; git commit -m "modde ${VERSION}"; git push origin "HEAD:${DEFAULT_BRANCH}"
+      - name: Publish Scoop bucket
+        if: steps.republish.outputs.scoop == 'true'
+        env:
+          SCOOP_BUCKET_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          SCOOP_BUCKET_URL: https://github.com/caniko/scoop-modde.git
+        run: |
+          set -euo pipefail
+          . ./release-env
+          if [ "$IS_PRERELEASE" = "true" ]; then echo "Prerelease ${VERSION}; skipping Scoop bucket update."; exit 0; fi
+          if [ -z "${SCOOP_BUCKET_TOKEN:-}" ]; then echo 'SCOOP_BUCKET_TOKEN is required because Scoop bucket publishing is configured.' >&2; exit 1; fi
+          test -s "release/modde-${VERSION}-x86_64-windows.zip"
+          nix develop -c simit dist scoop bump --version "$VERSION" --bucket-url "$SCOOP_BUCKET_URL" --bucket-token-env SCOOP_BUCKET_TOKEN --work-dir scoop-bucket \
+            --archive "x64=release/modde-${VERSION}-x86_64-windows.zip" \
+            --push
+      - name: Prepare Chocolatey package
+        if: steps.republish.outputs.chocolatey == 'true'
+        id: chocolatey-source
+        run: |
+          set -euo pipefail
+          . ./release-env
+          if [ "$IS_PRERELEASE" = "true" ]; then echo "Prerelease ${VERSION}; skipping Chocolatey package preparation."; exit 0; fi
+          if [ -f release-publisher-state.env ]; then . ./release-publisher-state.env; fi
+          publisher_missing() {
+            channel="$1"; message="$2"
+            var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
+            state="${!var:-inactive-soft}"
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
+            echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
+            exit 0
+          }
+          ZIP="release/modde-${VERSION}-x86_64-windows.zip"; test -s "$ZIP" || publisher_missing chocolatey "missing $ZIP"
+          nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey -c simit dist chocolatey bump \
+            --version "$VERSION" \
+            --package-dir chocolatey-package \
+            --archive "x64=$ZIP" \
+            --choco-name 'modde' \
+            --choco-id 'modde' \
+            --choco-title 'modde' \
+            --choco-authors 'Can H. Tartanoglu' \
+            --choco-description 'Cross-platform game mod manager' \
+            --choco-project-url 'https://modde.tartanoglu.com' \
+            --choco-license-url 'https://raw.githubusercontent.com/caniko/modde-rs/trunk/LICENSE' \
+            --choco-download-repo 'caniko/modde-rs' \
+            --choco-archive-pattern 'modde-{version}-{arch}-windows.zip' \
+            --api-key-env CHOCOLATEY_API_KEY
+          printf 'prepared=true\n' >> "$GITHUB_OUTPUT"
+      - name: Restore exact Chocolatey candidate
+        if: steps.republish.outputs.chocolatey == 'true' && (steps.chocolatey-source.outputs.prepared == 'true')
+        id: chocolatey-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: chocolatey-package/.simit-candidates
+          key: chocolatey-${{ github.repository }}-refs/tags/${{ inputs.tag }}-${{ steps.validate.outputs.sha }}-${{ hashFiles('chocolatey-package/*.nuspec', 'chocolatey-package/tools/*.ps1') }}
+      - name: Pack Chocolatey candidate without publication credentials
+        if: steps.republish.outputs.chocolatey == 'true' && (steps.chocolatey-source.outputs.prepared == 'true')
+        run: |
+          set -euo pipefail
+          . ./release-env
+          ZIP="release/modde-${VERSION}-x86_64-windows.zip"
+          nix develop -c nix shell github:caniko/nixpkgs/add-chocolatey-scoop#chocolatey -c simit dist chocolatey bump \
+            --version "$VERSION" \
+            --package-dir chocolatey-package \
+            --archive "x64=$ZIP" \
+            --choco-name 'modde' \
+            --choco-id 'modde' \
+            --choco-title 'modde' \
+            --choco-authors 'Can H. Tartanoglu' \
+            --choco-description 'Cross-platform game mod manager' \
+            --choco-project-url 'https://modde.tartanoglu.com' \
+            --choco-license-url 'https://raw.githubusercontent.com/caniko/modde-rs/trunk/LICENSE' \
+            --choco-download-repo 'caniko/modde-rs' \
+            --choco-archive-pattern 'modde-{version}-{arch}-windows.zip' \
+            --pack --api-key-env CHOCOLATEY_API_KEY
+      - name: Persist Chocolatey candidate before publication
+        if: steps.republish.outputs.chocolatey == 'true' && (steps.chocolatey-source.outputs.prepared == 'true' && steps.chocolatey-cache.outputs.cache-hit != 'true')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: chocolatey-package/.simit-candidates
+          key: chocolatey-${{ github.repository }}-refs/tags/${{ inputs.tag }}-${{ steps.validate.outputs.sha }}-${{ hashFiles('chocolatey-package/*.nuspec', 'chocolatey-package/tools/*.ps1') }}
+      - name: Require persisted Chocolatey candidate
+        id: chocolatey-persisted
+        if: steps.republish.outputs.chocolatey == 'true' && (steps.chocolatey-source.outputs.prepared == 'true')
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: chocolatey-package/.simit-candidates
+          key: chocolatey-${{ github.repository }}-refs/tags/${{ inputs.tag }}-${{ steps.validate.outputs.sha }}-${{ hashFiles('chocolatey-package/*.nuspec', 'chocolatey-package/tools/*.ps1') }}
+          fail-on-cache-miss: true
+      - name: Publish Chocolatey package
+        if: steps.republish.outputs.chocolatey == 'true'
+        env:
+          CHOCO_CANDIDATE_CACHE_HIT: ${{ steps.chocolatey-persisted.outputs.cache-hit }}
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+          CHOCO_PUSH_SOURCE: https://push.chocolatey.org/
+        run: |
+          set -euo pipefail
+          . ./release-env
+          if [ "$IS_PRERELEASE" = "true" ]; then echo "Prerelease ${VERSION}; skipping Chocolatey package update."; exit 0; fi
+          if [ -f release-publisher-state.env ]; then . ./release-publisher-state.env; fi
+          publisher_missing() {
+            channel="$1"; message="$2"
+            var="PUBLISH_$(printf '%s' "$channel" | tr '[:lower:]-' '[:upper:]_')_STATE"
+            state="${!var:-inactive-soft}"
+            case "$state" in active-required|probe-failed) echo "::error::${channel}: ${message} (${state})" >&2; exit 1 ;; esac
             echo "::warning::${channel}: ${message}; staged publisher is not active yet." >&2
             exit 0
           }
