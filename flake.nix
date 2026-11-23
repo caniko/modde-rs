@@ -498,6 +498,10 @@
         aarch64LinuxTargetSuffix =
           lib.strings.replaceStrings ["-"] ["_"] aarch64LinuxTarget;
         pkgsAarch64Linux = pkgs.pkgsCross.aarch64-multiplatform;
+        armSmokeEnv = lib.optionalString (system == "x86_64-linux") ''
+          export MODDE_ARM_SMOKE_LOADER="${pkgsAarch64Linux.glibc}/lib/ld-linux-aarch64.so.1"
+          export MODDE_ARM_SMOKE_LIBS="${lib.makeLibraryPath (with pkgsAarch64Linux; [glibc stdenv.cc.cc.lib])}"
+        '';
         toolchainAarch64 = harbor-rs.lib.mkToolchain {
           pkgs = pkgsAarch64Linux;
           toolchainProfile = "nightly";
@@ -1827,10 +1831,7 @@
                 ];
               text = ''
                 repo="''${MODDE_SOURCE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-                ${lib.optionalString (system == "x86_64-linux") ''
-                  export MODDE_ARM_SMOKE_LOADER="${pkgsAarch64Linux.glibc}/lib/ld-linux-aarch64.so.1"
-                  export MODDE_ARM_SMOKE_LIBS="${lib.makeLibraryPath (with pkgsAarch64Linux; [glibc stdenv.cc.cc.lib])}"
-                ''}
+                ${armSmokeEnv}
                 exec "$repo/scripts/smoke/run-smoke.sh" "$@"
               '';
             };
@@ -2031,6 +2032,7 @@
                   exec nix develop "$repo" -c env MODDE_LOCAL_DEPLOY_IN_DEVSHELL=1 "$0" "$@"
                 fi
 
+                ${armSmokeEnv}
                 exec bash "$repo/scripts/local-release-deploy.sh" "$@"
               '';
             };
