@@ -2,8 +2,6 @@
 version = 2
 ignore = [
   { id = "RUSTSEC-2024-0436", reason = "transitive paste usage has no fixed upstream release available" },
-  { id = "RUSTSEC-2026-0194", reason = "remaining path is latest wayland-scanner build-time XML code generation; runtime FOMOD XML parsing is upgraded through patched fomod-oxide" },
-  { id = "RUSTSEC-2026-0195", reason = "remaining path is latest wayland-scanner build-time XML code generation; runtime FOMOD XML parsing is upgraded through patched fomod-oxide" },
 ]
 
 [licenses]
