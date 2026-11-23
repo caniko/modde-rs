@@ -11,13 +11,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: .github/workflows/ci.yaml-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: ${{ github.workflow_ref }}-${{ github.event_name }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.ref_type == 'tag' && github.ref || format('refs/heads/{0}', github.event.pull_request.head.ref || github.ref_name) }}
   cancel-in-progress: true
 
 jobs:
   test:
     needs: [changes]
-    if: ${{ needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     env:
       NIX_CONFIG: "experimental-features = nix-command flakes"
@@ -72,7 +72,7 @@ jobs:
 
   gate-generated-workflows:
     needs: [changes]
-    if: ${{ needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -103,7 +103,7 @@ jobs:
 
   gate-crate-compatibility:
     needs: [changes]
-    if: ${{ needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -134,7 +134,7 @@ jobs:
 
   gate-library-qualification:
     needs: [changes]
-    if: ${{ needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -165,7 +165,7 @@ jobs:
 
   gate-library-package-lifecycle:
     needs: [changes]
-    if: ${{ needs.changes.outputs.code == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -222,7 +222,7 @@ jobs:
             case "$1" in
               */*) return 1 ;;
               README.md) return 1 ;;
-              *.md) return 0 ;;
+              ?*.md) return 0 ;;
               *) return 1 ;;
             esac
           }
@@ -240,7 +240,7 @@ jobs:
             esac
           fi
           # A missing or unreachable base, or an empty diff, has nothing to classify.
-          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null && changed=$(git diff --name-only "$base" HEAD --) && [ -n "$changed" ]; then
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null && changed=$(git diff --no-renames --name-only "$base" HEAD --) && [ -n "$changed" ]; then
             code=false
             while IFS= read -r path; do
               classify "$path" || { code=true; break; }

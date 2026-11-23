@@ -2,7 +2,7 @@
   description = "modde — cross-platform game mod manager";
 
   inputs = {
-    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=3017b628b3a0603c2ebf7347a46951e8457ad414";
+    harbor-rs.url = "git+https://github.com/caniko/harbor-rs.git?ref=trunk&rev=fbb4f0c146cb70d1f4c7baf1837b2dd6f84c2c2d";
 
     nixpkgs.follows = "harbor-rs/nixpkgs";
     rust-overlay.follows = "harbor-rs/rust-overlay";
@@ -29,7 +29,7 @@
     # toolchain so the dev shell hits the closure simit's trunk prebuild
     # publishes to the canix Attic cache instead of compiling it.
     simit = {
-      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=e69226f64697964c5bb7ad659ac8dfb363c6e7ec";
+      url = "git+https://github.com/caniko/simit.git?ref=trunk&rev=ab17a86d2911875f056817790c5193ed36b77b7a";
       inputs.flake-utils.url = "github:numtide/flake-utils";
       inputs.plinth.follows = "plinth";
     };
@@ -72,6 +72,29 @@
     nix-opencode-lsp,
     ...
   }: let
+    linuxCargoRelease =
+      map ({
+        arch,
+        runner,
+      }: {
+        inherit runner;
+        id = "linux-${arch}";
+        target = "${arch}-unknown-linux-gnu";
+        toolchain = "1.99.0";
+        packages = ["modde" "modde-ui"];
+        binaries = ["modde" "modde-ui"];
+        archive = "modde-{version}-${arch}-linux.tar.gz";
+        setup = "sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config";
+      }) [
+        {
+          arch = "x86_64";
+          runner = "ubuntu-24.04";
+        }
+        {
+          arch = "aarch64";
+          runner = "ubuntu-24.04-arm";
+        }
+      ];
     mkOutputs = {
       # Public native outputs must not require a private Apple SDK pin. An
       # authorized cross-build caller supplies its SDK through lib.mkOutputs.
@@ -593,56 +616,32 @@
           then darwinCrossBuilderArm.buildPackage darwinArmArgs
           else mkDarwinUnavailable "modde-darwin-aarch64";
 
-        # Published Linux archives are built here (not in the release workflow)
-        # so the cargo-binstall metadata and the shipped files share one
-        # source. Names and flat archive layout stay as published before.
-        releaseArchives = {
-          x86_64-linux = harbor-rs.lib.mkReleaseArchive {
-            inherit pkgs;
-            pname = "modde";
-            version = moddeVersion;
-            name = "modde-${moddeVersion}-x86_64-linux.tar.gz";
-            package = modde;
-            system = "x86_64-linux";
-            kind = "binary-archive";
-            consumable = true;
-            entries = {
-              modde = {
-                source = "${modde}/bin/.modde-wrapped";
-                mode = "0755";
-              };
-              modde-ui = {
-                source = "${modde}/bin/.modde-ui-wrapped";
-                mode = "0755";
-              };
-            };
-          };
-          aarch64-linux = harbor-rs.lib.mkReleaseArchive {
-            inherit pkgs;
-            pname = "modde";
-            version = moddeVersion;
-            name = "modde-${moddeVersion}-aarch64-linux.tar.gz";
-            package = modde-aarch64-linux;
-            system = "aarch64-linux";
-            kind = "binary-archive";
-            consumable = true;
-            entries = {
-              modde = {
-                source = "${modde-aarch64-linux}/bin/modde";
-                mode = "0755";
-              };
-              modde-ui = {
-                source = "${modde-aarch64-linux}/bin/modde-ui";
-                mode = "0755";
-              };
-            };
-          };
-        };
-        releaseBundle = harbor-rs.lib.mkReleaseBundle {
-          inherit pkgs;
-          pname = "modde";
-          version = moddeVersion;
-          artifacts = releaseArchives;
+        # Check binstall against the same archive descriptions Simit uses,
+        # without creating Nix packages for the Ubuntu-built tarballs.
+        linuxBinstallContract = {
+          binstallArchives =
+            map ({
+              archive,
+              binaries,
+              target,
+              ...
+            }: {
+              inherit binaries;
+              name = lib.replaceStrings ["{version}"] [moddeVersion] archive;
+              system = lib.replaceStrings ["-unknown-linux-gnu"] ["-linux"] target;
+            })
+            linuxCargoRelease;
+          binstall.overrides = lib.listToAttrs (map ({
+            target,
+            archive,
+            ...
+          }:
+            lib.nameValuePair target {
+              pkg-url = "{ repo }/releases/download/{ version }/${lib.replaceStrings ["{version}"] ["{ version }"] archive}";
+              pkg-fmt = "tgz";
+              bin-dir = "{ bin }{ binary-ext }";
+            })
+          linuxCargoRelease);
         };
       in {
         packages =
@@ -775,13 +774,6 @@
             inherit modde-aarch64-linux;
             inherit modde-darwin-aarch64;
             inherit modde-windows;
-          }
-          // lib.optionalAttrs (system == "x86_64-linux") {
-            # simit's release job builds .#release-bundle; the per-target
-            # archives stay addressable for scoped rebuilds.
-            release-bundle = releaseBundle;
-            release-archive-x86_64-linux = releaseArchives.x86_64-linux;
-            release-archive-aarch64-linux = releaseArchives.aarch64-linux;
           };
 
         formatter = treefmtEval.config.build.wrapper;
@@ -1744,16 +1736,16 @@
             };
           };
           # Keeps crates/modde-cli/Cargo.toml's [package.metadata.binstall]
-          # identical to the archives the release bundle publishes.
+          # identical to the native archives the release workflow publishes.
           binstall-metadata = harbor-rs.lib.mkBinstallCheck {
             inherit pkgs;
-            bundle = releaseBundle;
+            bundle = linuxBinstallContract;
             cargoToml = ./crates/modde-cli/Cargo.toml;
           };
           # The Linux archives already ship modde-ui next to modde.
           binstall-metadata-modde-ui = harbor-rs.lib.mkBinstallCheck {
             inherit pkgs;
-            bundle = releaseBundle;
+            bundle = linuxBinstallContract;
             cargoToml = ./crates/modde-ui/Cargo.toml;
           };
         };
@@ -1826,6 +1818,7 @@
                   unzip
                 ]
                 ++ lib.optionals stdenv.hostPlatform.isLinux [
+                  binutils
                   debootstrap
                   dnf5
                   flatpak
@@ -1834,6 +1827,10 @@
                 ];
               text = ''
                 repo="''${MODDE_SOURCE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+                ${lib.optionalString (system == "x86_64-linux") ''
+                  export MODDE_ARM_SMOKE_LOADER="${pkgsAarch64Linux.glibc}/lib/ld-linux-aarch64.so.1"
+                  export MODDE_ARM_SMOKE_LIBS="${lib.makeLibraryPath (with pkgsAarch64Linux; [glibc stdenv.cc.cc.lib])}"
+                ''}
                 exec "$repo/scripts/smoke/run-smoke.sh" "$@"
               '';
             };
@@ -1984,6 +1981,7 @@
               name = "local-release-deploy";
               runtimeInputs = with pkgs;
                 [
+                  binutils
                   appstream
                   cargo-about
                   cargo-cyclonedx
@@ -2234,9 +2232,8 @@
         };
         release.artifacts = {
           version_attr = "modde";
-          # Linux tar.gz archives come from packages.release-bundle so the
-          # cargo-binstall metadata and the published files cannot drift.
-          prebuild_binaries = true;
+          runner = "ubuntu-24.04";
+          cargo = linuxCargoRelease;
           substituters = ["https://attic.candee.baby/canix" "https://cache.nixos.org"];
           trusted_public_keys = ["canix:lPzPzKrmYqW5Rxa5r0uQWvCqD3S5nx0h2eCy7XD5JM8=" "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="];
           supply_chain_command = "nix shell nixpkgs#cargo nixpkgs#rustc nixpkgs#cargo-deny -c cargo deny check -W unmaintained advisories bans sources licenses";
@@ -2254,25 +2251,6 @@
           ];
           build_commands = [
             ''
-              copy_nix_binary() {
-                result_dir="$1"; binary="$2"; destination="$3"
-                if [ -f "''${result_dir}/bin/.''${binary}-wrapped" ]; then cp "''${result_dir}/bin/.''${binary}-wrapped" "$destination"; else cp "''${result_dir}/bin/''${binary}" "$destination"; fi
-              }
-
-              nix build .#modde --out-link target/modde-release/root-artifacts/linux-result
-              mkdir -p target/modde-release/root-artifacts/release/linux-x86_64
-              copy_nix_binary target/modde-release/root-artifacts/linux-result modde target/modde-release/root-artifacts/release/linux-x86_64/modde
-              copy_nix_binary target/modde-release/root-artifacts/linux-result modde-ui target/modde-release/root-artifacts/release/linux-x86_64/modde-ui
-              cp target/modde-release/root-artifacts/release/linux-x86_64/modde "target/modde-release/root-artifacts/release/modde-''${VERSION}-x86_64-linux"
-              cp target/modde-release/root-artifacts/release/linux-x86_64/modde-ui "target/modde-release/root-artifacts/release/modde-ui-''${VERSION}-x86_64-linux"
-
-              nix build .#modde-aarch64-linux --out-link target/modde-release/root-artifacts/aarch64-linux-result
-              mkdir -p target/modde-release/root-artifacts/release/linux-aarch64
-              copy_nix_binary target/modde-release/root-artifacts/aarch64-linux-result modde target/modde-release/root-artifacts/release/linux-aarch64/modde
-              copy_nix_binary target/modde-release/root-artifacts/aarch64-linux-result modde-ui target/modde-release/root-artifacts/release/linux-aarch64/modde-ui
-              cp target/modde-release/root-artifacts/release/linux-aarch64/modde "target/modde-release/root-artifacts/release/modde-''${VERSION}-aarch64-linux"
-              cp target/modde-release/root-artifacts/release/linux-aarch64/modde-ui "target/modde-release/root-artifacts/release/modde-ui-''${VERSION}-aarch64-linux"
-
               nix build .#modde-windows --out-link target/modde-release/root-artifacts/windows-result
               mkdir -p target/modde-release/root-artifacts/release/windows-x86_64
               cp target/modde-release/root-artifacts/windows-result/bin/modde.exe target/modde-release/root-artifacts/windows-result/bin/modde-ui.exe target/modde-release/root-artifacts/release/windows-x86_64/
@@ -2307,7 +2285,7 @@
           url = "https://attic.candee.baby";
           token_name = "modde-rs";
           token_secret = "ATTIC_TOKEN";
-          result_links = ["target/modde-release/root-artifacts/linux-result" "target/modde-release/root-artifacts/aarch64-linux-result" "target/modde-release/root-artifacts/windows-result" "target/modde-release/root-artifacts/appimage-ui-result" "target/modde-release/root-artifacts/appimage-cli-result" "target/modde-release/root-artifacts/flatpak-result"];
+          result_links = ["target/modde-release/root-artifacts/windows-result" "target/modde-release/root-artifacts/appimage-ui-result" "target/modde-release/root-artifacts/appimage-cli-result" "target/modde-release/root-artifacts/flatpak-result"];
         };
         release.announce = {};
         release.windows_signing = {
@@ -2356,7 +2334,7 @@
         scoop = {
           name = "modde";
           bucket_url = "https://github.com/caniko/scoop-modde.git";
-          bucket_token_secret = "CODEBERG_TOKEN";
+          bucket_token_secret = "SCOOP_BUCKET_TOKEN";
           download_repo = "caniko/modde-rs";
           description = "Cross-platform game mod manager";
           homepage = "https://modde.tartanoglu.com";
@@ -2373,7 +2351,7 @@
           maintainer_gpg = "818D507F1E62139F8A17EAA64623DEA06FDACFE1";
           depends = ["dbus" "gcc-libs" "glibc" "libxkbcommon" "openssl" "sqlite" "vulkan-icd-loader" "wayland"];
           makedepends = ["cargo" "cmake" "pkgconf" "rust"];
-          bin_glibc_min = "2.38";
+          bin_glibc_min = "2.39";
           binaries = ["modde" "modde-ui"];
           assets = [
             {

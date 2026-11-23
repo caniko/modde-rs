@@ -3791,7 +3791,7 @@ dependencies = [
 
 [[package]]
 name = "modde"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -3831,7 +3831,7 @@ dependencies = [
 
 [[package]]
 name = "modde-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3869,7 +3869,7 @@ dependencies = [
 
 [[package]]
 name = "modde-games"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -3898,7 +3898,7 @@ dependencies = [
 
 [[package]]
 name = "modde-manager"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3913,7 +3913,7 @@ dependencies = [
 
 [[package]]
 name = "modde-oracle"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3931,7 +3931,7 @@ dependencies = [
 
 [[package]]
 name = "modde-oracle-api"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3940,7 +3940,7 @@ dependencies = [
 
 [[package]]
 name = "modde-sources"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "aes",
  "anyhow",
@@ -3978,7 +3978,7 @@ dependencies = [
 
 [[package]]
 name = "modde-ui"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "fomod-oxide",
@@ -4004,7 +4004,7 @@ dependencies = [
 
 [[package]]
 name = "modde-xtask"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "clap",

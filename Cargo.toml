@@ -14,7 +14,7 @@ members = [
 exclude = ["vendor/cryoglyph"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 rust-version = "1.94"
 license = "GPL-3.0"
@@ -176,11 +176,11 @@ clap_complete = "4.6.11"
 fomod-oxide = { version = "0.1.0", features = ["json"] }
 
 # Workspace crates
-modde-core = { version = "0.7.0", path = "crates/modde-core", default-features = false }
-modde-sources = { version = "0.7.0", path = "crates/modde-sources", default-features = false }
-modde-games = { version = "0.7.0", path = "crates/modde-games", default-features = false }
-modde-ui = { version = "0.7.0", path = "crates/modde-ui", default-features = false }
-modde-oracle-api = { version = "0.7.0", path = "crates/modde-oracle-api" }
+modde-core = { version = "0.8.0", path = "crates/modde-core", default-features = false }
+modde-sources = { version = "0.8.0", path = "crates/modde-sources", default-features = false }
+modde-games = { version = "0.8.0", path = "crates/modde-games", default-features = false }
+modde-ui = { version = "0.8.0", path = "crates/modde-ui", default-features = false }
+modde-oracle-api = { version = "0.8.0", path = "crates/modde-oracle-api" }
 nix-manager-core = { git = "https://github.com/caniko/nix-manager-core.git", branch = "trunk" }
 
 [workspace.lints.clippy]
