@@ -5,10 +5,9 @@ pkgbase = modde-bin
 	url = https://github.com/caniko/modde-rs
 	arch = x86_64
 	license = GPL-3.0-only
-	makedepends = patchelf
 	depends = dbus
 	depends = gcc-libs
-	depends = glibc>=2.38
+	depends = glibc>=2.39
 	depends = libxkbcommon
 	depends = openssl
 	depends = sqlite

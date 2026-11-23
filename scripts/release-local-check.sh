@@ -73,8 +73,8 @@ check_workflow_contract() {
     ok "workflow uses Simit for APT publication" ||
     missing+=("workflow:Simit APT publisher")
 
-  grep -F 'nix develop -c simit dist scoop bump --version "$VERSION"' .forgejo/workflows/release.yml >/dev/null &&
-    grep -F 'SCOOP_BUCKET_TOKEN: ${{ secrets.CODEBERG_TOKEN }}' .forgejo/workflows/release.yml >/dev/null &&
+  grep -F 'nix develop -c simit dist scoop bump --version "$VERSION"' .github/workflows/release.yml >/dev/null &&
+    grep -F 'SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}' .github/workflows/release.yml >/dev/null &&
     ok "workflow uses Simit for Scoop publication" ||
     missing+=("workflow:Simit Scoop publisher")
 

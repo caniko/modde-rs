@@ -155,32 +155,6 @@ build_release_artifacts() {
     fi
   }
 
-  if ! have_artifact "$release_dir/modde-${version}-x86_64-linux.tar.gz"; then
-    nix build .#modde --out-link "$work_dir/linux-result"
-    mkdir -p "$release_dir/linux-x86_64"
-    copy_nix_binary "$work_dir/linux-result" modde "$release_dir/linux-x86_64/modde"
-    copy_nix_binary "$work_dir/linux-result" modde-ui "$release_dir/linux-x86_64/modde-ui"
-    tar czf "$release_dir/modde-${version}-x86_64-linux.tar.gz" -C "$release_dir/linux-x86_64" modde modde-ui
-    cp "$release_dir/linux-x86_64/modde" "$release_dir/modde-${version}-x86_64-linux"
-    cp "$release_dir/linux-x86_64/modde-ui" "$release_dir/modde-ui-${version}-x86_64-linux"
-  else
-    printf 'already-current: x86_64 Linux artifacts exist\n'
-  fi
-
-  if [ "${MODDE_LOCAL_DEPLOY_SKIP_AARCH64:-0}" = "1" ]; then
-    record_skipped "aarch64 Linux artifact build skipped by MODDE_LOCAL_DEPLOY_SKIP_AARCH64=1"
-  elif ! have_artifact "$release_dir/modde-${version}-aarch64-linux.tar.gz"; then
-    nix build .#modde-aarch64-linux --out-link "$work_dir/aarch64-linux-result"
-    mkdir -p "$release_dir/linux-aarch64"
-    copy_nix_binary "$work_dir/aarch64-linux-result" modde "$release_dir/linux-aarch64/modde"
-    copy_nix_binary "$work_dir/aarch64-linux-result" modde-ui "$release_dir/linux-aarch64/modde-ui"
-    tar czf "$release_dir/modde-${version}-aarch64-linux.tar.gz" -C "$release_dir/linux-aarch64" modde modde-ui
-    cp "$release_dir/linux-aarch64/modde" "$release_dir/modde-${version}-aarch64-linux"
-    cp "$release_dir/linux-aarch64/modde-ui" "$release_dir/modde-ui-${version}-aarch64-linux"
-  else
-    printf 'already-current: aarch64 Linux artifacts exist\n'
-  fi
-
   if ! have_artifact "$release_dir/modde-${version}-x86_64-windows.zip"; then
     nix build .#modde-windows --out-link "$work_dir/windows-result"
     mkdir -p "$release_dir/windows-x86_64"
@@ -648,6 +622,9 @@ print_summary() {
   printf '  - macOS artifacts are ad-hoc signed and not notarized\n'
 }
 
+# The release jobs produce these on Ubuntu. Never replace a missing archive
+# with a Nix-built binary when deploying the other release artifacts locally.
+MODDE_LINUX_SMOKE_ELF_ONLY=1 bash "$repo/scripts/smoke/smoke-linux-tarball.sh" "$version" "$release_dir"
 if [ "${SIMIT_LOCAL_RELEASE_CHECK_DONE:-0}" != "1" ]; then
   nix run "$repo#local-check-release" -- "$version"
 fi

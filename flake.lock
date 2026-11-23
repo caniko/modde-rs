@@ -1888,11 +1888,11 @@
         "treefmt-nix": "treefmt-nix_2"
       },
       "locked": {
-        "lastModified": 1792683091,
-        "narHash": "sha256-Mo/NI0d+HF9ioM8g7C1nLHxvuLdqPhc24XZOFHF4Zc0=",
+        "lastModified": 1795247143,
+        "narHash": "sha256-3kcRO1PEkbHhjutfjvnhldSRhsk0sI3eH2NcVqag94Q=",
         "ref": "trunk",
-        "rev": "0fd1008ef63d031d44d54431f04615c3098a56ed",
-        "revCount": 53,
+        "rev": "0d98f0972a2172663c33ef2cf4096c68cac1a8f0",
+        "revCount": 73,
         "type": "git",
         "url": "https://github.com/caniko/harbor-meta.git"
       },
@@ -2045,17 +2045,17 @@
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
-        "lastModified": 1795023111,
-        "narHash": "sha256-uqq2XtSqKk3mhvC0fGli2tCqxcfGAroVIL6Era+6TXc=",
+        "lastModified": 1795285066,
+        "narHash": "sha256-xqpdLHbOGJioI8itLtdNkt/KIxe15Pvop0FCtuZcH6Y=",
         "ref": "trunk",
-        "rev": "3017b628b3a0603c2ebf7347a46951e8457ad414",
-        "revCount": 361,
+        "rev": "fbb4f0c146cb70d1f4c7baf1837b2dd6f84c2c2d",
+        "revCount": 368,
         "type": "git",
         "url": "https://github.com/caniko/harbor-rs.git"
       },
       "original": {
         "ref": "trunk",
-        "rev": "3017b628b3a0603c2ebf7347a46951e8457ad414",
+        "rev": "fbb4f0c146cb70d1f4c7baf1837b2dd6f84c2c2d",
         "type": "git",
         "url": "https://github.com/caniko/harbor-rs.git"
       }
@@ -4108,17 +4108,17 @@
         "treefmt-nix": "treefmt-nix_7"
       },
       "locked": {
-        "lastModified": 1794759748,
-        "narHash": "sha256-DBIQrSguTlYZzhjK0g7689XSsRmoH81ooxdvfJLx3dA=",
+        "lastModified": 1795373233,
+        "narHash": "sha256-Bn5BolDELLDt+PHVbs5EvooVP3mkKqAO4AdP9NPK4DM=",
         "ref": "trunk",
-        "rev": "e69226f64697964c5bb7ad659ac8dfb363c6e7ec",
-        "revCount": 1149,
+        "rev": "ab17a86d2911875f056817790c5193ed36b77b7a",
+        "revCount": 1189,
         "type": "git",
         "url": "https://github.com/caniko/simit.git"
       },
       "original": {
         "ref": "trunk",
-        "rev": "e69226f64697964c5bb7ad659ac8dfb363c6e7ec",
+        "rev": "ab17a86d2911875f056817790c5193ed36b77b7a",
         "type": "git",
         "url": "https://github.com/caniko/simit.git"
       }

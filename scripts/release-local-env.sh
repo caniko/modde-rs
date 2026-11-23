@@ -90,10 +90,6 @@ load_canix_release_inputs() {
     APT_REPO_GPG_KEY_ID="$MODDE_APT_REPO_GPG_KEY_ID"
     export APT_REPO_GPG_KEY_ID
   fi
-  if ! has_env SCOOP_BUCKET_TOKEN && has_env CODEBERG_TOKEN; then
-    SCOOP_BUCKET_TOKEN="$CODEBERG_TOKEN"
-    export SCOOP_BUCKET_TOKEN
-  fi
 }
 
 optional_env() {

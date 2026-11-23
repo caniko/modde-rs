@@ -50,7 +50,7 @@ yay -S modde       # build the tagged release from source
 yay -S modde-git   # track the development branch
 ```
 
-`modde-bin` depends on `glibc >= 2.38` (satisfied by current Arch systems). All three
+`modde-bin` depends on `glibc >= 2.39` (satisfied by current Arch systems). All three
 provide the `modde` and `modde-ui` binaries and conflict with one another. Release
 tags are signed by the maintainer GPG key
 `818D507F1E62139F8A17EAA64623DEA06FDACFE1`, also exported in
@@ -122,6 +122,11 @@ and extract it:
 tar xzf modde-<version>-x86_64-linux.tar.gz   # or aarch64-linux
 ./modde --help
 ```
+
+The tarballs contain both `modde` and `modde-ui`. They target Ubuntu 24.04
+(glibc 2.39) and compatible distributions without needing Nix. For the GUI,
+install your distribution's Wayland or X11 runtime libraries, `libxkbcommon`,
+and Vulkan loader and driver.
 
 Verify the download first — see [Verifying releases](#verifying-releases).
 

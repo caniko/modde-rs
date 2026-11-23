@@ -7,14 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-22
+
 ### Added
 
-- **Release packaging**: Publish the Linux `tar.gz` archives from
-  `packages.release-bundle` instead of `tar` in the release workflow, and
-  append the bundle's generated `[package.metadata.binstall]` overrides to the
-  `modde` crate so `cargo binstall modde` fetches the release archives. Track
-  harbor-rs `6055d7d…` and declare the formatter and opencode LSP inputs it no
-  longer re-exports.
+- **Release packaging**: Build the x86-64 and arm64 Linux tarballs on native
+  Ubuntu 24.04 runners. Both tarballs contain `modde` and `modde-ui` at the
+  archive root and work without Nix. `cargo binstall modde` and
+  `cargo binstall modde-ui` use the same archives.
 - **Site builds**: Consume qualified Plinth `6f17df0…` through the existing
   Visual Rubric input path, including its private build-scoped compiler-cache
   fallback for hosted Pages builds. Retain the selected Visual Rubric source.
@@ -595,7 +595,8 @@ profiles`, `tool sources` — all read-only, all with `--json`.
 - **Diagnostics**: Form 43 detection, missing master detection, shadowed mod detection, load order validation
 - **Nix**: Flake with binary, docs, and website outputs; home-manager module for declarative configuration
 
-[Unreleased]: https://github.com/caniko/modde-rs/compare/0.7.0...HEAD
+[Unreleased]: https://github.com/caniko/modde-rs/compare/0.8.0...HEAD
+[0.8.0]: https://github.com/caniko/modde-rs/compare/0.7.0...0.8.0
 [0.7.0]: https://github.com/caniko/modde-rs/compare/0.6.0...0.7.0
 [0.6.0]: https://github.com/caniko/modde-rs/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/caniko/modde-rs/compare/0.4.0...0.5.0
