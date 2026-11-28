@@ -1,18 +1,16 @@
 # Fallout 76
 
-Fallout 76 (`game_id` = `fallout76`) is one of the five Bethesda Creation
-Engine titles modde ships with. It shares the Bethesda deploy strategy, archive
-format, and INI machinery with Skyrim SE/AE, Fallout 4, and Starfield, but it is
-the odd one out: it is an **always-online** game whose saves live on Bethesda's
-servers, and whose loose-archive mods are activated through an INI line rather
-than a local `plugins.txt`. Because of that, modde marks the title **`Partial`**
-overall, with **`Partial` save tracking** in particular.
+Fallout 76 (`game_id` = `fallout76`) is one of modde's five Bethesda Creation
+Engine titles. It shares deployment, archive format, and INI handling with
+Skyrim SE/AE, Fallout 4, and Starfield. Unlike those games, it is **always-online**:
+Bethesda stores saves on its servers, and an INI line activates loose-archive
+mods instead of a local `plugins.txt`. Overall support is **`Partial`**, with
+**`Partial` save tracking**.
 
-> Honest status: deployment, BA2 scanning, conflict classification, and launcher
-> integration are real and working. What is *not* fully solved is save tracking
-> (saves are server-side; only a local cache is visible) and load-order parity
-> with single-player Bethesda games (Fallout 76 has no LOOT masterlist
-> equivalent). See [Supported games](supported-games.md) and the
+> Deployment, BA2 scanning, conflict classification, and launcher integration
+> work. modde can see only the local save cache, and without a LOOT masterlist
+> equivalent, Fallout 76 lacks load-order parity with single-player Bethesda
+> games. See [Supported games](supported-games.md) and the
 > [parity reference](../reference/parity.md) for the canonical status baseline.
 
 ## Engine and overall status
@@ -39,8 +37,7 @@ record.
 
 ## How modde detects the install
 
-modde locates Fallout 76 the same way it finds every other Bethesda title: by
-its launcher IDs. The registration carries:
+As with other Bethesda titles, modde finds Fallout 76 by its launcher IDs:
 
 - `steam_app_id = "1151340"`
 - `steam_dir = "Fallout76"` (the folder under `steamapps/common/`)
@@ -69,11 +66,10 @@ root:
 ~/.local/share/Steam/steamapps/common/Fallout76/Data/
 ```
 
-`mod_directory()` for the Bethesda plugin returns `install.join("Data")`, so
-modde deploys mod files into `Data/` through its virtual-filesystem symlink
-farm — the same overlay mechanism used for every game. Your real `Data/`
-directory stays clean; modde links the active profile's files in and removes
-them on profile switch or undeploy. See the
+The Bethesda plugin's `mod_directory()` returns `install.join("Data")`.
+As for every game, modde uses a virtual-filesystem symlink farm: it links the
+active profile's files into `Data/` and removes the links on profile switch or
+undeploy, leaving the real `Data/` clean. See the
 [Deployment & VFS guide](../guides/deployment.md) for how the overlay is built
 and torn down.
 
@@ -103,11 +99,11 @@ The Fallout 76 scanner (`FALLOUT76_SCANNER`):
   modde detect stale duplicates and reconcile a scanned archive against a
   managed mod.
 
-In short: scanning Fallout 76 returns the loose `.ba2` mods you have dropped in
-`Data/`, excluding Bethesda's own `SeventySix*.ba2` archives. Unlike Skyrim or
-Fallout 4, it does **not** pair plugins with companion archives or read enabled
-state from a load-order file, because Fallout 76 mods are activated through the
-INI rather than a plugin list. See the
+The scan returns loose `.ba2` mods in `Data/` except Bethesda's `SeventySix*.ba2`
+archives. Unlike Skyrim or Fallout 4, it **does not** pair plugins with
+companion archives or read enabled state from a load-order file: the INI
+activates mods instead.
+See the
 [Scanning guide](../guides/scanning.md) for the general scan workflow.
 
 ## Conflict classification
@@ -123,11 +119,10 @@ extension:
 | Config | `ini`, `cfg`, `json`, `toml`, `xml` |
 | Cosmetic | `dds`, `png`, `tga`, `jpg`, `nif`, `hkx`, `fuz`, `wav`, `xwm`, `swf`, `btr`, `bto`, `btt`, `bsa`, `ba2` |
 
-So two mods that both overwrite a texture inside their `.ba2` archives produce a
-`Cosmetic` collision (last-deployed wins, cosmetically), whereas two mods that
-ship the same script or plugin produce a `Dangerous` collision worth your
-attention. The classifier reads *inside* archives, so it can flag conflicts
-between the contents of two `.ba2` files, not just same-named archives.
+Two mods overwriting a texture inside their `.ba2` archives produce a `Cosmetic`
+collision (last deployed wins). If both mods ship the same script or plugin, the
+collision is `Dangerous` and warrants review. The classifier compares contents
+across `.ba2` files, not just archive names.
 
 > Caveat for Fallout 76 specifically: Bethesda actively detects and bans
 > certain client modifications in the online game. modde's conflict severity is
@@ -140,12 +135,9 @@ severities surface and how overwrite order is resolved.
 
 ## Save tracking
 
-This is where Fallout 76 differs most from its single-player siblings, and why
-its save tracking is **`Partial`**.
-
-Fallout 76 is an online game: **the authoritative save is on Bethesda's
-servers.** The local `.sav`/`.ess`-style files in the Proton prefix are at best a
-partial cache, not your real character. modde represents this honestly:
+Save tracking is **`Partial`** because **Bethesda's servers hold the
+authoritative save.** Local `.sav`/`.ess`-style files in the Proton prefix are
+at best a partial cache, not an authoritative copy of your character.
 
 - The Fallout 76 save tracker uses the magic header `FO76_SAVEGAME` to identify
   local Bethesda save files (the same binary header family as Skyrim's
@@ -234,10 +226,10 @@ guide](../guides/tools.md) for how tools attach to a profile and the
 
 ## Linux and Proton notes / known gotchas
 
-The prefix-specific points here describe the game's runtime on Linux and macOS,
-where Fallout 76 runs through Proton/Wine. On Windows the game runs natively, so
-there is no Wine prefix and the local cache and INI files live at their native
-Windows locations. modde itself runs natively on all three platforms.
+The prefix-specific notes below apply on Linux and macOS, where Fallout 76 runs
+through Proton/Wine. On Windows it runs natively, with no Wine prefix: the local
+cache and INI files use native Windows paths. modde runs natively on all three
+platforms.
 
 - **Always-online; saves are server-side.** This is the single biggest gotcha.
   modde can snapshot the local cache but cannot version your real character.

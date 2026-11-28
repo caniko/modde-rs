@@ -3,23 +3,22 @@
 ## Overview
 
 [FOMOD](https://wiki.nexusmods.com/index.php/FOMOD) is the most common scripted
-installer format on Nexus. Instead of shipping a flat archive that drops into the
-game's mod directory, a FOMOD mod ships an XML script that asks the user
-questions — texture resolution, body type, compatibility patches, which optional
-plugins to enable — and copies a different set of files depending on the answers.
+installer format on Nexus. Instead of a flat archive that drops into the game's
+mod directory, a FOMOD ships an XML script that copies files based on your
+choices: texture resolution, body type, compatibility patches, and optional
+plugins.
 
 modde supports FOMOD two ways:
 
 - **Interactively**, via a step-by-step wizard in the GUI.
 - **Declaratively**, via a config file you can generate, edit, version, and
-  replay non-interactively. This is what makes FOMOD installs reproducible and
-  what lets a Home Manager profile pin a known-good set of answers.
+  replay non-interactively. The file makes installs reproducible and lets a
+  Home Manager profile pin known-good answers.
 
-Detection is automatic: during analysis modde looks for `fomod/ModuleConfig.xml`
-inside the extracted archive and classifies the mod as
-[`InstallMethod::Fomod`](mod-installation.md). FOMOD detection runs *after* a
-game plugin's own probe, so a game that recognizes a layout authoritatively (for
-example Cyberpunk's REDmod) still wins over a stray `fomod/` directory.
+During analysis, modde looks for `fomod/ModuleConfig.xml` in the extracted
+archive and classifies a match as [`InstallMethod::Fomod`](mod-installation.md).
+The game plugin probes first, so an authoritative game-plugin match, such as
+Cyberpunk's REDmod, takes precedence over a stray `fomod/` directory.
 
 ## The FOMOD format
 
@@ -61,13 +60,12 @@ modde locates `ModuleConfig.xml` case-insensitively, so archives that ship
 
 ### Flags and conditions
 
-FOMOD is stateful. Selecting an option can set a named **flag** to a value, and
-later steps, groups, plugin type descriptors, or a final
-**conditional file installs** block can read those flags to decide what to show
-or what to copy. This is how a FOMOD says "if the user picked the 2K texture
-option in step 1, also install this 2K-only patch at the end." modde's installer
-applies your declarative selections, lets the underlying engine resolve every
-flag and condition, and only then computes the concrete file operations.
+Selecting an option can set a named **flag** to a value. Later steps, groups,
+plugin type descriptors, or a final **conditional file installs** block can read
+those flags to decide what to show or copy. For example, choosing 2K textures in
+step 1 can install a 2K-only patch at the end. modde applies your declarative
+selections, waits for the engine to resolve all flags and conditions, then
+computes the file operations.
 
 ## Interactive installation
 
@@ -132,10 +130,9 @@ selected files into a destination directory, without touching any profile:
 modde fomod apply /path/to/mod --config my-choices.toml --dest /path/to/output
 ```
 
-This is the low-level primitive — useful for scripting, testing your answers, or
-inspecting exactly which files a given set of choices produces. It prints the
-number of file operations and the destination. The config may be TOML or JSON;
-modde parses TOML when the path ends in `.toml` and JSON otherwise.
+Use this command in scripts or to test choices and inspect the resulting files.
+It prints the file operation count and destination. modde parses TOML when the
+config path ends in `.toml` and JSON otherwise.
 
 ### During mod installation
 
@@ -148,11 +145,10 @@ modde install mod https://nexusmods.com/skyrimspecialedition/mods/12345 \
   --fomod-config my-choices.toml
 ```
 
-modde downloads and extracts the mod, detects the FOMOD, applies your config in
-place of the wizard, and records the result in the profile. Because the config is
-stored with the profile, the install is reproducible: the same archive plus the
-same config always stages the same files. This is the path to use from Home
-Manager or any non-interactive automation.
+modde downloads and extracts the mod, detects the FOMOD, and applies your config
+instead of opening the wizard. It records the result and config in the profile:
+the same archive and config always stage the same files. Use this path from
+Home Manager or other non-interactive automation.
 
 ## Inspecting FOMOD structure
 

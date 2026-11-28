@@ -1,7 +1,5 @@
 # Contributing to modde
 
-Thank you for your interest in contributing to modde!
-
 ## Getting Started
 
 ### Prerequisites
@@ -50,9 +48,8 @@ RUST_LOG=modde_ui=trace,modde_core=debug cargo xtask gui
 
 ### Nix shells
 
-The default shell (what `nix develop` and direnv load) holds application
-development only: build, run, test, lint, debug. Website and release
-tooling are separate shells you activate explicitly:
+The default shell (`nix develop` or direnv) only covers application development:
+build, run, test, lint, and debug. Activate website and release shells explicitly:
 
 | Shell | Activate | Contains |
 | ----- | -------- | -------- |
@@ -60,8 +57,8 @@ tooling are separate shells you activate explicitly:
 | docs | `nix develop .#docs` | Default docs tooling plus `plinth-project` (Dioxus site generator), `visual-rubric`, mdBook — for `just website-serve` / `just website-audit` |
 | release | `nix develop .#release` | Default dev packages plus packaging/signing/VM tools (cargo-deb, RPM/COPR, Flatpak, cosign/minisign, QEMU, Wine) — for `scripts/release-local-check.sh` |
 
-Plinth is a project dependency (website outputs, Pages deployment), but it
-never belongs in the default shell: modde itself is Iced-only.
+Plinth is a project dependency for website outputs and Pages deployment. Keep it
+out of the default shell: modde itself uses only Iced.
 
 ### Project Structure
 
@@ -102,8 +99,7 @@ See `crates/modde-games/src/cyberpunk/` for a complete example.
 
 ### Where things are
 
-When adding tests, benches, or coverage to the workspace, model new work on the
-existing scaffolding rather than re-deriving it:
+Use these workspace patterns when adding tests, benches, or coverage:
 
 | Area | Entry point |
 | ---- | ----------- |
@@ -114,13 +110,13 @@ existing scaffolding rather than re-deriving it:
 | Concurrency / stress tests | `crates/modde-core/tests/concurrency_tests.rs` |
 | Nexus base-URL override (point a client at a mock server) | `crates/modde-sources/src/nexus/mod.rs` — `base_url()` / `graphql_url()` |
 
-The Nexus client honors `MODDE_NEXUS_BASE_URL` and `MODDE_NEXUS_GRAPHQL_URL`
-environment variables so integration tests can point its REST v1 and GraphQL v2
-calls at a wiremock instance instead of the live Nexus API.
+The Nexus client honors `MODDE_NEXUS_BASE_URL` for REST v1 and
+`MODDE_NEXUS_GRAPHQL_URL` for GraphQL v2; integration tests can point both at
+wiremock instead of the live API.
 
 #### Coverage
 
-Coverage runs through the xtask wrapper (`cargo-llvm-cov` is in the devShell):
+Use xtask for coverage (`cargo-llvm-cov` is in the devShell):
 
 ```sh
 # Terminal summary
@@ -136,20 +132,18 @@ cargo xtask coverage --lcov
 cargo xtask coverage --ci --fail-under <N>
 ```
 
-`--ci` is what Forgejo Actions runs; `--lcov` writes
-`target/llvm-cov/lcov.info`, which is the input for any coverage badge or upload
-step.
+Forgejo Actions uses `--ci`. `--lcov` writes `target/llvm-cov/lcov.info` for
+coverage badges and uploads.
 
 #### Fuzzing
 
-`cargo-fuzz` requires nightly Rust, while `flake.nix` pins a stable toolchain.
-Property-style fuzzing that must run on stable should use `arbitrary`-based
-proptest targets (model after the proptest scaffolding above) rather than
-`cargo-fuzz`.
+`cargo-fuzz` requires nightly Rust, but `flake.nix` pins stable. For property-style
+fuzzing on stable, follow the proptest example above and use `arbitrary`-based
+targets instead of `cargo-fuzz`.
 
 ## Reporting Issues
 
-Please file issues on the [GitHub issue tracker](https://github.com/caniko/modde-rs/issues).
+File issues on the [GitHub issue tracker](https://github.com/caniko/modde-rs/issues).
 
 Include:
 
@@ -161,8 +155,8 @@ Include:
 ## Releases
 
 Release tags are bare semver names such as `0.2.0` or `1.0.0-rc.1`.
-Fedora COPR wiring lives in the release workflow and the distribution-channel
-table below; there is no separate COPR release document in this repository.
+See the release workflow and table below for Fedora COPR wiring; this repo has
+no separate COPR release document.
 
 ### Release tooling
 
@@ -180,12 +174,11 @@ table below; there is no separate COPR release document in this repository.
 
 ### Distribution channels
 
-A stable tag fans out to several downstream channels from the single
-`.forgejo/workflows/release.yml` run; prerelease tags publish only the
-prerelease-safe subset. Each external channel is gated on its credential being
-present and **skips with a warning when the secret is unset**, so pull requests
-and dry-run tags never fail on a missing publish credential. A production
-release should treat such a skip as a release blocker for that channel.
+One `.forgejo/workflows/release.yml` run publishes a stable tag to several
+channels; prereleases publish only to the prerelease-safe subset. Each external
+channel requires its credential and **skips with a warning when the secret is unset**,
+so pull requests and dry-run tags never fail on missing publish credentials.
+Treat that skip as a blocker for the affected channel in production releases.
 
 | Channel | Artifact / target | Publish gate | State |
 | ------- | ----------------- | ------------ | ----- |
@@ -202,12 +195,10 @@ release should treat such a skip as a release blocker for that channel.
 | Scoop | `caniko/scoop-modde` bucket | stable only; `CODEBERG_TOKEN` | Wired; first release pending |
 
 Only the Nix flake, home-manager module, and the Attic cache are live for end
-users today; APT and Scoop are bootstrapped and await the first successful
-release publication. The honest per-channel status that ships to users lives in
-[docs/src/getting-started/installation.md](docs/src/getting-started/installation.md);
-keep that page and this table consistent when a channel goes live.
-
-Channel notes worth remembering across releases:
+users. APT and Scoop are bootstrapped; each awaits its first successful
+publication to that channel. When a channel goes live, update both this table
+and the user-facing
+[docs/src/getting-started/installation.md](docs/src/getting-started/installation.md).
 
 - **Prerelease gating.** Tags matching `X.Y.Z-rc.N` / `-beta.N` / `-alpha.N`
   run the full build, sign, smoke, Codeberg release, and Attic push, are marked
@@ -233,12 +224,12 @@ Channel notes worth remembering across releases:
 
 ### Website and Codeberg Pages
 
-The modde website is published at `https://modde.tartanoglu.com/` from the
-generated `site` flake output. The presentation site lives in `website/`, the
-mdBook docs live in `docs/`, and the combined output puts docs under `/docs/`.
+The generated `site` flake output is published at
+`https://modde.tartanoglu.com/`. It serves the presentation site from
+`website/` at the root and the mdBook from `docs/` under `/docs/`.
 
-When creating or changing any website for this project family, follow the current
-Codeberg Pages split:
+For new or changed sites in this project family, choose the Codeberg Pages flow
+by domain:
 
 - For a `*.codeberg.page` URL, use the new git-pages flow or Forgejo Actions
   publishing for that repository.
@@ -302,8 +293,8 @@ five lines from the matching `CHANGELOG.md` section.
 
 ### Yank / withdraw a release
 
-Use this drill when a published stable release must be pulled. Announce the
-withdrawal first if users may already have downloaded artifacts.
+To withdraw a published stable release, announce the withdrawal first if users
+may have downloaded artifacts.
 
 ```sh
 VERSION=0.2.1
@@ -324,8 +315,7 @@ withdrawn version and points to the fixed follow-up release.
 
 ### Supply-chain checks
 
-The release path carries two supply-chain gates that contributors should expect
-to interact with:
+Releases have two supply-chain gates:
 
 - **`cargo deny` runs on every PR and on release.** CI runs
   `cargo deny check` (advisories, bans, sources, licenses) as a parallel CI job,

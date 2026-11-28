@@ -2,14 +2,12 @@
 
 ## Overview
 
-modde keeps all of its state in a single **data directory** plus a small config
-file. This guide documents the on-disk layout, how to point modde at a different
-location, how to run several isolated **instances**, the built-in **backup** and
-**stock snapshot** facilities, and how to reproduce your setup across machines.
+modde keeps its state in one **data directory** and a small config file. This
+guide covers the layout, relocation, isolated **instances**, built-in **backups**
+and **stock snapshots**, and reproducing a setup across machines.
 
-Everything here is filesystem and metadata; the conceptual model of a profile
-itself lives in [Profile management](profiles.md), and the save vaults referenced
-below are covered in [Save management](saves.md).
+This guide covers the filesystem and metadata. For profile and save-vault
+behavior, see [Profile management](profiles.md) and [Save management](saves.md).
 
 ## Where modde stores data
 
@@ -46,16 +44,14 @@ All persistent state lives under `<data_dir>/modde/` — for a default Linux set
 └── backups/            # zip mod backups + JSON plugin-order backups
 ```
 
-A few of these are worth calling out:
-
 - **`modde.db`** is the source of truth for everything *except* file bytes and
   git history. The profile, mod list, load order, locks, categories, tags,
   per-game tool config, named executables, and the experiment stack all live
   here. Its schema is migrated forward automatically on open.
-- **`store/`** holds the actual mod files content-addressed; the database's
-  `installed_mod_files` manifest maps each profile's mods to the precise files
-  they staged, which is what makes uninstall surgical.
-- **`saves/<game_id>/`** is a real git repository per game, with one branch per
+- **`store/`** holds content-addressed mod files. The database's
+  `installed_mod_files` manifest maps each profile's mods to their exact staged
+  files for precise uninstalls.
+- **`saves/<game_id>/`** is a git repository per game, with one branch per
   profile. See [Save management](saves.md) for the vault mechanics.
 - **`wabbajack_cache/<manifest_hash>.wabbajack`** caches manifest files keyed by
   their hash, so re-installs and `dedup` runs don't re-download the list.
@@ -73,8 +69,7 @@ instance registry:
 
 ### `MODDE_DATA_DIR`
 
-You can override the data directory wholesale with the `MODDE_DATA_DIR`
-environment variable, exposed as a global CLI flag:
+Override the data directory with `MODDE_DATA_DIR` or the global CLI flag:
 
 ```bash
 # Point this invocation at a portable data directory
@@ -96,10 +91,10 @@ drive or a per-project directory.
 
 ## Multiple instances
 
-An **instance** is a named, self-contained data directory. Instances let you keep
-entirely separate modde states — for example one for your daily driver and one for
-testing a risky Wabbajack list — without them sharing a database, store, or save
-vaults. The active instance is recorded in `~/.config/modde/instances.toml`.
+An **instance** is a named, self-contained data directory. Its modde state,
+including its database, store, and save vaults, is separate from other
+instances. Use one for your regular setup and another to test a risky Wabbajack
+list. modde records the active instance in `~/.config/modde/instances.toml`.
 
 ```bash
 # Create a new instance backed by its own data directory
@@ -112,7 +107,7 @@ modde instance list
 modde instance switch testing
 ```
 
-The registry file is plain TOML and easy to inspect:
+The registry is plain TOML:
 
 ```toml
 active = "testing"
@@ -128,8 +123,6 @@ data_dir = "/home/you/modde-instances/testing"
 is_default = false
 ```
 
-Behavior worth knowing:
-
 - The **first** instance you create becomes the default (`is_default = true`), and
   if no instance was active it is made active automatically.
 - Creating an instance creates its `data_dir` for you. Creating one whose name
@@ -139,9 +132,8 @@ Behavior worth knowing:
   for every command — unless you override it with `MODDE_DATA_DIR` / `--data-dir`
   for a single invocation (see the precedence note above).
 
-Because each instance is just a directory, you can back one up, move it to another
-disk, or delete it by operating on the `data_dir` path directly (and editing
-`instances.toml` to drop the entry).
+Back up, move, or delete an instance directly at its `data_dir` path. When
+deleting, remove its entry from `instances.toml` as well.
 
 ## Backups
 
@@ -181,10 +173,10 @@ modde backup plugins --profile my-skyrim --game skyrim-se
 modde backup restore-plugins --profile my-skyrim --game skyrim-se
 ```
 
-These land at `backups/plugins/<game_id>/<profile>_<timestamp>.json` and record
-each plugin's name **and** its enabled state, so a restore brings back exactly
-what was loaded. Older, name-only backups are still readable — on restore they are
-treated as all-enabled — so historical backups keep working across upgrades.
+Backups in `backups/plugins/<game_id>/<profile>_<timestamp>.json` record plugin
+names and enabled states, so restore brings back exactly what was loaded. Across
+upgrades, modde can still read older, name-only backups and restores all their
+plugins as enabled.
 
 ## Stock (vanilla) game snapshots
 
@@ -224,16 +216,15 @@ modified directory.
 
 ## Multi-machine sync
 
-modde has no built-in cloud sync, but its on-disk layout is designed so you can
-reproduce a setup across machines with tools you already use. The reliable pattern
-is: **declare profiles reproducibly, and version-control the save vaults.**
+modde has no built-in cloud sync. To reproduce a setup across machines,
+**declare profiles reproducibly and version-control the save vaults.**
 
 ### Reproduce profiles with home-manager
 
-The most robust way to get the *same* profiles on another machine is to declare
-them in home-manager rather than copy the database. Your `programs.modde.profiles`
-definitions are the source of truth; rebuilding on the second machine recreates
-the profiles, Wabbajack lists, and tool overlays from the same inputs:
+For the most reliable cross-machine reproduction, declare profiles in
+home-manager rather than copying the database. `programs.modde.profiles` is
+then the source of truth. Rebuilding on the second machine recreates the
+profiles, Wabbajack lists, and tool overlays from the same inputs:
 
 ```nix
 programs.modde.profiles.my-skyrim = {
@@ -260,9 +251,8 @@ pre-existing lock), so a shared, authoritative ordering survives the trip — se
 
 ### Git the save vaults
 
-Each game's save vault under `<modde_data>/saves/<game_id>/` is already a git
-repository, which makes it the natural unit to synchronize. Add a remote and push
-it like any other repo:
+Each game's save vault under `<modde_data>/saves/<game_id>/` is a git repository.
+To sync it, add a remote and push:
 
 ```bash
 cd ~/.local/share/modde/saves/skyrim-se

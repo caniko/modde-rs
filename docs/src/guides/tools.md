@@ -2,9 +2,9 @@
 
 ## Overview
 
-modde can manage gaming tools and overlays that enhance or modify how games run: performance overlays, graphics post-processing layers, upscaling and frame-generation frameworks, performance boosters, and per-game Proton launch settings. Each tool is a per-game integration with its own enabled flag and JSON settings blob persisted in modde's database.
+modde manages performance overlays, graphics post-processing, upscaling and frame generation, performance boosters, and Proton launch settings. For each game and tool, modde stores an enabled flag and JSON settings in its database.
 
-The current truthful scope is **narrower than Mod Organizer 2's tool management** (which is why tool management is marked **Partial** in the [capability matrix](../reference/parity.md)): modde manages a fixed set of six gaming tools through a uniform enable/configure/apply pipeline. It does not provide arbitrary executable-tool registration *inside* the tools panel — that lives in the separate, fully shipped [Executables & external tools](executables.md) feature.
+Tool management is **Partial** in the [capability matrix](../reference/parity.md) because it's narrower than Mod Organizer 2's: the tools panel uses the same enable/configure/apply workflow for a fixed set of six tools. To register arbitrary executables, use the separate, fully shipped [Executables & external tools](executables.md) feature.
 
 Each tool contributes one or more of the following at launch or deploy time:
 
@@ -29,7 +29,7 @@ Each tool contributes one or more of the following at launch or deploy time:
 
 ## Command summary
 
-All tool commands take `--game <game_id>`. The verbs are the same across every tool, but each verb only does something for tools that implement it.
+All tool commands take `--game <game_id>`. They share the same verbs, but a verb only acts on tools that implement it.
 
 ```bash
 # Discovery
@@ -64,7 +64,7 @@ modde tool install-release <tool_id> --game skyrim-se --tag <tag> --asset <asset
 modde tool status --game stellar-blade
 ```
 
-Availability is detected per tool: MangoHud, vkBasalt, and GameMode look for their binary or Vulkan layer on Linux; Proton reports whether `protonup-rs` is present and how many GE-Proton installs exist; ReShade and OptiScaler always report "available" because their payloads are user-provided or downloaded on demand. For OptiScaler, `status` additionally prints a live install scan of the executable directory (see [OptiScaler](#optiscaler) below).
+MangoHud, vkBasalt, and GameMode check for their binary or Vulkan layer on Linux. Proton reports whether `protonup-rs` is present and counts GE-Proton installs. ReShade and OptiScaler always report "available": you supply their files or modde downloads them on demand. For OptiScaler, `status` also scans the executable directory and prints what it finds (see [OptiScaler](#optiscaler)).
 
 ---
 
@@ -169,7 +169,7 @@ GameMode is Feral Interactive's daemon that applies CPU governor, scheduling, an
 
 ### How it is enabled
 
-GameMode has no env vars and no config files. When enabled it contributes a single wrapper command, `gamemoderun`, which modde chains in front of the game executable in the launch pipeline. Availability detection looks for `gamemoderun` on `PATH`.
+GameMode uses no environment variables or config files. When enabled, modde prefixes the game executable with `gamemoderun`. Availability detection checks `PATH` for `gamemoderun`.
 
 The only "setting" is a read-only note explaining that the wrapper is applied when enabled.
 
@@ -219,7 +219,7 @@ modde tool apply reshade --game cyberpunk2077
 modde tool revert reshade --game cyberpunk2077
 ```
 
-The apply has a non-mutating preview internally (it reports which planned files are missing, changed, or already match), so re-applying after editing a preset only rewrites what changed.
+During apply, an internal read-only comparison identifies missing, changed, and matching files without writing anything; apply writes only what needs updating, so reapplying after a preset edit only rewrites changed files.
 
 ---
 
@@ -231,7 +231,7 @@ OptiScaler replaces a game's upscaler/frame-generation inputs (DLSS/FSR/XeSS) by
 
 ### Sources
 
-Where OptiScaler files come from is chosen with `source_mode`:
+Choose the source of OptiScaler files with `source_mode`:
 
 | `source_mode` | UI label | Meaning |
 | --- | --- | --- |
@@ -244,7 +244,7 @@ When `source_mode = goverlay_builds`, a `goverlay_channel` setting selects `edge
 
 ### Releases: list and install
 
-OptiScaler is the only release-backed tool (`supports_releases() == true`). `modde tool releases optiscaler` merges official and GOverlay releases and lists installable `.zip`/`.7z` assets. `install-release` downloads and extracts the chosen asset into modde's per-tag cache, then records the selection back into the tool config:
+Only OptiScaler supports releases (`supports_releases() == true`). `modde tool releases optiscaler` combines official and GOverlay releases and lists installable `.zip`/`.7z` assets. `install-release` downloads and extracts the chosen asset into modde's per-tag cache, then saves the selection to the tool config:
 
 ```bash
 modde tool releases optiscaler --game stellar-blade
@@ -311,7 +311,7 @@ modde tool setup optiscaler --game stellar-blade \
 | `enable_optipatcher` | bool | Deploy `plugins/OptiPatcher.asi` to unlock DLSS/DLSS-FG inputs without whole-game spoofing |
 | `spoof_dlss` | bool | Fallback DXGI spoofing path for games that still need it |
 
-There are also exposed OptiScaler `.ini` overrides (`ini_overrides.*`), e.g. the in-game menu shortcut key, menu scale, the FSR upscaler/frame-generation backend indices, and fakenvapi/LatencyFlex toggles. Additional `.ini` keys discovered in the selected release's `OptiScaler.ini` are surfaced as advanced overrides.
+OptiScaler `.ini` overrides (`ini_overrides.*`) include the in-game menu shortcut, menu scale, FSR upscaler/frame-generation backend indices, and fakenvapi/LatencyFlex toggles. modde reads additional `.ini` keys from the selected release's `OptiScaler.ini` and exposes them as advanced overrides.
 
 ### FSR4 variants and FP8 emulation
 
@@ -339,7 +339,7 @@ Before apply, OptiScaler scans the executable directory and classifies the insta
 OptiScaler install: unmanaged; version v0.9.1; proxy dxgi.dll
 ```
 
-If an existing install is *unmanaged*, *partially managed*, or *conflicted*, apply first backs up the recognised files (with a JSON manifest) so the previous state can be recovered. When you adopt an existing working install rather than reinstalling, modde records the files as managed.
+For an *unmanaged*, *partially managed*, or *conflicted* install, apply first backs up recognised files with a JSON manifest so you can recover the previous state. If you adopt a working install instead of reinstalling, modde records its files as managed.
 
 ### fgmod restore
 

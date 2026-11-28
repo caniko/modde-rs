@@ -1,7 +1,7 @@
 # Quick Start
 
-modde is Linux-first (macOS and Windows builds are experimental) and gives you two ways to
-drive the same engine:
+modde is Linux-first (macOS and Windows builds are experimental). Choose either
+workflow to drive the same engine:
 
 - **Imperative (CLI)** — `modde detect`, `modde profile create`,
   `modde install …`, `modde deploy`, `modde play`. The same commands work on
@@ -12,17 +12,15 @@ drive the same engine:
   on rebuild. A reproducible, version-controlled option for Wabbajack lists and
   Nexus Collections.
 
-Both paths share one database, one mod store, and one save vault, so you can
-start imperatively and pin things down declaratively later (or vice versa)
+Both share one database, one mod store, and one save vault. Switch workflows
 without losing state.
 
-This page is the fast tour. If you want a single narrated end-to-end run, read
-[Your first profile](first-profile.md) instead. For installing modde itself,
-see [Installation](installation.md).
+See [Your first profile](first-profile.md) for a step-by-step walkthrough and
+[Installation](installation.md) to install modde.
 
 ## The imperative path (CLI)
 
-The CLI walks the whole lifecycle in explicit steps. A minimal run looks like:
+Create, deploy, and play a profile from the CLI:
 
 ```bash
 # 1. See which games modde found across Steam and Heroic
@@ -74,7 +72,7 @@ locking, and the experiment stack.
 
 ### Add mods
 
-Pick the source that matches what you are installing:
+Use the command for your mod source:
 
 ```bash
 # A single Nexus mod (downloads via CDN — needs a Premium key)
@@ -114,7 +112,7 @@ modde deploy
 modde deploy --profile my-skyrim --game skyrim-se
 ```
 
-See [what deploy actually does](#what-deploy-does) below.
+See [what deploy actually does](#what-deploy-does).
 
 ### Play
 
@@ -129,13 +127,12 @@ flags: `--no-switch`, `--no-deploy`, `--no-capture`. See
 
 ## The declarative path (home-manager)
 
-If you use Nix, modde is also a flake with a home-manager module, so you can
-**declare your mod profiles as code** and let them deploy on rebuild. This is
-one optional path — the CLI above works the same everywhere — but it is handy
-for reproducible, version-controlled setups. See [Installation](installation.md)
-for adding the flake input and module.
+With Nix, you can use the flake's home-manager module to **declare your mod
+profiles as code** and deploy on rebuild. Use it for reproducible,
+version-controlled setups; the CLI works the same everywhere without it. See
+[Installation](installation.md) to add the flake input and module.
 
-Declared in home-manager, the simplest profile is just a game id:
+The simplest home-manager profile needs only a game id:
 
 ```nix
 programs.modde = {
@@ -147,8 +144,8 @@ programs.modde = {
 };
 ```
 
-After `home-manager switch`, modde deploys your profiles automatically via an
-activation script. There is nothing else to run for a plain profile.
+`home-manager switch` deploys profiles through an activation script. Plain
+profiles need no other command.
 
 ### Install from a Wabbajack modlist
 
@@ -211,10 +208,9 @@ for forking a locked profile into a freely editable copy.
 
 ### Declaring a profile before the game exists
 
-modde never installs the base game; you install it through Steam or Heroic, and
-modde waits. If the game is not installed yet, set `installMode = "await-game"`
-(or simply leave `gameDir` unset). Activation then skips install/deploy
-non-fatally and prints the next step instead of failing the whole rebuild:
+Install the base game through Steam or Heroic, not modde. Until then, set
+`installMode = "await-game"` (or leave `gameDir` unset). Activation skips
+install/deploy and prints the next step without failing the rebuild:
 
 ```nix
 programs.modde.profiles.living-skyrim = {
@@ -237,8 +233,7 @@ every option, see the [Home-Manager module reference](../configuration/hm-module
 
 The declarative `wabbajackList.url` + `hash` pair needs the **Nix fetch hash**
 of the `.wabbajack` file (SRI format, `sha256-…`). This is the hash of the
-archive, not the Wabbajack-internal archive hashes inside the manifest. Compute
-it with either of these:
+archive, not a hash inside the Wabbajack manifest. Compute it with either command:
 
 ```bash
 # Modern Nix (preferred): prints the SRI hash and stores the file
@@ -270,7 +265,7 @@ nix hash file ./modlist.wabbajack          # SRI sha256- hash of a local file
 > Then either set `wabbajackList.path = ./list.wabbajack;` (no `hash` needed for
 > a path source) or feed it through your own fetcher.
 
-modde can also write the home-manager snippet for you:
+To generate the home-manager snippet:
 
 ```bash
 modde wabbajack hm-snippet "<url-or-file>" \
@@ -280,8 +275,6 @@ modde wabbajack hm-snippet "<url-or-file>" \
 ```
 
 ## First-run gotchas
-
-A short checklist of things that trip people up on the first profile:
 
 - **Install the base game first.** modde waits for launcher-managed installs; it
   never installs Steam or the game itself. For declarative Wabbajack profiles
@@ -309,9 +302,8 @@ A short checklist of things that trip people up on the first profile:
 without touching your original game files. The pipeline has three phases:
 
 1. **Build** — modde resolves the load order and maps each relative file path to
-   its winning source. For any path provided by multiple mods, the mod later in
-   the load order wins; hidden files and profile-level overrides are applied
-   here.
+   its winning source. When mods provide the same path, the later mod in load
+   order wins. Build also honors file hides and profile-level overrides.
 2. **Materialize** — the farm is written to a staging directory
    (`~/.local/share/modde/staging/<profile>/`); each file becomes a symlink to
    the winning mod's content.

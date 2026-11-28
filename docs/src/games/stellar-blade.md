@@ -3,12 +3,12 @@
 Stellar Blade (`game_id` **`stellar-blade`**, Steam App ID `3489700`) is one of
 modde's two data-driven Unreal Engine titles, sharing the `Ue4Game` plugin with
 Subnautica 2. Its overall status is **`Partial`**: scanning, conflict
-classification, save tracking, deployment, OptiScaler wiring, and Wine DLL-override
-detection all ship and are user-reachable, but Stellar Blade does not get a bespoke
-installer wizard or a curated load-order model beyond UE4's `~mods` mount order, and
-the title is held back from the UI's "Browse Nexus" picker (see the
-[Nexus Mods guide](../guides/nexus.md)). Treat it as a solid pak-mod manager for
-the game, not a full guided experience.
+classification, save tracking, deployment, OptiScaler integration, and Wine
+DLL-override detection ship and are user-accessible. Use modde for pak-mod
+management; it does not provide a fully guided install, and there is no
+game-specific installer wizard or curated load order beyond UE4's `~mods` mount
+order. The UI's "Browse Nexus" picker omits the title (see the
+[Nexus Mods guide](../guides/nexus.md)).
 
 For the authoritative status row see
 [Supported games](supported-games.md); the capability vocabulary (`Done` /
@@ -27,16 +27,14 @@ For the authoritative status row see
 | Save profiles | Enabled |
 | OptiScaler profiles | `community-dxgi` |
 
-Unreal titles share a near-identical on-disk shape: a project folder under the
-install root (here `SB/`) that holds `SB/Content/Paks/` for pak archives and
-`SB/Binaries/Win64/` for the shipping executable and any proxy DLLs. Because the
-whole plugin is parameterised by that project short name, every path below is just
-`<install>/SB/...`.
+Unreal titles use similar project layouts. Stellar Blade's `SB/` folder holds
+`SB/Content/Paks/` for pak archives and `SB/Binaries/Win64/` for the shipping
+executable and proxy DLLs. For Stellar Blade, the plugin resolves paths under
+`<install>/SB/...` from the project short name.
 
 ## How modde detects the install
 
-modde resolves Stellar Blade through its registered launcher IDs. Only the Steam
-path is wired:
+modde auto-detects only Steam installs:
 
 - **Steam** — App ID `3489700`, library subfolder `Stellar Blade`. modde walks your
   Steam library folders (including extra libraries from `libraryfolders.vdf`) to find
@@ -59,9 +57,9 @@ Steam creates at (on Windows these are native paths, no prefix involved):
 ```
 
 modde derives this from the Steam `common` directory's parent, then `compatdata/3489700/pfx`.
-If the prefix does not exist yet, the save directory and the `ue4-saved-config`
-deploy target both resolve to `None` — the expected fix is to **launch the game once**
-so Proton materialises the prefix, then retry.
+On Proton, if the prefix does not exist yet, the save directory and the
+`ue4-saved-config` deploy target both resolve to `None`. **Launch the game
+once** to create it, then retry.
 
 ## Mod directory and deploy strategy
 
@@ -71,10 +69,10 @@ The deploy target is the standard UE pak drop folder:
 <install>/SB/Content/Paks/~mods
 ```
 
-The leading tilde in `~mods` is load-bearing: UE's pak mounter orders mount points
-lexically, and `~mods` sorts after the shipping paks so your mods override base
-content. modde creates and deploys into this directory; it does not invent a custom
-VFS for UE titles — deployment is a real on-disk layout under `Content/Paks/~mods`.
+UE orders pak mount points lexically. Keep the leading tilde: `~mods` sorts
+after the shipping paks, so its mods override base content. modde creates `~mods`
+and deploys directly to `Content/Paks/~mods` on disk, without a custom VFS for
+UE titles.
 
 A mod archive is recognised as a single-file-set install when its extracted root
 contains at least one `.pak`, `.ucas`, or `.utoc` file (`InstallMethod::SingleFileSet`).
@@ -151,13 +149,11 @@ wired into modde's per-profile save layer.
 
 modde returns this directory only if it already exists on disk.
 
-**What is fingerprinted.** The save tracker matches files by extension **`.sav`**,
-recursively under the save directory, with no prefix rules and no exclusions. Every
-matching file is captured under the default category `manual`, its label taken from the
-file stem (falling back to the relative path). Captured saves are summarised by
-category. Because matching is purely extension-and-recursion based, modde tracks the
-`.sav` files themselves — it does not parse Stellar Blade's save binary format or
-extract in-game playtime, character, or chapter metadata.
+**What is fingerprinted.** The tracker recursively captures every **`.sav`**
+under the save directory as `manual`, with no prefix rules or exclusions. It
+uses the file stem as the label, falling back to the relative path, and
+summarises captures by category. modde tracks the `.sav` files without parsing
+their binary format or extracting playtime, character, or chapter metadata.
 
 See [Save management](../guides/saves.md) for how captures attach to profiles.
 
@@ -208,9 +204,9 @@ layer, not by separate per-game GPU profiles.
 | `spoof_dlss` | `false` |
 | Companion files | copied |
 
-The profile uses **OptiPatcher to unlock the game's DLSS and DLSS-FG inputs without
-spoofing** a DLSS-capable GPU — so you get the DLSS/DLSS-FG code paths re-routed
-through OptiScaler/FSR rather than faking vendor detection.
+The profile uses **OptiPatcher to unlock DLSS/DLSS-FG inputs without
+spoofing** a DLSS-capable GPU. The unlocked code paths run through
+OptiScaler/FSR instead of faking vendor detection.
 
 ### RDNA3 requirements
 
@@ -286,10 +282,9 @@ profile's own `dxgi.dll` is exactly one of these.
 
 ## Linux / Proton notes and gotchas
 
-These notes cover the game's runtime on Linux and macOS, where Stellar Blade runs
-through Proton/Wine. On Windows the game runs natively — there is no Wine prefix or
-`WINEDLLOVERRIDES`, and the save directory and config live at their native Windows
-locations. modde itself runs natively on all three platforms.
+Stellar Blade runs through Proton/Wine on Linux and macOS. On Windows it runs
+natively, without a Wine prefix or `WINEDLLOVERRIDES`, and keeps saves and config
+at their native Windows locations. modde runs natively on all three platforms.
 
 - **Launch the game once before first deploy.** The save directory and the
   `ue4-saved-config` target both live inside the Proton prefix and resolve to `None`

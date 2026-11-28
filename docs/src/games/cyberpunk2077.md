@@ -1,13 +1,11 @@
 # Cyberpunk 2077
 
-Cyberpunk 2077 is one of the few non-Bethesda titles that modde supports **end to
-end**. Its overall status is `Done` in [`docs/capability-matrix.toml`][matrix] and on
-the [supported games](supported-games.md) page: the scanner, conflict classifier,
-and save tracker are all wired up, and deployment runs a real `REDmod` deploy pass
-after staging.
+Cyberpunk 2077 is one of the few non-Bethesda titles modde supports **end to
+end**. Its status is `Done` in [`docs/capability-matrix.toml`][matrix] and on the
+[supported games](supported-games.md) page: modde scans mods, classifies conflicts,
+tracks saves, and runs `REDmod` after staging.
 
-The game id is **`cyberpunk2077`**. Use it verbatim with every CLI command and in
-home-manager profiles.
+Use the exact game id **`cyberpunk2077`** in CLI commands and home-manager profiles.
 
 [matrix]: https://github.com/caniko/modde-rs/blob/trunk/docs/capability-matrix.toml
 
@@ -29,11 +27,10 @@ home-manager profiles.
 | Nexus numeric game id | `3333` |
 | Wabbajack name | `Cyberpunk2077` |
 
-The numeric Nexus id is present, so Cyberpunk 2077 appears in the UI's *Browse
-Nexus* picker (which needs the numeric id), and the Nexus side panel can fetch
-mod metadata via REST v1 and GraphQL v2. The mod information dialog is still
-`Partial`: only the Nexus-metadata side panel exists — there is no MO2-style
-file-tree / INI / conflict dialog yet.
+Cyberpunk 2077 appears in the UI's *Browse Nexus* picker because it has the
+required numeric Nexus id. The Nexus side panel can fetch mod metadata via REST v1 and GraphQL v2.
+The mod information dialog remains `Partial`: it has only the Nexus-metadata
+side panel, not a MO2-style file-tree / INI / conflict dialog.
 
 ## Install detection
 
@@ -42,32 +39,29 @@ modde locates the install through its launcher ids. For Steam it uses App ID
 matches the GOG app id `1423049311` or the Epic app id `Ginger`. The same ids
 drive Proton-prefix discovery for save tracking.
 
-Because Cyberpunk runs through Proton/Wine on Linux, the game writes its saves
-inside a Wine prefix rather than a native Linux path. modde checks two prefixes,
-in order:
+On Linux, Cyberpunk runs through Proton/Wine and saves inside a Wine prefix,
+not at a native Linux path. modde checks two prefixes in order:
 
 1. **Heroic** (GOG / sideload):
    `~/Games/Heroic/Prefixes/default/Cyberpunk 2077/pfx/drive_c/users/steamuser/Saved Games/CD Projekt Red/Cyberpunk 2077`
 2. **Steam Proton**: the Steam compat prefix under
    `steamapps/compatdata/1091500/pfx/drive_c/users/steamuser/Saved Games/CD Projekt Red/Cyberpunk 2077`
 
-The first prefix that exists on disk wins. If neither is present (for example,
-the game has never been launched under that launcher, so the prefix has not been
-created), save tracking reports no save directory.
+The first existing prefix wins. If neither exists (for example, before the first
+launch has created one), save tracking reports no save directory.
 
 ## Mod directory and deploy strategy
 
 The canonical mod directory is `<install>/mods/` — the REDmod loader's directory.
 Deployment is a **two-step** process:
 
-1. **Per-mod symlink.** For every entry in the profile's staging directory, modde
-   symlinks the mod directory into `<install>/mods/<name>/`. If a target name
-   already exists (a real directory, a file, or a stale symlink), it is removed
-   first so the new symlink is clean. This keeps the game directory pointing at
-   modde-managed staging rather than copying bytes around.
-2. **Post-deploy REDmod deploy hook.** After symlinking, modde runs a REDmod
-   deploy pass (see below). This is what turns the symlinked REDmod packages into
-   the game's loadable `mod` archives.
+1. **Per-mod symlink.** For each entry in the profile's staging directory, modde
+   removes any existing target (directory, file, or stale symlink) at
+   `<install>/mods/<name>/` and symlinks the staged directory there. The install
+   points to modde-managed staging rather than a copy.
+2. **Post-deploy REDmod deploy hook.** After symlinking, modde runs the REDmod
+   deploy pass (see below) to turn linked REDmod packages into loadable `mod`
+   archives.
 
 Symlink deployment means an uninstall or redeploy is cheap and non-destructive to
 your staged sources.
@@ -87,13 +81,11 @@ subdirectory, modde invokes:
 redmod deploy -mod <mods/dir-1> -mod <mods/dir-2> ...
 ```
 
-with the game directory as the working directory, passing one `-mod` flag per mod
-subdirectory. If the binary is **not** found, modde logs a warning and skips the
-step — it does not fail the deploy. That means loose-file content (redscript,
-TweakXL, CET, `.archive` files) is still deployed by the symlink pass; only the
-REDmod-packaged content needs the deploy hook to be registered. A non-zero exit
-from `redmod deploy` *does* surface as a deploy error, with the tool's stderr
-attached.
+from the game directory, with one `-mod` flag per mod subdirectory. If the binary
+is missing, modde logs a warning and skips the hook without failing deployment. The
+symlink pass still deploys loose files (redscript, TweakXL, CET, `.archive`
+files); only REDmod packages need the hook for registration. A non-zero exit
+from `redmod deploy` fails deployment and includes the tool's stderr.
 
 > **Gotcha:** REDmod is an optional component in the GOG/Steam installers. If you
 > intend to use REDmod packages, install the *REDmod* DLC/tool so the
@@ -101,11 +93,10 @@ attached.
 
 ### Bare-layout recognition
 
-When you install an archive that is **not** a REDmod package, modde recognizes a
-"bare" Cyberpunk layout if the extraction root contains any of these top-level
-directories: `r6`, `archive`, `archives`, `bin`, `engine`, `mods`, `red4ext`.
-A bare extract is treated as a single mod and symlinked into `<install>/mods/<name>/`,
-preserving the loose-file tree the mod author shipped.
+For non-REDmod archives, modde recognizes a bare layout if the extraction root
+contains any of these **top-level** directories: `r6`, `archive`, `archives`, `bin`, `engine`,
+`mods`, `red4ext`. It symlinks the extract into `<install>/mods/<name>/` as one mod,
+preserving the author's loose-file tree.
 
 ## What scanning finds
 
@@ -167,17 +158,14 @@ as a save and categorizes it by directory-name prefix:
 | `QuickSave-` | quick |
 | `PointOfNoReturn-` | point-of-no-return |
 
-Anything that does not match a known prefix is bucketed as **manual** (the default
-category). The scan is **non-recursive** (each save is one directory), and the
-`user.gls` settings file is explicitly excluded so it is never mistaken for a save.
+Unmatched prefixes default to **manual**. The scan is **non-recursive** (one
+directory per save) and excludes the `user.gls` settings file.
 
-**What is fingerprinted.** For each save, modde tries to extract a human-readable
-label. When a save uses CDPR's *NamedSaves*, the directory contains a
-`metadata.9.json`; modde reads it and uses the `customName` (or `name`) field as
-the label. If that file is missing or has no usable name, it falls back to the
-save's directory name. The capture summary is reported **by category**, so a
-snapshot tells you how many manual / auto / quick / point-of-no-return saves were
-captured.
+**What is fingerprinted.** For a CDPR *NamedSaves* save, modde reads
+`metadata.9.json` in that save's directory and uses `customName` (or `name`) as
+its label. If the file is missing or has no usable name, modde uses the save
+directory name. The capture summary counts manual / auto / quick /
+point-of-no-return saves **by category**.
 
 Cyberpunk 2077 also declares `supports_save_profiles = true`, so its saves
 participate in [save profiles](../guides/saves.md).
@@ -218,10 +206,9 @@ to Stardew Valley and the Unreal titles respectively.
 
 ## Gaming tools that matter
 
-modde's tool integrations (`modde tool ...`) apply to Cyberpunk just as they do to
-other titles — MangoHud, vkBasalt, GameMode, ReShade, OptiScaler, and per-game
-Proton settings. See the [Tools & Overlays guide](../guides/tools.md) for the
-full workflow.
+Use `modde tool ...` for MangoHud, vkBasalt, GameMode, ReShade, OptiScaler, and
+per-game Proton settings. See the [Tools & Overlays guide](../guides/tools.md)
+for the full workflow.
 
 Cyberpunk does **not** ship a built-in OptiScaler profile in modde's registry
 (its `optiscaler_profiles` list is empty, unlike Stellar Blade). You can still
@@ -261,11 +248,6 @@ modde tool configure proton --game cyberpunk2077 \
 
 ## Linux / Proton notes and known gotchas
 
-These notes cover the game's runtime on Linux and macOS, where Cyberpunk runs
-through Proton/Wine. On Windows the game runs natively — there is no Wine prefix,
-and saves and proxy DLLs live at their native Windows locations. modde itself runs
-natively on all three platforms.
-
 - **Launch the game once first.** Saves live inside the Proton/Heroic prefix.
   Until the game has been run under your launcher, the prefix (and the save
   directory) does not exist, and save tracking has nothing to find.
@@ -281,11 +263,11 @@ natively on all three platforms.
   by filename but cannot diff their contents, so two large `.archive` mods that
   touch overlapping resources may both report clean while still visually
   conflicting in-game.
-- **Game runtime differs by platform.** The Proton/Heroic prefix paths above are
-  how Cyberpunk runs on Linux and macOS, where it runs through Proton/Wine. On
-  Windows the game runs natively, so there is no Wine prefix — saves and proxy
-  DLLs live at their native Windows locations. modde itself runs natively on all
-  three platforms; see [installation](../getting-started/installation.md).
+- **Game runtime differs by platform.** The Proton/Heroic prefix paths above
+  apply to Linux and macOS, where Cyberpunk runs through Proton/Wine. On Windows,
+  the game runs natively without a Wine prefix and uses native locations for
+  saves and proxy DLLs. modde runs natively on all three platforms; see
+  [installation](../getting-started/installation.md).
 
 ## Worked example
 

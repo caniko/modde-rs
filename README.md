@@ -6,7 +6,7 @@
 
 <!-- simit:badges:end -->
 
-A Linux-first game mod manager written in Rust, with experimental macOS and Windows builds. Provides mod management with virtual filesystem deployment, profile management, save versioning, and conflict detection.
+A Linux-first game mod manager written in Rust, with experimental macOS and Windows builds. It deploys mods through a virtual filesystem, manages profiles, versions saves, and detects conflicts.
 
 Project site: <https://modde.tartanoglu.com/>
 Documentation: <https://modde.tartanoglu.com/docs/>
@@ -30,11 +30,11 @@ Documentation: <https://modde.tartanoglu.com/docs/>
 | Stardew Valley | `Partial`: SMAPI mod deployment, scanning, save tracking |
 | Mount & Blade II: Bannerlord | `Partial`: `Modules/` deployment, `SubModule.xml` dependency checks, save tracking |
 
-Fifteen titles ship across the Creation Engine, Gamebryo, REDengine, Unreal 4/5,
-Larian, SMAPI, and Bannerlord engines; additional titles can be added at runtime
-as [user-defined games](docs/src/games/generic-games.md). Games are
-auto-detected via Steam (Proton) and Heroic (GOG, Epic, sideload) launchers.
-The canonical status baseline for these claims lives in `docs/capability-matrix.toml`.
+modde ships support for fifteen titles across the Creation Engine, Gamebryo,
+REDengine, Unreal 4/5, Larian, SMAPI, and Bannerlord engines. Add more at runtime
+as [user-defined games](docs/src/games/generic-games.md). modde automatically detects
+games via Steam (Proton) and Heroic (GOG, Epic, sideload).
+`docs/capability-matrix.toml` is the source of truth for support status.
 
 ## Features
 
@@ -44,7 +44,7 @@ The canonical status baseline for these claims lives in `docs/capability-matrix.
 - **Save management**: Git-backed save vaults with SHA-256 fingerprinting, compatibility warnings, and auto-capture for games with real save tracker support
 - **Conflict detection**: Graph-based collision analysis with classification (dangerous vs cosmetic) and resolution suggestions
 - **Nexus-first installs**: Nexus Mods API (REST + GraphQL browse/search), `nxm://`, Browse Nexus, Wabbajack modlists, and Nexus Collections are the primary shipped install flows
-- **Additional download backends**: GitHub, Direct, Google Drive, MEGA, and MediaFire backends exist today mainly for Wabbajack/directive installs
+- **Additional download backends**: GitHub, Direct, Google Drive, MEGA, and MediaFire serve mainly Wabbajack/directive installs
 - **Installers**: FOMOD is shipped end to end (interactive wizard plus declarative TOML/JSON/Nix configs); BAIN detection/execution exists but still requires the user-input selection flow
 - **Gaming tools & executables**: MangoHud, vkBasalt, GameMode, ReShade, OptiScaler, and Proton are configured and patched from both the CLI and UI; named external executables (xEdit, BodySlide, Nemesis, …) run with overwrite capture via `modde exec` / `modde tool add-executable`
 - **Diagnostics**: CLI and UI diagnostics use real plugin order plus resolved conflicts instead of placeholder inputs
@@ -103,21 +103,19 @@ modde gui
 
 ## Installation
 
-The currently live user-facing install paths are the Nix flake, the
-Home-Manager module, source builds from the Nix development shell, and the Attic
-binary cache used by CI. Other distribution channels are wired or staged in the
-release workflow, but should not be treated as generally available until the
-[installation guide](docs/src/getting-started/installation.md) marks them live.
+Live install paths are the Nix flake, Home-Manager module, source builds from the
+Nix development shell, and the Attic binary cache used by CI. Other channels are
+wired or staged in the release workflow; treat them as generally available only
+when the [installation guide](docs/src/getting-started/installation.md) marks them live.
 
 ### Linux
 
 Linux support is staged by package family: Debian/Ubuntu/Mint/Pop!_OS through
 apt and `.deb`, Fedora/RHEL/Rocky/Alma/Bazzite/Nobara through COPR/SRPM, Arch
 derivatives through AUR, Nix/NixOS through the flake and Home Manager module, and
-Flatpak/AppImage/tarballs as universal fallback channels. Today, only the Nix
-flake/Home-Manager path is live for end users; the other commands below document
-the intended channel wiring and become user-facing only after their release gate
-is marked live.
+Flatpak/AppImage/tarballs as universal fallback channels. Only the Nix
+flake/Home-Manager path is live for end users. The other commands show planned
+channel wiring; they're for end users only once their release gate is marked live.
 
 ```bash
 # Planned Arch (AUR) — modde-bin (prebuilt), modde (source), or modde-git
@@ -148,9 +146,9 @@ brew tap caniko/modde https://codeberg.org/caniko/homebrew-modde
 brew install modde
 ```
 
-The Homebrew formula and macOS tarballs are staged release outputs, not the
-recommended live install path today. When a macOS release asset is published,
-clear the quarantine attribute once after extracting, then run normally:
+The Homebrew formula and macOS tarballs are staged release outputs, not a
+recommended live install path. When a macOS release asset ships, extract it,
+clear the quarantine attribute once, then run normally:
 
 ```bash
 tar xzf modde-<version>-aarch64-darwin.tar.gz
@@ -168,10 +166,10 @@ Gatekeeper; subsequent runs work without further intervention.
 winget install Caniko.Modde      # or: scoop install modde / choco install modde
 ```
 
-Windows packages and zip artifacts are staged release outputs, not the
-recommended live install path today. When published, each Windows package
-installs `modde.exe` and `modde-ui.exe` on your `PATH`. For a downloaded `.zip`,
-verify the Authenticode signature before running:
+Windows packages and zip artifacts are staged release outputs, not a
+recommended live install path. When published, each package installs `modde.exe`
+and `modde-ui.exe` on your `PATH`. For a downloaded `.zip`, verify the
+Authenticode signature before running:
 
 ```powershell
 Get-AuthenticodeSignature .\modde.exe
@@ -187,11 +185,11 @@ Both should report `Status : Valid`. On Linux you can verify the same files with
 cargo install modde
 ```
 
-This builds the `modde` CLI from source (the GUI lives in a separate crate not
-published to crates.io). It requires a Rust 2024 edition toolchain plus SQLite
-and OpenSSL development headers — `openssl-sys` will not build without OpenSSL.
-See the [installation guide](docs/src/getting-started/installation.md) for the
-per-distro package lists.
+This builds the `modde` CLI from source. The separate GUI crate isn't published
+to crates.io. You'll need a Rust 2024 edition toolchain and SQLite and OpenSSL
+development headers; `openssl-sys` won't build without OpenSSL. See the
+[installation guide](docs/src/getting-started/installation.md) for per-distro
+package lists.
 
 ### From source
 
@@ -208,9 +206,8 @@ because `openssl-sys` will fail to locate OpenSSL on an unprepared host.
 
 ### Nix
 
-If you use Nix, modde is also a flake — a reproducible install that, through the
-home-manager module, additionally lets you declare your mod profiles as code.
-It's one option among many, not required and not "the" way in.
+The Nix flake is one of several install options and provides reproducible installs. Its home-manager module
+lets you declare mod profiles as code.
 
 ```bash
 # Run directly
@@ -223,8 +220,8 @@ nix profile install github:caniko/modde-rs#modde
 nix develop github:caniko/modde-rs
 ```
 
-To wire the flake into your own config and declare profiles, add it as a flake
-input and import the home-manager module (see [Home-Manager
+To declare profiles in your own config, add the flake as an input and import
+the home-manager module (see [Home-Manager
 Module](#home-manager-module) below):
 
 ```nix
@@ -236,10 +233,10 @@ inputs.modde.url = "github:caniko/modde-rs";
 
 ### Telemetry
 
-modde has a `remote-telemetry` Cargo feature in the `modde` crate. It is **opt-in**
-and off by default in published builds. Normal builds send nothing.
+The `modde` crate's `remote-telemetry` Cargo feature is **opt-in** and off by
+default in published builds. Normal builds send nothing.
 
-When built with `remote-telemetry`, two independent remote paths can exist:
+With `remote-telemetry`, two independent remote paths are possible:
 
 - Crash telemetry through `MODDE_TELEMETRY_ENDPOINT` and
   `MODDE_TELEMETRY_TOKEN` (legacy `RS_MODDE_TELEMETRY_*` names still work),
@@ -261,8 +258,8 @@ variables, assume modde sends nothing. To confirm feature state, inspect
 
 ## Home-Manager Module
 
-For Nix users, a home-manager module is included as the declarative option:
-configure your mod profiles as code and have them deploy on activation.
+On Nix, declare mod profiles as code with the home-manager module. It deploys
+them on activation.
 
 ```nix
 {
@@ -313,9 +310,9 @@ imports = [ inputs.modde.homeManagerModules.modde ];
 
 ## Platform Support
 
-modde's live support target is Linux. macOS and Windows builds are produced by
-CI for validation and future distribution work, but they remain experimental
-until the installation guide marks their channels live.
+Linux is modde's live support target. CI builds modde for macOS and Windows for
+validation and future distribution. Both builds remain experimental until the
+installation guide marks their channels live.
 
 | Platform | Architectures            | Status          |
 | -------- | ------------------------ | --------------- |
@@ -330,17 +327,16 @@ coverage tests, Rust release builds, Nix package builds, and `nix flake check`
 on every push and pull request. Pushes to `trunk` also build and deploy the
 documentation site and presentation website to Codeberg Pages.
 
-Tag releases are managed through `cargo xtask release`. Run
+Use `cargo xtask release` for tag releases. Run
 `cargo xtask release X.Y.Z --dry-run` to preview a workspace release, then
 `cargo xtask release X.Y.Z` to publish stable crates.io crates and push the bare
-`X.Y.Z` tag. Release tags build Linux, macOS, and Windows CLI/GUI artifacts,
-but only the channel statuses in the installation guide decide what is
-advertised as live.
+`X.Y.Z` tag. Release tags build Linux, macOS, and Windows CLI/GUI artifacts.
+Only the installation guide determines which channels are advertised as live.
 
 ## Website and docs
 
-The project site is generated from `website/plinth-project.toml` by the
-Plinth `plinth-project` tool; the documentation (`docs/`) is an
+Plinth's `plinth-project` generates the site from `website/plinth-project.toml`.
+The documentation (`docs/`) is an
 [mdBook](https://rust-lang.github.io/mdBook/). The combined `site` output places
 the website at the root and the docs under `/docs/`.
 The public custom domain is `https://modde.tartanoglu.com/`; the Codeberg
@@ -364,8 +360,8 @@ cd docs && mdbook serve  # documentation
 config, capability matrix, or static assets change. Rust generator or renderer
 edits still require restarting the command.
 
-Publish with `nix run .#deploy-pages`. Because this site uses a custom domain,
-keep the custom-domain Pages flow: build `.#site`, force-push the generated
+Publish with `nix run .#deploy-pages`. Keep the custom-domain Pages flow:
+build `.#site`, force-push the generated
 output to the `pages` branch, include `.domains`, and point DNS at
 `caniko.github.io`.
 

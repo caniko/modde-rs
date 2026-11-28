@@ -9,17 +9,15 @@ searching, downloading, installing, and update-checking mods. The integration us
 every authenticated call, and **automated CDN downloads additionally require a Premium
 subscription** — see [Premium and what free accounts get](#premium-and-what-free-accounts-get).
 
-This page covers the full surface: the six-source key-resolution chain, browse/search/trending
-feeds, rate-limit behaviour, single-mod installs, Nexus Collections, the `nxm://` handler, and
-update checking with its safety guardrails.
+Beyond installs, modde supports browse/search/trending feeds, Nexus Collections, the `nxm://`
+handler, and update checks and their safeguards.
 
 ## Authentication
 
 ### The six-source resolution chain
 
-When modde needs a Nexus credential, it walks an ordered chain and uses the **first** source that
-yields a non-empty key. Higher entries win over lower ones — a configured config file beats an
-environment variable, which beats the keyring, and so on.
+modde uses the **first** source that yields a non-empty Nexus key. The config file takes
+precedence over the environment variable, which takes precedence over the keyring.
 
 | Priority | Source | How it is set | Best for |
 | -------- | ------ | ------------- | -------- |
@@ -87,9 +85,9 @@ the full option.
 modde nexus status
 ```
 
-This calls the v1 `users/validate.json` endpoint and reports the resolved account name and whether
-it has **Premium**. Use it to confirm both that your key is valid *and* that automated downloads
-will work.
+modde calls the v1 `users/validate.json` endpoint to check your key and report the account name
+and **Premium** status. Use it to confirm the key is valid and the account meets the Premium
+requirement for automated downloads.
 
 ## Premium and what free accounts get
 
@@ -118,10 +116,9 @@ CDN URL through the API requires Premium.
 
 ## Browsing and searching
 
-modde queries the **v2 GraphQL** endpoint first for browse/search, because it returns richer
-per-tile data (thumbnails, summaries, endorsement and download counts) in a single round-trip. If
-the GraphQL schema shifts or the endpoint errors, modde transparently **falls back to the v1 REST**
-equivalent so the UI keeps rendering.
+For browse/search, modde tries **v2 GraphQL** first: one request returns thumbnails,
+summaries, and endorsement and download counts for each tile. If the schema changes or the endpoint
+errors, modde **falls back to the v1 REST** equivalent so the UI keeps rendering.
 
 | Feed | GraphQL (preferred) | REST fallback (v1) |
 | ---- | ------------------- | ------------------ |
@@ -159,8 +156,8 @@ and reacts:
   `Nexus API rate limit exceeded. Please wait before retrying.` Respect the `Retry-After` header
   the server returns and wait before re-running.
 
-Update checking is designed to be frugal here: mods are **grouped by game domain** and modde issues
-exactly **one** `updated_mods` call per domain regardless of how many mods you track in that game
+For update checks, modde **groups mods by game domain** and makes exactly **one** `updated_mods`
+call per domain, regardless of how many mods you track
 (see [Checking for updates](#checking-for-updates)).
 
 ## Installing a single mod
@@ -198,9 +195,9 @@ The config can be TOML or JSON. Without it, a FOMOD mod is staged and marked
 
 ### When detection fails
 
-If modde cannot classify the archive, it writes a **dossier** (mod name, author, version, Nexus URL,
-and a probe trace) next to the staged files and marks the install `unknown`. This is the same
-dossier the skill tooling consumes to add bespoke handling.
+If modde can't classify the archive, it writes a **dossier** next to the staged files and marks
+the install `unknown`. The skill tooling uses the dossier's mod name, author, version, Nexus URL, and
+probe trace to add support for the layout.
 
 ## Nexus Collections
 
@@ -222,9 +219,8 @@ modde install nexus-collection <slug> --profile my-collection
 modde install nexus-collection <slug> --version 7 --profile my-collection
 ```
 
-When `--version` is omitted, modde uses the latest published revision discovered in step 1. When it
-is supplied, step 1 is still used to learn the game domain, but the given revision is fetched
-directly.
+Without `--version`, modde uses the latest published revision from step 1. With it, modde still
+uses step 1 to find the game domain, then fetches the specified revision directly.
 
 ### Declaratively (home-manager)
 
@@ -291,9 +287,9 @@ game domain, makes **one** `updated_mods` call per domain, and reports a mod as 
 
 ### `modde update apply`
 
-The companion command downloads and installs the latest MAIN file for each updatable mod and rewrites
-the profile entries to point at the fresh `(mod_id, file_id)` pair. Pair `check` and `apply` in a
-scheduled task to keep a profile current.
+This command downloads and installs the latest MAIN file for each updatable mod, then points the
+profile entry at the new `(mod_id, file_id)` pair. Schedule `check` and `apply` together to keep a
+profile current.
 
 ```bash
 # Preview only — list what would change, download nothing

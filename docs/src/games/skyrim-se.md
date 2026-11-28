@@ -1,17 +1,15 @@
 # Skyrim Special Edition / Anniversary Edition
 
 Skyrim Special Edition (`skyrim-se`) and Anniversary Edition (`skyrim-ae`) are
-modde's most complete, end-to-end-tested titles. They share this guide because
-they are the same game build: identical Steam App ID, install directory, INI
-files, archive formats, and Nexus domain. The Anniversary Edition is the Special
-Edition plus Creation Club content, so everything below applies to both ids
-unless explicitly noted.
+modde's most complete, end-to-end-tested titles. They share a game build, Steam
+App ID, install directory, INI files, archive formats, and Nexus domain.
+Anniversary Edition adds Creation Club content to Special Edition. This guide
+applies to both ids unless noted.
 
 Both are marked **`Done`** in the
-[supported-games matrix](supported-games.md): the scanner, conflict detection,
-and save tracking are all shipped and user-reachable, and the Wabbajack +
-home-manager install path described at the end is modde's strongest worked
-example.
+[supported-games matrix](supported-games.md): scanning, conflict detection,
+and save tracking all ship and are user-accessible. The Wabbajack + home-manager install
+at the end is modde's strongest worked example.
 
 ## Engine and overall status
 
@@ -31,10 +29,9 @@ example.
 | Conflict detection | `Done` (loose files + BSA/BA2 contents) |
 | Save tracking | `Done` |
 
-`skyrim-ae` is registered as a distinct game so you can target it explicitly, but
-launcher detection reports `skyrim-se` by default because AE reuses the SE Steam
-app and install directory. When in doubt, use `skyrim-se`; pick `skyrim-ae` only
-if a modlist or collection demands the AE id specifically.
+modde registers `skyrim-ae` as a distinct target, but launcher detection defaults
+to `skyrim-se` because AE shares the SE Steam app and install directory. Use
+`skyrim-se` unless a modlist or collection requires the AE id `skyrim-ae`.
 
 ## How modde detects the install
 
@@ -60,11 +57,9 @@ gotchas](#linux-proton-notes-and-known-gotchas).
 
 ## Mod directory and deploy strategy
 
-Every Bethesda title deploys into the game's `Data/` directory. modde computes
-the mod directory as `<install>/Data` and stages mod content there. The deploy
-itself is symlink-based, consistent with all Bethesda games, so the game's own
-`Data/` stays a virtual composite of the active profile rather than a
-destructively merged folder.
+Every Bethesda title deploys into `Data/`. modde stages content at
+`<install>/Data` and deploys it with symlinks, so `Data/` reflects the active
+profile without a destructive merge.
 
 Two file classes get special treatment:
 
@@ -111,10 +106,9 @@ stale-duplicate detection.
 
 ## Conflict classification specifics
 
-Skyrim uses the Bethesda collision classifier, which assigns a severity to every
-overlapping file by extension — and, crucially, **indexes the contents of
-`.bsa`/`.ba2` archives** so two mods that ship conflicting files *inside*
-archives are still flagged.
+Skyrim uses the Bethesda collision classifier. It assigns severity by extension
+and **indexes the contents of `.bsa`/`.ba2` archives** to flag overlaps inside
+archives as well as loose files.
 
 | Severity | Extensions |
 | -------- | ---------- |
@@ -122,11 +116,10 @@ archives are still flagged.
 | Config | `ini`, `cfg`, `json`, `toml`, `xml` |
 | Cosmetic | `dds`, `png`, `tga`, `jpg`, `nif`, `hkx`, `fuz`, `wav`, `xwm`, `swf`, `btr`, `bto`, `btt`, `bsa`, `ba2` |
 
-So two mods overwriting the same `.dds` are a cosmetic (last-wins, usually safe)
-conflict, while two mods providing the same plugin record or compiled script
-(`.pex`/`.psc`) or native DLL are flagged as dangerous and surfaced
-prominently. Archive contents (`.bsa`/`.ba2`) are read and merged into the
-collision map, so the analysis is not limited to loose files.
+Two mods overwriting the same `.dds` produce a cosmetic conflict (last wins,
+usually safe). modde prominently flags overlaps on a plugin record, compiled
+script (`.pex`/`.psc`), or native DLL as dangerous. The collision map combines
+loose files with `.bsa`/`.ba2` contents.
 
 See [Conflicts](../guides/conflicts.md) for how severities drive the conflict
 report and resolution order.
@@ -259,10 +252,9 @@ modde loot validate --game skyrim-se
 
 ## Linux/Proton notes and known gotchas
 
-These notes concern the game's runtime on Linux and macOS, where Skyrim runs
-through Proton/Wine. On Windows the game runs natively, so the prefix-specific
-points below do not apply — saves, `plugins.txt`, and INI files live at their
-native Windows locations. modde itself runs natively on all three platforms.
+Skyrim runs through Proton/Wine on Linux and macOS. On Windows it runs natively:
+the prefix notes don't apply, and saves, `plugins.txt`, and INI files use native
+Windows paths. modde runs natively on all three platforms.
 
 - **`--game-dir` / `gameDir` is required for vanilla-referencing modlists.** Many
   Wabbajack lists — Legends of the Frost is the canonical example — reference

@@ -1,9 +1,9 @@
 # Patcher pipelines
 
-modde can run profile-scoped patcher stages as part of `modde deploy`. This is
-for generated patches that must match the current deployed files and active
-plugin load order. The first shipped stage type manages Synthesis CLI; the
-second runs a user-provided command with modde-owned environment variables.
+Use profile-scoped patcher stages in `modde deploy` when generated patches must
+match the deployed files and active plugin load order. The first stage type
+shipped was Synthesis CLI. A second type runs your command with environment
+variables set by modde.
 
 Enabled patchers are required deployment artifacts. If an executable, settings
 file, Synthesis profile, runtime prerequisite, or command output is missing,
@@ -12,9 +12,9 @@ regenerate it, and a validation command.
 
 ## Synthesis
 
-Synthesis remains an external tool. Install the .NET SDK, unpack all files from
-the Synthesis release zip into a dedicated tools directory, and create a
-`PipelineSettings.json` with Synthesis itself.
+Install the .NET SDK, unpack the entire Synthesis release zip into a dedicated
+tools directory, and use Synthesis itself to create `PipelineSettings.json`.
+Synthesis runs as an external tool.
 
 ```bash
 modde patcher add-synthesis synthesis \
@@ -82,27 +82,27 @@ modde patcher enable synthesis --profile my-skyrim --game skyrim-se
 modde patcher remove my-patcher --profile my-skyrim --game skyrim-se
 ```
 
-`run` executes the enabled pipeline against the currently deployed profile
-without performing a fresh base deploy first; pass a stage name to run just
-that stage. `validate` checks executables, settings files, and Synthesis
-profiles without running anything. `reorder` replaces the stage order with the
-supplied names.
+`run` runs the enabled pipeline against the deployed profile without a fresh
+base deploy. Pass a stage name to run only that stage. `validate` checks
+executables, settings files, and Synthesis profiles without launching any
+configured executable or stage.
+`reorder` sets the stage order to the supplied names.
 
 ## Timeouts, caching, and failure recovery
 
 Every stage has a hard timeout (default 1800 seconds; set per stage with
 `--timeout-seconds` on `add-synthesis`/`add-command`). A stage that exceeds it
-is killed and the run fails. Stage stdout/stderr are captured to log files so a
-killed or failed stage can be diagnosed after the fact.
+is killed and the run fails. modde captures stage stdout/stderr to log files
+so you can diagnose failures and timeouts afterward.
 
 Stage results are cached: when a stage's settings, output mod, and the
 profile's active load order are unchanged since its last successful run, the
 stage is skipped with `Skipped patcher stage '<name>' (cache hit)`. Changing
 any input — including the load order — invalidates the cache.
 
-Before a pipeline run, previously generated stage outputs are backed up; if the
-pipeline fails, they are restored, so a mid-pipeline failure does not leave the
-profile with half-regenerated patches.
+Before a run, modde backs up previously generated stage outputs and restores
+them if the pipeline fails, so the profile isn't left with half-regenerated
+patches.
 
 ## Home Manager
 

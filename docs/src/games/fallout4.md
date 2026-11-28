@@ -1,8 +1,8 @@
 # Fallout 4
 
-Fallout 4 (`game_id` **`fallout4`**, Steam App ID **377160**) is a fully shipped
-Bethesda title in modde: scanning, conflict detection, plugin load order, and
-save tracking all work end to end. Its overall status is **`Done`** in the
+Fallout 4 (`game_id` **`fallout4`**, Steam App ID **377160**) has fully shipped
+Bethesda support in modde: scanning, conflict detection, plugin load order, and
+save tracking work end to end. modde lists it as **`Done`** in the
 [supported-games table](supported-games.md) and the
 [parity audit](../reference/parity.md). It is one of five Creation Engine games
 modde drives through a single data-driven `BethesdaGame` plugin, sharing its
@@ -27,27 +27,24 @@ deploy strategy and conflict logic with Skyrim SE/AE, Fallout 76, and Starfield.
 | Save profiles | Enabled (`supports_save_profiles = true`) |
 | Overall status | **`Done`** |
 
-Because Fallout 4 is part of the Bethesda plugin family, it inherits the full
-Creation Engine feature set documented for [Skyrim SE/AE](skyrim-se.md) and in
-the [Conflicts & load order](../guides/conflicts.md) guide:
+Fallout 4 shares the full Creation Engine feature set documented for
+[Skyrim SE/AE](skyrim-se.md) and in [Conflicts & load order](../guides/conflicts.md):
 `plugins.txt` read/write, a pure-Rust LOOT masterlist parser, binary plugin
 header validation (Form 43 / missing-master detection), and archive-aware
 conflict analysis.
 
 ## Install detection
 
-modde locates a Fallout 4 install through its registered launcher IDs, in this
-priority order:
+modde checks Fallout 4 launcher IDs in this order:
 
 1. **Steam** — App ID `377160`, install directory
    `steamapps/common/Fallout 4`. This is the primary, best-tested detection path.
 2. **Heroic (GOG)** — GOG app ID `1998527297`, for the GOG build (on Linux/macOS
    run through Heroic + Proton/Wine; on Windows it runs natively).
 
-There is no Epic launcher mapping for Fallout 4. The install root is the
-directory that contains `Fallout4.exe` and the `Data/` folder; you can also point
-modde at it explicitly with `gameDir` (home-manager) or `--game-dir` (CLI) when
-auto-detection cannot reach it.
+Fallout 4 has no Epic launcher mapping. If auto-detection fails, point modde
+at the directory containing `Fallout4.exe` and `Data/` with `gameDir`
+(home-manager) or `--game-dir` (CLI).
 
 ### Proton prefix
 
@@ -66,11 +63,10 @@ resolves them under the App-ID-keyed `compatdata` prefix:
 .../compatdata/377160/pfx/drive_c/users/steamuser/AppData/Local/Fallout4/plugins.txt
 ```
 
-and saves from the `My Games` tree (see [Save tracking](#save-tracking)). If the
-prefix has not been created yet — for example you have installed the game but
-never launched it — these paths will not exist, and modde degrades gracefully:
-the scanner falls back to a plain directory walk and the save tracker reports no
-saves rather than erroring.
+and modde reads saves from the `My Games` tree (see [Save tracking](#save-tracking)).
+Until the prefix exists (for example, before the first launch), these paths are
+absent. The scanner falls back to a plain directory walk and the save tracker
+reports no saves instead of an error.
 
 ## Mod directory & deploy strategy
 
@@ -85,9 +81,8 @@ install is never overwritten, and a rollback restores the previous deployment
 atomically. See [Deployment & VFS](../guides/deployment.md) for the full build →
 materialize → deploy pipeline and `modde rollback`.
 
-`.ba2` archives are deployed **as-is, not extracted** — the Creation Engine loads
-them natively, so modde places the archive straight into `Data/` and lets the
-engine mount it. This matches the bare-layout recognizer, which treats a top-level
+modde deploys `.ba2` archives **as-is, not extracted**, into `Data/` for the
+Creation Engine to mount. The bare-layout recognizer treats a top-level
 `Data/`, loose `.esp`/`.esm`/`.esl`/`.ba2` files, or the usual asset folders
 (`meshes/`, `textures/`, `scripts/`, `interface/`, `sound/`, `materials/`,
 `strings/`, …) as a valid Bethesda mod root even when the archive was packed
@@ -115,10 +110,9 @@ deployed loose in the game folder versus managed by a profile. See
 
 ## Conflict classification
 
-Conflicts are classified by the shared `BethesdaCollisionClassifier`, which is
-**archive-aware**: it reads the file listing inside each `.ba2`/`.bsa` and folds
-those entries into the same collision map as loose files, so two archives that
-both ship `textures/foo.dds` are flagged even though neither was extracted.
+The shared `BethesdaCollisionClassifier` adds each `.ba2`/`.bsa` file listing
+to the same collision map as loose files. It flags two archives that both ship
+`textures/foo.dds` without extracting either.
 
 Severity is assigned per file extension:
 
@@ -128,9 +122,8 @@ Severity is assigned per file extension:
 | **Config** | `.ini`, `.cfg`, `.json`, `.toml`, `.xml` | Settings files; later mod wins but the change is usually intentional |
 | **Cosmetic** | `.dds`, `.png`, `.tga`, `.jpg`, `.nif`, `.hkx`, `.fuz`, `.wav`, `.xwm`, `.swf`, `.btr`, `.bto`, `.btt`, `.bsa`, `.ba2` | Meshes, textures, sound, animation, UI — last-writer-wins is normally safe |
 
-This is the same severity ladder modde uses to decide which collisions to surface
-loudly. See [Conflict detection](../guides/conflicts.md) for how severities drive
-the conflict report and how load-order priority resolves a winner.
+See [Conflict detection](../guides/conflicts.md) for how severity determines
+which collisions stand out in the report and how load-order priority picks a winner.
 
 ### Mod-safety classification
 
@@ -141,8 +134,8 @@ enabling a mod mid-playthrough.
 
 ## Plugin & load-order handling
 
-Fallout 4 has a real plugin system (`has_plugin_system()` is `true`), and modde
-manages it as a first-class, dual-pane concern:
+Fallout 4 supports plugins (`has_plugin_system()` is `true`). modde manages
+them in a dual-pane workflow:
 
 - **`plugins.txt` read/write.** modde parses the standard format — `*Plugin.esp`
   = enabled, `Plugin.esp` = disabled, `#…` = comment — from the Proton prefix and
@@ -242,10 +235,9 @@ like any other game. The settings that matter most for this title:
 
 ## Linux / Proton notes & gotchas
 
-These notes apply to the game's runtime on Linux and macOS, where Fallout 4 runs
-through Proton/Wine. On Windows the game runs natively — there is no Wine prefix,
-and `plugins.txt`, the `My Games/Fallout4` tree, and the INI files live at their
-native Windows locations. modde itself runs natively on all three platforms.
+Fallout 4 runs through Proton/Wine on Linux and macOS. On Windows it runs
+natively, with no Wine prefix: `plugins.txt`, `My Games/Fallout4`, and the INI
+files use native Windows paths. modde runs natively on all three platforms.
 
 - **Launch the game once first.** Until Proton has created the `compatdata/377160`
   prefix, `plugins.txt`, the `My Games/Fallout4` save tree, and the per-prefix INI

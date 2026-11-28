@@ -8,11 +8,10 @@ from symlinks that point back at a content-addressed store. The game — and any
 external tool — sees a fully merged, modded `Data/` (or `~mods/`, or `mods/`,
 depending on the game), while the real install on disk stays pristine.
 
-This is the Linux-native equivalent of Mod Organizer 2's USVFS, with one decisive
-advantage: USVFS hooks file-system calls per-process, so only the hooked process
-sees the merged tree. modde's symlinks live in the real filesystem, so they are
-**globally visible** to every process — the game, `xEdit`, a packer, a shell —
-without any API hooking.
+This is the Linux-native equivalent of Mod Organizer 2's USVFS. USVFS hooks
+filesystem calls per process, so only the hooked process sees the merged tree.
+modde's symlinks are **globally visible** to every process, including the game,
+`xEdit`, packers, and shells, without API hooks.
 
 > The VFS symlink farm is the deploy path for Nexus and Manual (store-backed)
 > profiles. Wabbajack profiles take a different, hardlink/copy path — see
@@ -32,10 +31,9 @@ SymlinkFarm<Materialized> symlinks written into the profile staging dir
    (symlinks in the game's mod directory)
 ```
 
-Each stage is a distinct Rust type. You cannot call `deploy_to()` on a `Built`
-farm — the compiler rejects it — so it is impossible to deploy a farm that was
-never written to disk. The state marker is a zero-sized `PhantomData`, so this
-safety costs nothing at runtime.
+Each stage has its own Rust type. The compiler rejects `deploy_to()` on a `Built`
+farm, preventing deployment before materialization. The zero-sized
+`PhantomData` state marker adds no runtime cost.
 
 ### 1. Build
 
@@ -85,12 +83,10 @@ the deploy command logs the missing mods separately.
 ~/.local/share/modde/profiles/<profile>/staging/
 ```
 
-It first removes any existing staging directory in full, recreates it, then for
-each `(rel_path → source)` it creates the parent directories and writes a
-symlink at `staging/<rel_path>` pointing at the **absolute** store `source`.
-Because materialize wipes and rebuilds staging from scratch, the staging tree
-always reflects exactly the current `Built` farm — there are no stale leftovers
-from a previous deploy.
+It removes any existing staging directory, recreates it, then makes the parent
+directories for each `(rel_path → source)` and symlinks `staging/<rel_path>` to
+the **absolute** store `source`. Rebuilding staging leaves exactly the current
+`Built` farm, with no stale files from previous deployments.
 
 The content store these links point into lives at:
 
@@ -100,20 +96,19 @@ The content store these links point into lives at:
 
 ### 3. Deploy
 
-The materialized staging tree is projected into the game's resolved mod
-directory. For each relative path the deploy step removes any pre-existing entry
-at the destination and creates a symlink pointing at the corresponding file
-**inside the staging directory** (again an absolute path). The result is a
+Deploy links staging into the game's resolved mod directory. For each relative
+path, it removes any existing destination entry and symlinks to the corresponding
+file **inside the staging directory** using an absolute path. The result is a
 two-hop chain:
 
 ```
 <game>/Data/textures/sky.dds   ─sym→   staging/textures/sky.dds   ─sym→   store/<mod_id>/textures/sky.dds
 ```
 
-Final placement is delegated to the game plugin via `deploy_to_install()`, so a
-game can apply its own deploy strategy (for example, UE4 titles route paks into
-`Content/Paks/~mods/`). After deployment modde runs the game's `post_deploy`
-hook and configures Wine DLL overrides (`WINEDLLOVERRIDES`) for any proxy DLLs
+The game plugin chooses final placement via `deploy_to_install()`. For example,
+UE4 titles route paks into `Content/Paks/~mods/`. After deployment, modde runs
+the game's `post_deploy` hook and configures Wine DLL overrides
+(`WINEDLLOVERRIDES`) for any proxy DLLs
 the mods deploy, such as `version.dll` for CET or `winmm.dll` for ASI loaders.
 If the profile has enabled [patcher pipeline](patcher-pipelines.md) stages,
 modde then runs each stage, imports its generated files into the configured
@@ -122,10 +117,9 @@ next stage.
 
 ### Symlinks: absolute, not relative
 
-Both hops use the symlink **target exactly as passed** — these are absolute
-paths in modde, not relative ones. On Linux the call is a plain
-`symlink(2)`; on Windows modde inspects the target to choose `symlink_file`
-vs `symlink_dir`.
+Both hops use the symlink **target exactly as passed**: an absolute path.
+Linux uses `symlink(2)`; on Windows modde inspects the target to choose
+`symlink_file` or `symlink_dir`.
 
 **If a store entry is missing**, the symlink is still created but dangles. modde
 does not error at deploy time for a broken link — the missing-mod case is caught
@@ -189,10 +183,9 @@ Skyrim SE); otherwise activation prints an awaiting message and continues.
 
 ## The store link strategy
 
-The symlink farm only ever creates symlinks. A second, distinct mechanism —
-`link_or_copy` — is used wherever modde must materialise an actual file rather
-than a link (notably the Wabbajack deploy path). It tries three strategies in
-order and reports which one it used:
+The symlink farm creates only symlinks. When modde needs a real file instead
+(notably for Wabbajack deployment), `link_or_copy` tries three strategies in
+order and reports which it used:
 
 | Strategy   | When it applies                                  | Cost                       |
 | ---------- | ------------------------------------------------ | -------------------------- |
@@ -213,8 +206,7 @@ on a single CoW filesystem and correct everywhere else.
 modde rollback --profile my-skyrim
 ```
 
-The swap is performed with directory renames, which are atomic on a single
-filesystem:
+Rollback uses directory renames, which are atomic on a single filesystem:
 
 - If a current `staging` exists, it is renamed aside to `staging.old`,
   `staging.bak` is renamed into place as `staging`, and `staging.old` is
@@ -230,11 +222,10 @@ preserve before a risky change. After a successful rollback you must re-run
 
 ## Wabbajack profiles
 
-Wabbajack-installed profiles do **not** use the symlink farm. A Wabbajack modlist
-ships a pre-built, already-conflict-resolved file layout under
-`~/.local/share/modde/staging/<profile>/mods/<mod>/...`, so there is nothing for
-the VFS to resolve. Deploying one walks that `mods/` tree and places each file
-into the game directory with `link_or_copy` (hardlink → reflink → copy):
+Wabbajack-installed profiles skip the symlink farm. Their layout under
+`~/.local/share/modde/staging/<profile>/mods/<mod>/...` already resolves conflicts,
+so the VFS has nothing to resolve. Deploy walks the `mods/` tree and places each
+file in the game directory with `link_or_copy` (hardlink → reflink → copy):
 
 - MO2 metadata files (`meta.ini`, `meta.json`) are skipped.
 - A file already hardlinked to its source (same inode and device) is skipped, so
@@ -261,14 +252,13 @@ and checks symlink health. It reports:
 - **Mismatches/errors** — files it could not hash, and any
   `broken symlink -> <target>` where the link target no longer exists
 
-A clean run prints `All files OK.` This is the fastest way to catch a store
-entry that was deleted out from under a deployed profile.
+A clean run prints `All files OK.` This is the fastest way to spot a store entry
+deleted after deployment.
 
 ## Vanilla (stock) snapshots
 
-A stock snapshot captures the *original* game installation so you can detect when
-something — a mod, a tool, a botched deploy — has modified files that should have
-stayed vanilla:
+A stock snapshot records the *original* game installation so you can detect
+changes to vanilla files, including changes from mods, tools, or a failed deployment:
 
 ```bash
 # Capture a snapshot of the detected install

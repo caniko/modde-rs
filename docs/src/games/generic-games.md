@@ -1,28 +1,22 @@
 # Generic & user-defined games
 
-modde ships [15 built-in games](supported-games.md) with bespoke scanners, save
-trackers, and conflict logic. For everything else, there is the **generic game**
-path: a configurable plugin driven by a small TOML file (a *GameSpec*) that you
-write — or generate — and drop into modde's data directory. This lets you point
-modde at an arbitrary title and get the deployment engine, conflict detection,
-launcher integration, and executable management without waiting for a hand-coded
-profile.
+modde ships [15 built-in games](supported-games.md) with game-specific scanners,
+save trackers, and conflict logic. For other titles, write or generate a TOML
+*GameSpec* in modde's data directory. The **generic game** plugin provides
+deployment, conflict detection, launcher integration, and executable management
+without a hand-coded profile.
 
-> **Generic game support is `Partial`.** A user-defined game gives you the
-> *engine-agnostic* parts of modde — virtual-filesystem deployment, conflict
-> classification, launcher detection, and executable management — but it does
-> **not** give you a bespoke filesystem scanner or a save tracker. There is no
-> plugin author writing game-specific heuristics behind it; you are describing
-> the game with a handful of paths and IDs. Treat it as "modde can deploy and
-> launch mods for this game", not "modde fully understands this game". See
-> [the supported-games matrix](supported-games.md) for the canonical status
-> vocabulary (the baseline lives in `docs/capability-matrix.toml`).
+> **Generic game support is `Partial`.** A spec describes a game with paths and
+> IDs. That enables virtual-filesystem deployment, conflict classification,
+> launcher detection, and executable management, but not a game-specific
+> filesystem scanner or a save tracker. See
+> [the supported-games matrix](supported-games.md) for the status vocabulary
+> and `docs/capability-matrix.toml` for the baseline.
 
 ## What a user-defined game can and cannot do
 
-A generic game is registered with `EngineFamily::Generic`. modde treats it like
-any other game for the parts of the pipeline that do not need game-specific
-knowledge, and explicitly opts out of the parts that do.
+modde registers user-defined games as `EngineFamily::Generic` and skips steps
+that need game-specific logic.
 
 | Capability | Generic game | Notes |
 | ---------- | ------------ | ----- |
@@ -39,9 +33,7 @@ knowledge, and explicitly opts out of the parts that do.
 | Wabbajack list matching | **No** | Generic games carry no `wabbajack_names`. |
 | OptiScaler profiles | **Opt-in** | None ship by default, but you can import them — see [import-profile](#modde-game-import-profile). |
 
-The short version: **deployment, conflict, and launcher work; there is no
-bespoke scanner and no save tracker.** Those two gaps are the defining limits of
-the `Partial` status.
+The lack of a game-specific scanner and save tracker defines `Partial` here.
 
 ## Where specs live on disk
 
@@ -68,8 +60,7 @@ loader reads this directory at startup:
 - invalid or unparseable specs are skipped (with a warning) rather than aborting
   the load.
 
-You can edit these files by hand, but the recommended path is the
-`modde game` CLI, which validates before writing.
+You can edit specs by hand, but prefer `modde game`: it validates before writing.
 
 ## The GameSpec TOML schema
 
@@ -104,8 +95,7 @@ proxy_dlls = ["dxgi", "winmm"]  # candidate Wine DLL overrides
 
 ### Validation rules
 
-Both the CLI and the on-disk loader run the same validation before a spec is
-accepted:
+The CLI and loader validate specs against the same rules:
 
 - `id` must match `^[a-z0-9][a-z0-9-]*$` (lowercase ASCII letters/digits and
   hyphens, starting with a letter or digit).
@@ -115,13 +105,12 @@ accepted:
   the install root.
 - `display_name` must not be empty after trimming whitespace.
 
-A spec that fails validation is rejected by `modde game add` / `modde game import`
-and silently skipped (with a warning) by the loader.
+`modde game add` / `modde game import` reject invalid specs. The loader warns
+and skips them.
 
 ### Install detection order
 
-When modde needs to find the install directory for a generic game, it tries, in
-order:
+modde looks for the install directory in this order:
 
 1. `install_path_override`, if set and the directory exists.
 2. `install_dir_name` under any detected `steamapps/common/` library.
@@ -131,8 +120,7 @@ The first hit wins.
 
 ## The `modde game` CLI surface
 
-All user-defined-game management lives under `modde game`. The full subcommand
-set:
+Manage user-defined games with `modde game`:
 
 | Subcommand | Purpose |
 | ---------- | ------- |
@@ -221,11 +209,10 @@ with `no user-defined game named '<id>' exists`.
 modde game detect <install-path>
 ```
 
-Walks `<install-path>` looking for directories that contain `.exe` files, to
-help you choose an `executable_dir` (and confirm the install layout). For each
-directory containing at least one executable it reports the relative path, the
-sorted list of `.exe` names, and the combined size of those executables in
-bytes. Behavior:
+Searches `<install-path>` for directories containing `.exe` files, so you can
+confirm the install layout and choose an `executable_dir`. For each match, it
+reports the relative path, sorted `.exe` names, and total executable size in
+bytes.
 
 - the search recurses **up to 4 directory levels deep** below the install root;
 - `.exe` matching is case-insensitive;
@@ -236,8 +223,8 @@ bytes. Behavior:
 - when nothing is found it prints
   `No executable-bearing directories found under <path>.`
 
-This is purely advisory — `detect` never writes a spec. Use its top result as
-your `--executable-dir`.
+`detect` never writes a spec. Confirm which candidate directory contains the
+real game binary before passing it as `--executable-dir`.
 
 ### `modde game export`
 
@@ -279,9 +266,9 @@ it overwrites. On success it reports how many profiles were imported and where.
 
 ## Detecting executable-bearing directories
 
-Before registering a game you usually do not know where the real binary lives —
-some titles ship a tiny launcher at the root and the actual game several folders
-deep. `modde game detect` answers that:
+Some games put a tiny launcher at the root and the game binary several folders
+deep. Before registering the game, use `modde game detect` to list candidate
+executable directories and confirm which contains the game binary:
 
 ```bash
 modde game detect "/home/you/Games/factorio"

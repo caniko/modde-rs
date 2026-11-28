@@ -1,10 +1,9 @@
 # Stardew Valley
 
-Stardew Valley is modde's SMAPI-engine title. It is the only game in the registry
-on the `Smapi` engine family, and unlike the Bethesda, REDengine, and Unreal games
-it is a managed-content loader: mods are self-describing directories under `Mods/`
-rather than archives, plugins, or `.pak` overlays. This page documents exactly
-what modde knows about the title, sourced from
+Stardew Valley is the only title in modde's `Smapi` engine family. Unlike
+Bethesda, REDengine, and Unreal games, it uses a managed-content loader: mods
+are self-describing directories under `Mods/`, not archives, plugins, or
+`.pak` overlays. The plugin source is
 [`crates/modde-games/src/stardew/`](https://github.com/caniko/modde-rs/blob/trunk/crates/modde-games/src/stardew).
 
 ## Engine and overall status
@@ -22,22 +21,19 @@ what modde knows about the title, sourced from
 | Conflict detection | Yes (generic policy classifier) |
 | Save tracking | Done |
 
-The **Partial** rating matches [the supported-games matrix](supported-games.md):
-the core path — detection, the SMAPI mod layout, scanning, conflict
-classification, and save tracking — is implemented, but it has not been promoted
-to `Done` the way the Bethesda Creation Engine titles and Cyberpunk 2077 have.
-Treat installer coverage and end-to-end UX as work in progress, not as a turnkey
-SMAPI manager. The canonical, test-coupled status baseline lives in
+Stardew Valley is **Partial** in [the supported-games matrix](supported-games.md):
+modde detects the install, handles the SMAPI layout, scans mods, classifies
+conflicts, and tracks saves, but installer coverage and the end-to-end workflow
+remain incomplete. Stardew Valley has not reached `Done`, unlike Cyberpunk 2077.
+The test-coupled status baseline is
 [`docs/capability-matrix.toml`](https://github.com/caniko/modde-rs/blob/trunk/docs/capability-matrix.toml).
 
 ## How modde detects the install
 
-modde resolves the Stardew Valley install through its launcher IDs. The
-registration carries a Steam App ID of `413150` and a Steam library directory name
-of `Stardew Valley`, so a Steam install is located by walking your Steam libraries
-for `steamapps/common/Stardew Valley`. No Heroic GOG or Epic IDs are registered for
-this title, so Heroic auto-detection is not wired up — point modde at the install
-directory directly if you run it from GOG or another launcher.
+modde uses Steam App ID `413150` and library directory name `Stardew Valley` to
+look for `steamapps/common/Stardew Valley` in your Steam libraries. No Heroic
+GOG or Epic IDs are registered, so set the install directory explicitly for
+GOG or another launcher.
 
 Stardew Valley runs natively on Linux. The default Steam Linux build is a native
 Linux binary, so there is **no Proton prefix involved** for the base game, and
@@ -72,9 +68,8 @@ behaviour.
 scanner walks the `Mods/` directory and applies a directory-mod rule:
 
 - Each immediate subdirectory of `Mods/` is a candidate mod.
-- The presence of a **`manifest.json`** marker file inside a candidate raises
-  detection confidence to `0.98` — that file is SMAPI's own mod manifest and is the
-  authoritative signal that a directory is a SMAPI mod.
+- SMAPI's **`manifest.json`** identifies a directory as a SMAPI mod and raises
+  detection confidence to `0.98`.
 - Directories without the marker are still reported at a lower base confidence
   (`0.75`), so loose content packs are not silently dropped.
 - Discovered mods are namespaced under a `smapi/` mod-id prefix, and a mod's
@@ -92,11 +87,9 @@ See [Mod Scanning](../guides/scanning.md) for dry-run mode and threshold filteri
 
 ## Conflict classification specifics
 
-Stardew Valley uses modde's **generic policy collision classifier** (it has no
-bespoke per-game collision classifier the way Bethesda and Cyberpunk do). The
-generic classifier registers **no archive extensions** — SMAPI mods are loose
-directory content, not packed archives — and applies the default severity table to
-overlapping files:
+Unlike Bethesda and Cyberpunk, Stardew Valley uses modde's **generic policy
+collision classifier**. It registers **no archive extensions** because SMAPI
+mods are loose files. Overlaps use the default severities:
 
 | Extension | Severity |
 | --------- | -------- |
@@ -178,12 +171,11 @@ the fingerprint trailer format.
 ## Plugin and load-order handling
 
 Stardew Valley has **no Bethesda-style plugin (`.esp`/`.esm`) load order**. SMAPI
-loads mods by their `manifest.json` and resolves inter-mod dependencies itself at
-runtime. modde therefore does not manage an external plugin/load-order file for
-this title; ordering is handled entirely through modde's standard mod load-order
-priority (later mods win file conflicts during deployment), which is what the
-collision classifier and the VFS builder consume. There is no separate plugin
-table to edit.
+loads mods by `manifest.json` and resolves dependencies at runtime. For Stardew
+Valley, modde manages no external plugin/load-order file and exposes no separate
+plugin table. Its collision
+classifier and VFS builder use the standard mod priority: later mods win file
+conflicts during deployment.
 
 ## Installer specifics
 
@@ -224,10 +216,10 @@ See [Tools & Overlays](../guides/tools.md) for enabling and configuring these.
 
 ## Linux and Proton notes
 
-- **Native Linux is the default and the happy path.** The Steam Linux depot ships a
-  native build, SMAPI has a first-class Linux installer, and the save directory is
-  the native `~/.config/StardewValley/Saves`. No Wine prefix is involved, and modde
-  does not look for one.
+- **Native Linux is the default and recommended path.** Steam ships a native
+  Linux build, SMAPI provides a first-class Linux installer, and saves live at
+  `~/.config/StardewValley/Saves`.
+  The game doesn't use a Wine prefix, and modde doesn't look for one.
 - **SMAPI itself must be installed and set as the launch command.** modde manages
   your `Mods/` content; it does **not** install or bootstrap SMAPI. After running
   SMAPI's installer, set Stardew's Steam launch options to run SMAPI (the standard

@@ -1,10 +1,10 @@
 # Starfield
 
-Starfield is one of modde's five built-in Bethesda Creation Engine titles. It
-shares the data-driven `BethesdaGame` plugin with Skyrim SE/AE and the Fallout
-games, so its deploy strategy, conflict classification, and plugin handling are
-the same engine-wide machinery — only the per-title metadata (app ID, save
-folder, INI names, archive extension) differs.
+Starfield is one of modde's five built-in Bethesda Creation Engine titles.
+It shares deployment, conflict classification, and plugin handling with
+Skyrim SE/AE and the Fallout games through the data-driven `BethesdaGame`
+plugin. Only per-title metadata (app ID, save folder, INI names, archive
+extension) differs.
 
 ## Engine & overall status
 
@@ -22,16 +22,14 @@ folder, INI names, archive extension) differs.
 | Managed INI files | `StarfieldPrefs.ini`, `StarfieldCustom.ini` |
 | Save extension | `.sfs` |
 
-**Overall status: `Partial`.** The scanner, conflict classifier, plugin/load-order
-handling, and diagnostics are all wired in and exercised, but Starfield's overall
-path is held at `Partial` because the broader modding workflow around it is still
-maturing relative to the fully battle-tested Skyrim SE / Fallout 4 paths.
+**Overall status: `Partial`.** modde integrates and exercises the scanner,
+conflict classifier, plugin/load-order handling, and diagnostics. The broader
+workflow remains `Partial` because it is less proven than Skyrim SE / Fallout 4.
 
-**Save tracking is `Done`.** Starfield ships a dedicated `.sfs` save tracker that
-is reachable end to end through the same git-backed save vault every other game
-uses. See [Save tracking](#save-tracking) below and the
-[canonical status table](supported-games.md) for how this lines up with the
-other titles.
+**Save tracking is `Done`.** Starfield's dedicated `.sfs` tracker works end to
+end through the shared git-backed save vault. See [Save tracking](#save-tracking)
+and the [canonical status table](supported-games.md) for comparison with other
+titles.
 
 > Status vocabulary follows the repository's
 > [`docs/capability-matrix.toml`](https://github.com/caniko/modde-rs/blob/trunk/docs/capability-matrix.toml)
@@ -41,16 +39,13 @@ other titles.
 
 ## How modde detects the install
 
-Starfield is registered with a Steam App ID (`1716740`) and the Steam library
-folder name `Starfield`. modde's launcher detection uses these to locate the
-install under your Steam libraries. No Heroic GOG or Epic IDs are registered for
-Starfield, so launcher auto-detection is Steam-oriented; for any other source you
-can always point a profile at the install directory explicitly.
+modde finds Starfield in your Steam libraries by App ID (`1716740`) and folder
+name `Starfield`. Without registered Heroic GOG or Epic IDs, auto-detection
+looks to Steam. For other sources, point the profile at the install directory.
 
-Because Starfield runs through Proton on Linux, modde reads its Windows-side game
-data — `plugins.txt` and the per-profile INI files — from inside the Proton
-prefix rather than from a native Linux path. The relevant locations under the
-Steam compatibility prefix are:
+Starfield runs through Proton on Linux. modde reads `plugins.txt` and the
+per-profile INI files from the Steam compatibility prefix, not a native Linux
+path:
 
 ```text
 # Save games (auto-detected by the plugin)
@@ -73,11 +68,10 @@ install root. modde deploys with the standard **symlink-farm virtual filesystem*
 mods are staged in an intermediate directory and symlinked into `Data/`, leaving
 the original game files untouched and the whole deployment reversible.
 
-The build/materialize/deploy pipeline, priority ordering (profile overrides win,
-then later mods in the load order), rollback, and `modde verify` all behave
-exactly as documented in [Deployment & VFS](../guides/deployment.md). Nothing
-about Starfield changes the deploy model — it is the same engine-wide path used
-by Skyrim SE and Fallout 4.
+Starfield uses the same build/materialize/deploy pipeline as Skyrim SE and
+Fallout 4: profile overrides win, then later mods in the load order. Rollback
+and `modde verify` also behave as described in
+[Deployment & VFS](../guides/deployment.md).
 
 When modde recognizes a **bare** (loose-files) mod layout during extraction, it
 keys off the shared Bethesda layout policy: recognized root directories include
@@ -111,10 +105,9 @@ extensions recognized are `esp`, `esm`, `esl`; companion archive extensions are
 
 ## Conflict classification
 
-Starfield uses the shared `BethesdaCollisionClassifier`. When two mods provide the
-same relative path, modde classifies the **severity** of the overlap by file type.
-It can also read inside `.bsa`/`.ba2` archives (via the archive index) to classify
-conflicts on archived contents, not just loose files.
+The shared `BethesdaCollisionClassifier` assigns **severity** by file type when
+two mods provide the same relative path. It also uses the archive index to
+classify conflicts inside `.bsa` and `.ba2` files.
 
 | Severity | Extensions |
 | -------- | ---------- |
@@ -239,10 +232,10 @@ See the [Tools & overlays guide](../guides/tools.md) for `modde tool` and
 
 ## Linux / Proton notes & known gotchas
 
-These notes cover the game's runtime on Linux and macOS, where Starfield runs
-through Proton/Wine. On Windows the game runs natively — there is no Wine prefix,
-and the Saves directory, `plugins.txt`, and INI files live at their native
-Windows locations. modde itself runs natively on all three platforms.
+The prefix-specific notes below apply on Linux and macOS, where Starfield runs
+through Proton/Wine. On Windows it runs natively, with no Wine prefix: the Saves
+directory, `plugins.txt`, and INI files use native Windows paths. modde runs
+natively on all three platforms.
 
 - **Launch the game once before expecting save or load-order detection.** Both the
   Saves directory and `plugins.txt` live inside `compatdata/1716740/pfx`, which

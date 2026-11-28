@@ -2,8 +2,7 @@
 
 ## Two different kinds of ordering
 
-Modding has two independent ordering systems, and conflating them is the single
-most common source of confusion:
+The most common mix-up is between these two independent orders:
 
 | Concept                 | What it orders                          | Who resolves it                              |
 | ----------------------- | --------------------------------------- | -------------------------------------------- |
@@ -12,16 +11,14 @@ most common source of confusion:
 
 Install priority decides what lands on disk (textures, meshes, scripts, configs).
 Plugin load order decides how the game engine merges plugin *records* at runtime.
-A mod can win the file fight and still need its plugin sorted correctly — these
-are orthogonal. The first half of this page is install-priority conflicts; the
-[second half](#bethesda-plugin-load-order) is Bethesda plugin order.
+A mod can win a file conflict and still need its plugin sorted. The
+[second half](#bethesda-plugin-load-order) covers Bethesda plugin order.
 
 ## Mod conflicts (install priority)
 
-When multiple enabled mods provide the same relative path, only one version can be
-deployed. modde resolves this by **load order priority**: walking the resolved
-order, the last (highest-priority) provider of a path wins. Hidden files and
-profile overrides shift the winner, exactly as in
+At most one version of a shared relative path can be deployed. By **load order
+priority**, the last (highest-priority) provider in the resolved order wins,
+subject to hidden files and profile overrides, as in
 [deployment](deployment.md#how-files-map-to-winners).
 
 ### Analysing conflicts
@@ -47,8 +44,8 @@ shows them. The report contains:
 
 ### Collision severity
 
-Severity is classified per file from its extension by the game's classifier. The
-four levels, lowest to highest risk:
+The game's classifier assigns severity by file extension. The four levels,
+lowest to highest risk:
 
 | Severity      | Display      | Meaning                                              | Typical extensions                        |
 | ------------- | ------------ | ---------------------------------------------------- | ----------------------------------------- |
@@ -71,28 +68,24 @@ extensions count as indexable archives:
 | Cyberpunk 2077         | `archive` (not indexed) | `reds`, `lua`, `tweak`, `xl`, `dll`, `yaml` |
 | UE4/UE5 titles         | `pak`, `ucas`, `utoc`   | `pak`, `ucas`, `utoc`, `dll`, `lua`      |
 
-Note that for Bethesda games the archive container extensions (`bsa`, `ba2`)
-classify as *cosmetic* — the danger is judged by what is *inside* the archive,
-not the wrapper.
+Bethesda archive extensions (`bsa`, `ba2`) are *cosmetic*. The risk comes from
+the files inside, not the container.
 
 ### Archive-aware conflicts (BSA / BA2 / pak)
 
-modde does not stop at loose files. For each mod it walks loose files **and**, for
-any file whose extension is an archive extension, asks the classifier to index the
-archive's contents. Every entry inside the archive is registered into the conflict
-map under its normalised internal path, so a loose `textures/sky.dds` in one mod
-correctly collides with a `textures/sky.dds` packed inside another mod's `.bsa`.
+For each mod, modde walks loose files and asks the classifier to index files
+with archive extensions. For an indexed archive, modde registers every entry by
+its normalised internal path. A loose `textures/sky.dds` in one mod therefore
+collides with `textures/sky.dds` inside another mod's `.bsa`.
 
-When a conflict spans a loose file and an archived one, the per-file line is
-tagged so you can see which form won:
+For a loose-versus-archived conflict, the per-file tag shows which form won:
 
 - ` [loose > archive]` — a loose file beat an archived one
 - ` [archive > loose]` — an archived file beat a loose one
 
-These are also collected separately under **Loose vs archive conflicts** in the
-report.
+The report also groups these under **Loose vs archive conflicts**.
 
-Indexing support is **classifier-specific and not uniform**:
+Indexing support varies by classifier:
 
 - **Bethesda** `.bsa`/`.ba2` are read and their contents indexed.
 - **Cyberpunk** `.archive` is listed as an archive extension but its proprietary
@@ -104,7 +97,7 @@ Indexing support is **classifier-specific and not uniform**:
 
 ### Shadowed mods and redundant files
 
-Two pre-deploy optimisation signals fall out of the analysis:
+The analysis reports two pre-deploy optimisation signals:
 
 - A **shadowed mod** is one where *every* file it provides is overridden by a
   higher-priority mod. It contributes nothing to the deployed VFS. The report
@@ -126,8 +119,8 @@ Suggested hide commands:
   modde profile hide "SomeTextureMod" "textures/landscape/dirt.dds"
 ```
 
-Without `--suggest-hides`, the report just notes how many redundant files exist
-and reminds you of the flag.
+Without `--suggest-hides`, the report shows only the redundant-file count and a
+reminder about the flag.
 
 ### Reading the output
 
@@ -195,21 +188,19 @@ For Bethesda games, plugin load order (`.esp`, `.esm`, `.esl`) is managed
 modde loot sort --game skyrim-se
 ```
 
-modde parses the community **LOOT masterlist** (a YAML file of per-plugin
-`after` / `requires` / `incompatible` rules) and derives load-order rules for the
-plugins you actually have active:
+modde reads the community **LOOT masterlist** (YAML with per-plugin
+`after` / `requires` / `incompatible` rules) and generates load-order rules for
+active plugins:
 
 - `after` and `requires` both become **load-after** rules (a `requires` whose
   target is not in the active set is logged as a dependency gap).
 - `incompatible` becomes an **incompatible** rule.
 - Rules referencing plugins that are not active are dropped.
 
-The masterlist must be cached locally first; if it is missing, `sort` prints the
-exact `curl` command (and target path) to fetch the right masterlist for your
-game. Masterlists are available for `skyrim-se`/`skyrim-ae`, `fallout4`,
-`fallout76`, and `starfield`. `sort` prints the generated rules
-(`X loads after Y`, `INCOMPATIBLE: A <-> B`) so you can review what the
-masterlist implies for your setup.
+Cache the masterlist locally first. If it's missing, `sort` prints the exact
+`curl` command and destination path for your game. Masterlists cover
+`skyrim-se`/`skyrim-ae`, `fallout4`, `fallout76`, and `starfield`. `sort` prints
+the generated rules (`X loads after Y`, `INCOMPATIBLE: A <-> B`) for review.
 
 ### Validating plugins
 

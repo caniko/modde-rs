@@ -2,12 +2,12 @@
 
 ## Overview
 
-The `modde scan` command discovers mods already installed on disk by analysing
-the game directory structure. Use it to **import an existing setup** into modde
-(a manual install, a Windows-era deployment, mods you placed by hand) or to
-**track an already-deployed Wabbajack list** without reinstalling it.
+`modde scan` discovers installed mods from the game directory layout. Use it to
+**import an existing setup** (a manual install, an old Windows deployment, or
+hand-placed mods) or **track an already-deployed Wabbajack list** without
+reinstalling it.
 
-Scanning works two ways, and they compose:
+The two scan methods can work together:
 
 1. **Filesystem scan** — a game-specific scanner walks known mod directories and
    recognises mods from their on-disk layout. This needs no manifest and works
@@ -26,10 +26,9 @@ and reports what it finds. Nothing is written unless you pass `--import-to`.
 
 ## Game-specific scanners
 
-Each supported game has a scanner that understands that game's mod conventions.
-Scanners are assembled declaratively from a small set of composable rules, so a
-new game's scanner is a list of "this directory holds mods of this shape"
-declarations rather than bespoke walking code.
+Each supported game's scanner uses a small set of composable rules for that
+game's mod layout. A new scanner declares which directories hold which kinds
+of mods instead of implementing its own directory traversal.
 
 ### DirectoryModRule — one subdirectory per mod
 
@@ -74,11 +73,10 @@ also exposes its `scan_directories()` (printed at the top of a scan) and a
 | You have the original `.wabbajack` for a deployed list | **Manifest matching** — add `--manifest <list>.wabbajack` |
 | Both: a Wabbajack base plus your own extra mods | **Both at once** — manifest recovers Nexus identity + load order; the filesystem scan catches your additions |
 
-Manifest matching is strictly more informative when you have the list: it
-recovers real Nexus mod/file ids (so updates and the mod-information side panel
-work), and it reconstructs the list's load order as a lock. The filesystem scan
-is the fallback when no manifest exists, and the complement that finds mods the
-manifest never deployed.
+Use the manifest when available: it recovers Nexus mod/file ids for updates and
+the mod-information side panel, and reconstructs the list's load order as a lock.
+A filesystem scan works without a manifest and finds mods the manifest didn't
+deploy.
 
 ## Importing results into a profile
 
@@ -86,10 +84,9 @@ manifest never deployed.
 modde scan --game cyberpunk2077 --import-to my-cyberpunk
 ```
 
-Discovered mods are merged into the named profile. If the profile doesn't exist,
-it's created. Merging is **additive and non-destructive**: existing rows keep
-their per-mod state (notes, category, per-mod locks) and only new `mod_id`s are
-brought in.
+modde creates the named profile if needed. Merging is **additive and
+non-destructive**: modde imports only new `mod_id`s. Existing rows retain all
+per-mod state, including notes, categories, and per-mod locks.
 
 ## Wabbajack manifest matching
 
@@ -156,20 +153,17 @@ always run a dry pass first on a large list.
 
 ## Pruning duplicates
 
-A filesystem scan and a manifest match can describe the **same** mod two
-different ways: the manifest tracks it under its `nexus_*` id, while the
-filesystem scanner may also pick up its directory (e.g. a CET mod folder that now
-also contains a runtime-written `settings.json` the manifest never deployed).
-modde skips filesystem mods that are already covered by the manifest during a
-combined scan, using a **directory-prefix** coverage check for directory-based
-mods and a per-file check for single-file mods — so a stray runtime file no
-longer causes a whole mod to be re-added as a duplicate.
+A manifest can identify a mod by its `nexus_*` id while the filesystem scanner
+finds the same mod by directory. For example, the scanner may find a CET mod
+folder with a runtime-written `settings.json` that the manifest never deployed.
+During a combined scan, modde skips filesystem mods the manifest already covers.
+It checks **directory prefixes** for directory-based mods and individual files
+for single-file mods, so a stray runtime file doesn't duplicate the whole mod.
 
-To also clean up duplicates that a previous (buggier) scan already leaked into a
-profile, pass `--prune-duplicates`. It classifies each filesystem-scanner row in
-the target profile against the manifest **before** merging: rows whose footprint
-the manifest covers are removed as leaked duplicates; genuine additions (your
-mods, not in the list) are preserved. It requires both `--manifest` and
+Use `--prune-duplicates` to clean up duplicates from earlier buggy scans. It
+checks each filesystem-scanner row in the target profile against the manifest
+**before** merging, removing rows whose footprint the manifest covers and
+keeping your additions. It requires both `--manifest` and
 `--import-to`:
 
 ```bash
@@ -193,9 +187,9 @@ A scan is a *proposal*, not a commit. Review before trusting it:
    the report: the scanner's scan directories, the manifest match table
    (`present/total`, confidence), the filesystem table (file count, location,
    confidence), and how many filesystem mods were skipped as already-covered.
-2. **Tune `--threshold`** if the manifest match rate looks wrong — too many
-   low-confidence matches means lower it is masking false positives; too few
-   matches on a list you know is installed means raise the bar is too high.
+2. **Tune `--threshold`** if the manifest match rate looks wrong — raise
+   `--threshold` if low-confidence false positives are being admitted; lower it
+   if a list you know is installed yields too few matches.
 3. **Import** with `--import-to <profile>` once the proposal looks right.
 4. **Dedup** if you imported into a profile that had prior filesystem-scan rows:
    add `--prune-duplicates` (or run `modde profile dedup … --apply`).
