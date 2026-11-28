@@ -1,16 +1,13 @@
 # Settings file & environment
 
-The settings file is modde's primary, cross-platform configuration mechanism: it
-works the same on Linux, macOS, and Windows, with no Nix required. modde's
-configuration state lives in a small set of plain TOML files under your platform
-config directory, plus a handful of environment variables that override paths and
-behavior at runtime. The CLI and GUI read and write these files directly. This
-page documents the on-disk schema, the environment surface, the instance
-registry, and how all the configuration layers rank against each other.
+The settings file is modde's primary configuration on Linux, macOS, and Windows
+and works the same without Nix. The CLI and GUI read and write plain TOML files
+directly in your platform's config directory. Environment variables override
+paths and behavior at runtime. This page covers the file schema, environment
+variables, instance registry, and precedence.
 
-If you use Nix, you can additionally declare profiles as code through the
-[home-manager module](hm-module.md); that is one option layered on top of the same
-runtime, not a replacement for the settings file.
+On Nix, the [home-manager module](hm-module.md) lets you declare profiles as
+code on top of the same runtime without replacing the settings file.
 
 The authoritative sources are
 [`crates/modde-core/src/settings.rs`](https://github.com/caniko/modde-rs/blob/trunk/crates/modde-core/src/settings.rs),
@@ -30,18 +27,15 @@ and
 | macOS   | `~/Library/Application Support`                            | `~/Library/Application Support/modde/settings.toml`|
 | Windows | `%APPDATA%` (e.g. `C:\Users\X\AppData\Roaming`)            | `%APPDATA%\modde\settings.toml`                    |
 
-On Linux, setting `XDG_CONFIG_HOME` relocates the directory. The file is written
-with `toml::to_string_pretty`, so it stays human-readable and hand-editable.
+On Linux, `XDG_CONFIG_HOME` relocates the directory. modde writes the file with
+`toml::to_string_pretty` to keep it readable and editable by hand.
 
 ### Loading behavior
 
-Settings loading is **forgiving by design**:
-
 - A missing file loads as all-defaults.
-- A malformed file (parse error) also falls back to all-defaults rather than
-  erroring.
-- Unknown keys are ignored, so a newer file does not break an older binary.
-- Missing keys are filled with their defaults, so a partial file is valid.
+- A parse error discards the malformed file and loads all defaults instead of failing.
+- modde ignores unknown keys, so a newer file won't break an older binary.
+- Missing keys take their defaults, so a partial file is valid.
 
 ### Keys
 
@@ -55,21 +49,19 @@ Settings loading is **forgiving by design**:
 | `update_check.enabled` | bool                       | `true`  | Whether modde checks for newer releases on startup                |
 | `database`             | table                      | SQLite  | Storage backend and optional PostgreSQL connection settings       |
 
-`nexus_api_key` is serialized only when non-empty, so a clean settings file does
-not contain it. It is the **legacy** key source — modde keeps reading it for
-backward compatibility, but it ranks last in the
+modde writes `nexus_api_key` only when non-empty, so a clean settings file omits
+it. modde reads this **legacy** source for backward compatibility, but it ranks last in the
 [Nexus key precedence](#nexus-api-key-precedence). Prefer `modde nexus auth`, the
 system keyring, or `NEXUS_API_KEY` / `NEXUS_API_KEY_FILE`.
 
-`game_paths` is an array of tables; each entry pairs a `game_id` with its install
-`path`. modde looks up a game's path by `game_id`, and setting a path either adds
-a new entry or updates the existing one (no duplicates).
+`game_paths` is an array of tables pairing each `game_id` with its install
+`path`. modde looks up paths by `game_id`. Setting a path adds or updates an
+entry without creating duplicates.
 
 ### Database settings
 
-By default, modde stores profile, mod, tool, save, and snapshot state in the
-SQLite database at `<modde_data>/modde.db`. You do not need a `[database]` table
-for the default backend:
+By default, modde stores profile, mod, tool, save, and snapshot state in SQLite
+at `<modde_data>/modde.db`. The default backend doesn't need a `[database]` table:
 
 ```toml
 [database]
@@ -98,10 +90,9 @@ password_file = "/run/secrets/modde-postgres-password"
 ```
 
 `url` takes precedence over the discrete `host`, `port`, `dbname`, and `user`
-fields. Use the URL form for connection details that do not have dedicated
-settings fields, such as socket directories or TLS parameters. The password
-contents are not stored in `settings.toml`; `password_file` is only a path, and
-modde reads the trimmed file contents at runtime.
+fields. Use a URL for details without dedicated settings fields, such as socket
+directories or TLS parameters. For the password, `settings.toml` stores only the
+`password_file` path; modde reads and trims the file contents at runtime.
 
 Database configuration resolves in this order:
 
@@ -112,9 +103,9 @@ Database configuration resolves in this order:
 Within the PostgreSQL layer, `MODDE_DATABASE_URL` wins over
 `MODDE_DATABASE_HOST`, `MODDE_DATABASE_PORT`, `MODDE_DATABASE_NAME`, and
 `MODDE_DATABASE_USER`, just as `url` wins over the discrete settings fields.
-Environment variables also override their matching settings-file fields one by
-one. `MODDE_DB_PASSWORD_FILE` overrides `password_file` and, like the settings
-key, configures only the path to the password file.
+Environment variables override matching settings-file fields individually.
+`MODDE_DB_PASSWORD_FILE` overrides `password_file`; both set only the password
+file path.
 
 ### Example
 
@@ -136,7 +127,7 @@ path = "/data/games/Skyrim Special Edition"
 enabled = true
 ```
 
-A minimal file is equally valid — every omitted key falls back to its default:
+A minimal file is valid: omitted keys use their defaults.
 
 ```toml
 selected_game = "skyrim-se"
@@ -144,9 +135,8 @@ selected_game = "skyrim-se"
 
 ## Data, cache, and downloads directories
 
-`settings.toml` only stores configuration; modde's actual mod store, profiles,
-database, and downloads live under the **data** directory, which is separate from
-the config directory and platform-aware:
+`settings.toml` stores only configuration. The mod store, profiles, database,
+and downloads live in a separate, platform-specific **data** directory:
 
 | OS      | Data dir base                                |
 | ------- | -------------------------------------------- |
@@ -154,8 +144,8 @@ the config directory and platform-aware:
 | macOS   | `~/Library/Application Support`              |
 | Windows | `%APPDATA%`                                  |
 
-modde's data root is `<data_dir>/modde/` (unless overridden — see
-[Precedence](#data-directory-resolution)), with this layout:
+The default data root is `<data_dir>/modde/` (see
+[Precedence](#data-directory-resolution) for overrides):
 
 | Path                                    | Purpose                                          |
 | --------------------------------------- | ------------------------------------------------ |
@@ -175,8 +165,6 @@ directory defaults to `<modde_data>/downloads/`; the `download_dir` key in
 
 ## Environment variables
 
-modde honors the following environment variables:
-
 | Variable                     | Effect                                                                                             |
 | ---------------------------- | -------------------------------------------------------------------------------------------------- |
 | `MODDE_DATA_DIR`             | Override the data directory. Equivalent to the global `--data-dir` flag (the flag wins if both set) |
@@ -195,14 +183,14 @@ modde honors the following environment variables:
 | `XDG_DATA_HOME`              | Linux: relocates the data dir base                                                                  |
 | `XDG_CACHE_HOME`             | Linux: relocates the cache dir base                                                                 |
 
-A few more variables exist for niche purposes: `MODDE_HEAP_PROFILE` (write a DHAT
-heap profile; requires the `heap-profile` feature), `MODDE_CHROMIUM` (path to a
-Chromium binary used by the Wabbajack login flow), and, only when modde is built
-with the optional `remote-telemetry` feature, `MODDE_TELEMETRY_ENDPOINT` /
-`MODDE_TELEMETRY_TOKEN` (legacy `RS_MODDE_TELEMETRY_*` names still work). These are not part of normal configuration.
+Outside normal configuration, `MODDE_HEAP_PROFILE` writes a DHAT heap profile
+(requires `heap-profile`), and `MODDE_CHROMIUM` sets the Chromium binary path
+for Wabbajack login. `MODDE_TELEMETRY_ENDPOINT` / `MODDE_TELEMETRY_TOKEN` work
+only in builds with the optional `remote-telemetry` feature (legacy
+`RS_MODDE_TELEMETRY_*` names still work).
 
-The global `--data-dir` CLI flag (backed by `MODDE_DATA_DIR`) overrides the data
-directory for a single invocation, for example:
+Use the global `--data-dir` CLI flag (backed by `MODDE_DATA_DIR`) to override
+the data directory for one invocation:
 
 ```bash
 modde --data-dir /mnt/big/modde profile list
@@ -212,11 +200,10 @@ MODDE_DATA_DIR=/mnt/big/modde modde profile list
 
 ## Instance registry (`instances.toml`)
 
-modde supports multiple **instances** — independent, self-contained data
-directories — registered in `<config_dir>/modde/instances.toml` (next to
-`settings.toml`). Each instance names a `data_dir`; one instance can be marked
-default, and one is active at a time. When an active instance is set, its
-`data_dir` becomes modde's data directory (see
+**Instances** are independent, self-contained data directories registered in
+`<config_dir>/modde/instances.toml` next to `settings.toml`. Each names a
+`data_dir`. You can mark one as default; only one can be active at a time.
+If an instance is active, modde uses its `data_dir` (see
 [Data directory resolution](#data-directory-resolution)).
 
 Schema:
@@ -245,18 +232,14 @@ data_dir = "/mnt/nvme/modde"
 is_default = false
 ```
 
-Creating an instance makes a directory and registers it; the first instance
-created becomes the default and the active one. Switching changes `active`.
-Instance names must be unique.
+Creating an instance makes and registers its directory. The first instance
+becomes default and active. Switching changes `active`. Names must be unique.
 
 ## Configuration precedence
 
-modde's configuration comes from several layers. Two precedence chains matter:
-the **data directory** resolution and the **Nexus API key** resolution.
-
 ### Data directory resolution
 
-The effective data directory is chosen in this order (first match wins):
+modde uses the first matching data directory:
 
 1. **Explicit override** — the global `--data-dir` flag or `MODDE_DATA_DIR`
    environment variable (the flag takes precedence over the env var). This also
@@ -268,8 +251,8 @@ The effective data directory is chosen in this order (first match wins):
 
 ### Nexus API key precedence
 
-When modde needs a Nexus API key it walks this chain and uses the first source
-that yields a non-empty key (from
+When modde needs Nexus credentials, it uses the first source below that yields a
+non-empty credential (from
 [`crates/modde-sources/src/nexus/auth.rs`](https://github.com/caniko/modde-rs/blob/trunk/crates/modde-sources/src/nexus/auth.rs)):
 
 1. **OAuth token** — a non-expired token from `modde nexus auth` OAuth login.
@@ -288,8 +271,6 @@ If none yield a key, modde reports
 `No Nexus API key found. Set NEXUS_API_KEY env var or run "modde nexus auth".`
 
 ### How Nix, the settings file, env vars, and the keyring relate
-
-The layers do not conflict so much as compose:
 
 - The **home-manager module** owns the *declarative* surface — profiles,
   Wabbajack lists, Nexus collections, and per-tool config — and drives the CLI on
@@ -311,10 +292,9 @@ The layers do not conflict so much as compose:
   legacy `settings.toml` key, but is itself outranked by `NEXUS_API_KEY` and the
   modde-owned config file.
 
-In short: the CLI/GUI manage `settings.toml` and store the Nexus key in the
-keyring or environment on every platform. If you use Nix, you can additionally
-declare profiles in the home-manager module and keep the Nexus secret in
-`nexus.apiKeyFile` — layered on top of, not instead of, the settings file.
+On every platform, use the CLI/GUI to manage `settings.toml` and the keyring or
+environment for the Nexus key. On Nix, the home-manager module adds declarative
+profiles and `nexus.apiKeyFile` without replacing the settings file.
 
 ## See also
 

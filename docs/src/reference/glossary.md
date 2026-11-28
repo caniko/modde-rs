@@ -1,35 +1,32 @@
 # Glossary
 
-This page defines the vocabulary the rest of the documentation assumes — both
-modde's own concepts and the wider modding terms (FOMOD, LOOT, Wabbajack, REDmod,
-…) you meet when you actually install mods. Each entry is one to three sentences
-with a link to the guide that covers it in depth. Terms are grouped by theme;
-within a group they read roughly in the order you encounter them.
+This glossary covers modde concepts and modding terms such as FOMOD, LOOT,
+Wabbajack, and REDmod. Each entry links to a guide. Within each theme, terms
+appear roughly in the order you'll encounter them.
 
 ## modde core concepts
 
 ### Profile
 
-A profile is modde's central organizing unit: a per-game bundle of an ordered mod
-set, a load order (and plugin order), a branch in the save vault, and the
-deployment state that records exactly what was staged. Profiles are scoped by
-`(name, game_id)`, so a `default` profile for Skyrim and a `default` for Fallout 4
-coexist without collision. See [Profile management](../guides/profiles.md).
+A profile is a per-game bundle with its own ordered mod set, load and plugin
+orders, save-vault branch, and deployment record of what was staged. Profiles
+are scoped by `(name, game_id)`, so a `default` profile for Skyrim and a
+`default` for Fallout 4 coexist without collision. See [Profile management](../guides/profiles.md).
 
 ### Instance
 
-An instance is a named, self-contained data directory. Instances let you run
-entirely separate modde states — a daily driver and a Wabbajack testbed, say —
-without sharing a database, store, or save vaults; the active instance is recorded
-in `~/.config/modde/instances.toml`. See
+An instance is a named, self-contained data directory. A daily setup and a
+Wabbajack testbed can run as separate instances without sharing a database,
+store, or save vaults. modde records the active instance in
+`~/.config/modde/instances.toml`. See
 [Data, instances & backups](../guides/data-management.md).
 
 ### Store
 
-The store (`<data>/store/`) is modde's content-addressed mod file repository: the
-actual staged bytes of every installed mod, one directory per mod, that the VFS
-symlinks point into. The database's per-mod file manifest maps each profile's mods
-to the precise files they staged, which is what makes uninstall surgical. See
+The content-addressed store (`<data>/store/`) holds each installed mod's staged
+bytes in its own directory. VFS symlinks point there. The database's per-mod
+manifest tracks exactly which files each profile's mods staged, so modde can
+uninstall just those files. See
 [Deployment & VFS](../guides/deployment.md).
 
 ### Staging
@@ -42,28 +39,26 @@ directory. For Wabbajack profiles, "staging" instead means the pre-resolved
 
 ### Deploy
 
-To deploy is to project the active profile's materialized staging tree into the
-game's resolved mod directory — creating the symlinks (or, for Wabbajack, hardlinks
-or copies) the game actually sees. `modde deploy` (and `modde play`, which deploys
-before launching) run this step. See [Deployment & VFS](../guides/deployment.md).
+Deployment projects the active profile's materialized staging tree into the
+game's resolved mod directory as symlinks (hardlinks or copies for Wabbajack).
+Use `modde deploy` or `modde play`, which deploys before launching. See
+[Deployment & VFS](../guides/deployment.md).
 
 ### Rollback
 
 `modde rollback` swaps a profile's `staging` and `staging.bak` directories with
-atomic directory renames, restoring a deliberately-preserved earlier deploy state;
-it fails if no `staging.bak` exists, and you must re-run `modde deploy` afterward to
-re-project the restored tree. See
+atomic renames to restore a retained deploy state. Rollback fails without
+`staging.bak`. Afterward, rerun `modde deploy` to project the restored tree. See
 [Deployment & VFS](../guides/deployment.md#rollback).
 
 ## Ordering and conflicts
 
 ### Load order vs. plugin order
 
-These are two independent ordering systems, and conflating them is the most common
-source of confusion. **Load order** (mod install priority) decides which *file*
-wins when two mods ship the same path — later mod in the list wins, resolved by the
-VFS. **Plugin order** decides the sequence Bethesda `.esp`/`.esm`/`.esl` plugins
-load in the engine — a separate axis managed by LOOT and `plugins.txt`. See
+**Load order** (mod install priority) tells the VFS which *file* wins when mods
+ship the same path: the later mod wins. **Plugin order** is independent: LOOT
+and `plugins.txt` control the sequence in which the engine loads Bethesda
+`.esp`/`.esm`/`.esl` plugins. See
 [Conflicts & load order](../guides/conflicts.md).
 
 ### VFS / symlink farm
@@ -77,10 +72,9 @@ real filesystem and are globally visible to every process without API hooking. S
 
 ### Conflict / collision
 
-A conflict (or collision) is when two or more enabled mods provide the same relative
-path, so only one version can be deployed. modde resolves it by load order priority
-— the highest-priority provider wins — and `modde collisions` reports the pairs,
-per-file winners, and severities. See
+A conflict (or collision) occurs when two or more enabled mods provide the same
+relative path. modde deploys only the highest-priority version in load order.
+`modde collisions` reports the pairs, per-file winners, and severities. See
 [Conflicts & load order](../guides/conflicts.md).
 
 ### Collision severity (cosmetic / config / dangerous)
@@ -95,42 +89,42 @@ colliding files, and the classifier is per-game. See
 
 ### Shadowed mod
 
-A shadowed mod is one whose *every* file is overridden by higher-priority mods, so
-it contributes nothing to the deployed VFS. The collision report lists it as
-`"<mod>" (N files, all overridden by <mods>)` and a diagnostic suggests disabling
+A shadowed mod contributes nothing to the deployed VFS: higher-priority mods
+override every file. The collision report lists it as
+`"<mod>" (N files, all overridden by <mods>)`; a diagnostic suggests disabling
 it to shrink the deploy. See
 [Shadowed mods and redundant files](../guides/conflicts.md#shadowed-mods-and-redundant-files).
 
 ### Redundant file
 
-A redundant file is a single path from a mod that always loses the conflict — it is
-never the deployed winner. `modde collisions --suggest-hides` turns each into an
-actionable `modde profile hide` command. See
+A redundant file is a mod's version of a path that always loses to another
+provider. `modde collisions --suggest-hides` gives a `modde profile hide`
+command for each one. See
 [Shadowed mods and redundant files](../guides/conflicts.md#shadowed-mods-and-redundant-files).
 
 ### Hidden file
 
-A hidden file is a single file you exclude from a mod without disabling the whole
-mod (modde's equivalent of MO2's `.mohidden`). Hidden files are recorded per
-profile and skipped during the VFS build, so the next-highest provider of that path
-wins instead. See [Per-file hiding](../guides/conflicts.md#per-file-hiding).
+A hidden file is excluded without disabling its mod (equivalent to MO2's
+`.mohidden`). modde records hidden files per profile and skips them when
+building the VFS, so the next-highest provider of that path wins. See
+[Per-file hiding](../guides/conflicts.md#per-file-hiding).
 
 ### Overwrite mod
 
-The overwrite (output) mod is the destination that captures files a launched
-executable writes back into the deployed tree — for example xEdit output or
-generated patches — so they are not lost between deploys. It is configurable per
-executable and is part of the shipped executable-management feature. See
+The overwrite (output) mod is the destination for files a launched executable
+writes into the deployed tree, such as xEdit output or generated patches, so
+they survive between deploys. You can configure it per executable in the shipped
+executable-management feature. See
 [Executables & external tools](../guides/executables.md).
 
 ## Saves
 
 ### Save vault
 
-A save vault is the git-backed history of a game's saves: one git repository per
-game under `<data>/saves/<game_id>/`, with one branch per profile. Every capture is
-an ordinary git commit, so you get full history, branching, and the ability to roll
-a profile's saves back to any point. See [Save management](../guides/saves.md).
+A save vault keeps save history in one git repository per game under
+`<data>/saves/<game_id>/`, with one branch per profile. Each capture is a git
+commit, so you can branch and roll a profile's saves back to any captured
+point. See [Save management](../guides/saves.md).
 
 ### Save snapshot
 
@@ -141,10 +135,10 @@ restore <commit>` restores one. See [Save management](../guides/saves.md).
 
 ### Save fingerprint
 
-A save fingerprint is a SHA-256 hash computed over only the **enabled,
-save-breaking** mods of a profile (sorted and de-duplicated), stored as a commit
-trailer on each snapshot. On restore, modde compares the snapshot's fingerprint
-against your current profile's and warns when the save-breaking mod set differs.
+A save fingerprint is the SHA-256 hash of the profile's sorted, de-duplicated
+set of **enabled, save-breaking** mods. Each snapshot stores it as a commit
+trailer. On restore, modde compares it with the current profile's fingerprint
+and warns if the save-breaking mod set differs.
 See [Save-breaking mods and the fingerprint](../guides/saves.md#save-breaking-mods-and-the-fingerprint).
 
 ### Save-breaking mod
@@ -285,10 +279,10 @@ for Skyrim SE/AE, Fallout 4, Fallout 76, and Starfield. See
 
 ### Wabbajack modlist
 
-A Wabbajack modlist (a `.wabbajack` file) is a *recipe*, not a bundle of mods: it
-records exactly which archives to download and exactly how to reconstruct a curated
-mod setup from them. modde replays that recipe natively on Linux — no Windows VM,
-no Wine-hosted client — verifying every download against its hash. See
+A Wabbajack modlist (a `.wabbajack` file) is a *recipe*, not a mod bundle. It
+specifies which archives to download and how to reconstruct the curated setup.
+modde runs the recipe natively on Linux without a Windows VM or Wine-hosted
+client, verifying every download against the hash specified by the recipe. See
 [Wabbajack modlists](../guides/wabbajack.md).
 
 ### Directive
@@ -322,20 +316,20 @@ download link hands the URI to modde. See
 
 ### GamePlugin
 
-A `GamePlugin` is the per-game integration trait inside modde: each of the 15
-built-in titles is a `GamePlugin` that knows that game's archive layouts, mod
-directory, save location, conflict classifier, and Wine/Proton DLL-override quirks.
-It also supplies the analyze hook that lets a game claim a layout (REDmod, an ENB
-pack) before any generic install probe runs. See
+Each of the 15 built-in titles is represented by a `GamePlugin`, which supplies
+its archive layouts, mod directories, save locations, conflict classifiers, and
+Wine/Proton DLL overrides. Its analyze hook lets the game claim layouts
+such as REDmod or an ENB pack before generic install probes run. See
 [Games](../games/supported-games.md) and [Architecture](architecture.md).
 
 ### Generic game
 
 A generic game is a user-defined title registered at runtime with `modde game add`
-or an imported GameSpec TOML, rather than a hand-coded `GamePlugin`. Generic game
-support is `Partial`: deployment, conflict classification, launcher integration, and
-executable management work, but there is no bespoke filesystem scanner and no save
-tracker. See [Generic & user-defined games](../games/generic-games.md).
+or imported GameSpec TOML, without a hand-coded `GamePlugin`. Support is `Partial`:
+deployment, conflict classification, launcher integration, and executable management
+work, but there is no game-specific filesystem scanner, and generic games have
+no save tracker. See
+[Generic & user-defined games](../games/generic-games.md).
 
 ## Tools and runtime
 

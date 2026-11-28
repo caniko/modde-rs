@@ -1,14 +1,13 @@
 # Installation
 
-modde is Linux-first today. The live user-facing paths are the Nix flake, the
-Home-Manager module, source builds from the Nix development shell, and the Attic
-binary cache used by release/CI infrastructure. macOS and Windows builds exist
-as experimental CI outputs, and additional package-manager channels are wired or
-staged, but they are not the recommended live install path until this page marks
-them live.
+modde supports Linux first. The live paths are the Nix flake, the Home-Manager
+module, source builds in the Nix development shell, and the Attic binary cache
+used by release/CI infrastructure. macOS and Windows builds are experimental CI
+outputs. Other package-manager channels are wired or staged; use the live paths
+until this page marks those channels live.
 
-Use this table as channel status, not as a promise that every listed package is
-already published:
+This table shows channel status; a listing does not guarantee that the package
+has been published:
 
 | Platform | Native packages | Also available |
 | -------- | --------------- | -------------- |
@@ -22,10 +21,9 @@ When a binary package is published it includes both `modde` and `modde-ui`;
 
 ## Linux
 
-Linux releases are gated by package family rather than by every downstream
-distribution name. A channel is published only after its artifact exists and its
-release smoke check passes. At the moment, Nix/Home Manager is live; the other
-package families below are staged release wiring.
+Linux release gates apply to package families, not individual distributions.
+A channel publishes only after its artifact exists and its release smoke check
+passes. Nix/Home Manager is live; the other package families below are staged release wiring.
 
 | Family | Primary channel | Covered distributions |
 | ------ | --------------- | --------------------- |
@@ -41,8 +39,8 @@ channel adds its own `arm64` or equivalent build.
 
 ### Arch Linux (AUR)
 
-Planned channel. Three packages are prepared for the AUR; once published, install one with your preferred helper
-(`yay`, `paru`, …):
+Planned channel. Once the three prepared AUR packages are published, install one
+with your preferred helper (`yay`, `paru`, …):
 
 ```bash
 yay -S modde-bin   # prebuilt from the signed release tarball (fastest)
@@ -83,9 +81,9 @@ tag-signing key and the minisign release key. See
 [`SECURITY.md`](https://github.com/caniko/modde-rs/blob/trunk/SECURITY.md)
 for the signing-key policy and rotation procedure.
 
-The apt public key is a required release input. If `dist/apt/key.gpg.asc` is not
-present in a release candidate, the apt channel stays blocked until the release
-maintainer exports and validates the dedicated repository key.
+If a release candidate lacks the required apt public key (`dist/apt/key.gpg.asc`),
+the apt channel stays blocked until the release maintainer exports and validates
+the dedicated repository key.
 
 ### Flatpak
 
@@ -96,8 +94,8 @@ flatpak install flathub com.tartanoglu.modde
 flatpak run com.tartanoglu.modde
 ```
 
-The Flatpak ships `modde-ui` (the GUI). For scripting with the `modde` CLI, use one
-of the other channels.
+The Flatpak ships `modde-ui` (the GUI). For scripting with the `modde` CLI, use
+another channel.
 
 ### AppImage
 
@@ -154,10 +152,9 @@ xattr -dr com.apple.quarantine modde modde-ui
 ./modde --help
 ```
 
-Subsequent runs work without further intervention. If you would prefer notarized
-binaries (Apple Developer ID, $99/yr),
-[open an issue](https://github.com/caniko/modde-rs/issues) to fund or contribute
-it.
+Later runs need no further steps. For notarized binaries (Apple Developer ID,
+$99/yr), [open an issue](https://github.com/caniko/modde-rs/issues) to fund or
+contribute notarization.
 
 ## Windows
 
@@ -202,14 +199,14 @@ Both should report `Status : Valid`. On Linux you can verify the same files with
 
 ## Cargo
 
-modde publishes its CLI crate to crates.io. This builds the `modde` binary from
-source (the GUI lives in a separate crate that is not published to crates.io):
+modde publishes its CLI crate to crates.io. This command builds `modde` from
+source; the separate GUI crate is not published there:
 
 ```bash
 cargo install modde
 ```
 
-Because it compiles locally, you need a build environment:
+To compile locally, you need:
 
 - A **Rust 2024 edition** toolchain (recent stable `rustc` / `cargo`).
 - **SQLite** and **OpenSSL** development headers (`openssl-sys` will not build
@@ -235,8 +232,8 @@ nix develop . -c cargo build --release
 # Binaries at target/release/modde and target/release/modde-ui
 ```
 
-The Nix dev shell provides every system library and is the authoritative build and
-test environment:
+Use the Nix dev shell for authoritative build and test results. It provides
+every system library:
 
 ```bash
 nix develop . -c cargo test --workspace
@@ -249,8 +246,7 @@ libraries). Either use the dev shell or install the headers listed under
 
 ## Nix
 
-If you use Nix, modde is also a flake. This is not required and not "the" way to
-install it — but it is a reproducible option, and through the home-manager module it
+The Nix flake is an optional, reproducible install path. Its home-manager module
 lets you **declare your mod profiles as code**.
 
 ### Run or install
@@ -264,7 +260,7 @@ nix profile install github:caniko/modde-rs
 ```
 
 The Nix build wraps each binary with a CA-certificate bundle, so HTTPS downloads
-from Nexus and friends work with no extra configuration.
+from Nexus and other sources need no extra configuration.
 
 ### Flake input + home-manager module
 
@@ -301,10 +297,10 @@ Collections, and tool overlays — that deploy on activation:
 }
 ```
 
-modde waits for launcher-managed game installs; it does not install the base game
-itself. For every option, see the
-[Home-Manager module reference](../configuration/hm-module.md). You can also drop the
-package straight into a system or user closure:
+Install the base game through its launcher. modde waits for that install; it
+does not install the base game itself. See the
+[Home-Manager module reference](../configuration/hm-module.md) for all options.
+You can also add the package directly to a system or user closure:
 
 ```nix
 environment.systemPackages = [ inputs.modde.packages.x86_64-linux.modde ];
@@ -338,8 +334,8 @@ minisign -Vm SHA256SUMS.txt -p keys/minisign.pub
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
 
-The minisign public key is pinned at `keys/minisign.pub`. If it ever changes, treat
-the release as a **key-rotation event** and verify the new key from an independent,
+The minisign public key is pinned at `keys/minisign.pub`. Treat any change as a
+**key-rotation event** and verify the new key through an independent,
 maintainer-controlled channel before trusting it.
 
 ### Step 2 — verify Sigstore signature and SLSA provenance
@@ -385,9 +381,9 @@ experimental-features = nix-command flakes
 
 ### Home-Manager module not recognized
 
-`error: The option 'programs.modde' does not exist` means the module was not
-imported. Confirm both halves are present and that `inputs` is threaded into the
-module (via `extraSpecialArgs`/`specialArgs`):
+`error: The option 'programs.modde' does not exist` means the module wasn't
+imported. Check both lines below and pass `inputs` to the module via
+`extraSpecialArgs`/`specialArgs`:
 
 ```nix
 inputs.modde.url = "github:caniko/modde-rs";

@@ -2,24 +2,23 @@
 
 ## Overview
 
-modde resolves and fetches mod archives through a set of pluggable **download backends**. Every
-backend implements one trait (`DownloadSource`) with two phases:
+modde resolves and fetches mod archives through pluggable **download backends**. Each backend implements
+the two-phase `DownloadSource` trait:
 
 1. **`resolve`** — turn a download directive into a concrete `DownloadHandle` (a final URL, optional
    mirror candidates, headers, an expected hash, and a size hint).
 2. **`download_with_progress`** — stream the bytes to disk, report progress, and **verify the hash**.
 
-At runtime the backends are wrapped in an `AnySource` enum so a heterogeneous list can dispatch to
-the right one by directive type. Every backend verifies the downloaded file against a
-Wabbajack-compatible hash: it computes both **xxhash64** (`xxh64`, seed 0) and **xxh3-64**
-(`xxh3`) while streaming, and accepts the file if **either** digest matches the expected value. On a
-mismatch the partial file is deleted and the download fails with a typed `HashMismatch` error.
+At runtime, `AnySource` wraps the backends so a mixed list can dispatch each directive to the right
+one. Each backend computes both Wabbajack-compatible hashes while streaming: **xxhash64** (`xxh64`,
+seed 0) and **xxh3-64** (`xxh3`). The hash check passes if either digest matches; otherwise modde
+deletes the partial file and returns a typed `HashMismatch` error.
 
 > **First-class vs. directive-driven.** In normal end-to-end user flows, **Nexus** is the
 > first-class download surface (the Browse/Install UI and `modde install mod`). The other backends
-> exist for completeness and are primarily exercised by **Wabbajack and collection directive flows**,
-> where a manifest names exactly which transport and hash to use. That broader backend surface is
-> **Partial**: solid transport code, but not all of it is wired into a polished standalone UX. See
+> primarily serve **Wabbajack and collection directive flows**, where the manifest specifies the
+> transport and hash. That broader backend support is **Partial**: the transports work, but not
+> all have a polished standalone workflow. See
 > the [parity audit](../reference/parity.md).
 
 ## Backend reference
@@ -62,7 +61,7 @@ and jitter). The backend can also list releases and fetch a release summary by t
 DirectURL { url, headers, mirror_resolver, hash }
 ```
 
-The most capable transport:
+Direct is the most capable transport. It supports:
 
 - **Range resume.** If a partial file already exists at the destination, modde sends a
   `Range: bytes=N-` header. On a `206 Partial Content` it appends to the existing file and **seeds
@@ -116,10 +115,9 @@ MEGA encrypts files client-side, so modde decrypts them locally:
 MediaFire { url, hash }
 ```
 
-MediaFire serves a file *page*, not a direct link. modde fetches the page with a browser-like
-`User-Agent`, **scrapes** the `aria-label="Download file"` anchor to extract its `href` (the real
-`download…mediafire.com/…` URL), and then **delegates the transfer to the Direct backend** — so
-MediaFire downloads inherit Direct's range-resume and retry behaviour for free.
+MediaFire serves a file *page*, not a direct link. modde fetches it with a browser-like
+`User-Agent` and extracts the `href` of the `aria-label="Download file"` anchor. It passes that
+`download…mediafire.com/…` URL to the Direct backend for range resume and retries.
 
 ### Manual
 
@@ -136,8 +134,7 @@ manual download required for <expected_name>: visit <url> and place the download
 file in the modde downloads directory. Prompt from list author: <prompt>
 ```
 
-This is intentional — a Manual directive is a signal that you must download the file by hand and drop
-it into the downloads directory, after which the install can continue.
+To continue the install, download the file by hand and put it in the downloads directory.
 
 ## Resumable `.meta` sidecars
 
@@ -159,8 +156,9 @@ backend's range resume to continue a partial transfer rather than restart it.
 
 ## The download queue
 
-`DownloadQueue` is a pure, synchronous state machine that tracks tasks and enforces a **concurrency
-limit** — it performs no I/O itself; the caller spawns the actual async transfers. Each task moves
+`DownloadQueue` is a pure, synchronous state machine that enforces the
+**concurrency limit** without performing I/O; the caller starts the async
+transfers. Each task moves
 through `Queued → Active → {Complete | Paused | Failed}`:
 
 - `enqueue(url, dest, expected_hash, meta)` adds a task and returns its ID.

@@ -1,18 +1,14 @@
 # Subnautica 2
 
-Subnautica 2 (`game_id = subnautica2`) is one of modde's Unreal Engine titles. It
-shares the data-driven UE4 plugin with Stellar Blade and Oblivion Remastered: a
-single `Ue4Game` definition parameterised per title, with the trait
-implementation reused across every Unreal game. Its overall status is `Partial` —
-the engine path (detection, deployment, conflict classification, save tracking,
-Wine/Proton DLL overrides) is wired and shipped, but there is no bespoke
-Subnautica-specific scanner, save format parser, or mod-loader integration beyond
-the generic pak layout. Treat it as "the UE4 pipeline pointed at Subnautica 2",
-not a hand-tuned per-game experience.
+Subnautica 2 (`game_id = subnautica2`) shares modde's data-driven UE4 plugin with
+Stellar Blade and Oblivion Remastered. The plugin configures `Ue4Game` per title
+and reuses the trait implementation across Unreal games. Status is `Partial`:
+modde detects the install, deploys mods, classifies conflicts, tracks saves, and
+handles Wine/Proton DLL overrides. It uses the generic pak layout without a
+Subnautica-specific scanner, save parser, or mod-loader integration.
 
-> **Status baseline.** The authoritative per-game status lives in
-> [Supported games](supported-games.md) and in `docs/capability-matrix.toml`.
-> This page expands on the engine mechanics; it does not change the status.
+> **Status baseline.** See [Supported games](supported-games.md) and
+> `docs/capability-matrix.toml` for the authoritative per-game status.
 
 ## Engine and overall status
 
@@ -46,11 +42,10 @@ Subnautica 2 is registered with Steam launcher IDs only:
 | `heroic_gog_app_id` | _none_ |
 | `heroic_epic_app_id` | _none_ |
 
-Detection walks your Steam libraries (parsed from `libraryfolders.vdf`, so extra
-drives are covered) and looks for `steamapps/common/Subnautica2`. There is no
-Heroic (GOG/Epic) mapping for this title today, so a non-Steam copy must be
-pointed at explicitly with `--game-dir` (CLI) or `gameDir` (home-manager). Run
-`modde detect` to see what modde resolves before you commit a profile to it.
+modde reads `libraryfolders.vdf` and looks for `steamapps/common/Subnautica2` in
+each Steam library, including those on extra drives. Without a Heroic (GOG/Epic)
+mapping, non-Steam installs require `--game-dir` (CLI) or `gameDir` (home-manager).
+Run `modde detect` to check the resolved path before using it in a profile.
 
 The install root is the directory that contains the UE project folder
 `Subnautica2/`. modde derives everything else from there:
@@ -75,9 +70,8 @@ modde deploys mods into the tilde-prefixed `~mods` folder under the paks root:
 <install>/Subnautica2/Content/Paks/~mods/
 ```
 
-The leading tilde is deliberate: Unreal's pak mounter loads `~mods` **after** the
-shipping paks, so modded content overrides base game content rather than the other
-way around. modde creates this directory if it does not exist.
+Unreal mounts `~mods` **after** the shipping paks, so mods override base content.
+modde creates the directory if missing.
 
 Deployment uses modde's standard staging-and-link model (see
 [Deployment](../guides/deployment.md)): mods live in per-mod staging directories,
@@ -86,11 +80,9 @@ files. A `pak`/`ucas`/`utoc` triple that shares a file stem is treated as one
 logical mod — the IoStore container (`.ucas`/`.utoc`) and its `.pak` header travel
 together.
 
-When modde analyses a downloaded archive, it recognises the Subnautica 2 layout
-when the archive root contains at least one `.pak`, `.ucas`, or `.utoc` file and
-classifies it as a single file set (`InstallMethod::SingleFileSet`) — i.e. "drop
-these chunk files into `~mods`". Archives that do not present pak files at their
-root fall through to the generic installer flow.
+During analysis, a root-level `.pak`, `.ucas`, or `.utoc` selects
+`InstallMethod::SingleFileSet` for installation into `~mods`. If none is present
+at the root, analysis falls through to the generic installer.
 
 ## What scanning finds
 
@@ -110,10 +102,9 @@ files collapse into the same row as their `.pak` (the footprint is represented b
 `subnautica2/content/paks/~mods/<stem>.pak`), so a multi-chunk mod shows up once
 rather than three times.
 
-Scanning is filesystem discovery only — it tells you which pak sets are physically
-present. It does not parse pak contents, read UE asset trees, or resolve
-load-order semantics. See [Scanning](../guides/scanning.md) for how discovered
-rows reconcile with manifest-driven installs.
+Scanning finds pak sets on disk without parsing pak contents, reading UE asset
+trees, or resolving load order. See [Scanning](../guides/scanning.md) for how
+discovered mods reconcile with manifest-driven installs.
 
 ## Conflict classification
 
@@ -252,10 +243,10 @@ Subnautica 2:
 
 ## Linux / Proton notes and gotchas
 
-These notes cover the game's runtime on Linux and macOS, where Subnautica 2 runs
-through Proton/Wine. On Windows the game runs natively — there is no Wine prefix,
-and saves and per-user config live at their native Windows locations. modde itself
-runs natively on all three platforms.
+The prefix-specific notes below apply on Linux and macOS, where Subnautica 2
+runs through Proton/Wine. On Windows it runs natively without a Wine prefix and
+keeps saves and per-user config at their native Windows locations. modde runs
+natively on all three platforms.
 
 - **Launch once before modding state resolves.** Saves, the `ue4-saved-config`
   target, and prefix-based config all require the Proton prefix to exist. A fresh

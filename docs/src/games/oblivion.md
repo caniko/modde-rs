@@ -1,10 +1,9 @@
 # The Elder Scrolls IV: Oblivion
 
 The Elder Scrolls IV: Oblivion (`game_id` **`oblivion`**) is one of modde's two
-Gamebryo-engine titles. It shares a single data-driven game plugin
-(`GamebryoGame` in `crates/modde-games/src/gamebryo/mod.rs`) with Fallout: New
-Vegas, so its mod-directory rules, conflict policy, and `plugins.txt` handling
-match that engine generation.
+Gamebryo titles. It shares mod-directory rules, conflict policy, and `plugins.txt`
+handling with Fallout: New Vegas through the data-driven `GamebryoGame` plugin
+in `crates/modde-games/src/gamebryo/mod.rs`.
 
 ## Status at a glance
 
@@ -16,9 +15,8 @@ match that engine generation.
 | Save tracking | `Done` | `.ess`/`.fos` saves under the Proton prefix, git-backed vault, fingerprinting. |
 | Plugin system | Yes | `plugins.txt`-style load-order read/write. |
 
-The canonical, test-coupled status row lives in the
-[supported games table](supported-games.md). This page expands on the
-mechanics behind that `Partial` rating.
+The [supported games table](supported-games.md) is the canonical, test-coupled
+source for this `Partial` rating.
 
 ## Engine and registration
 
@@ -48,13 +46,11 @@ The plugin reports `has_plugin_system() == true` and
 
 ## Install detection
 
-modde does not install the base game; it locates a launcher-managed install.
-For Oblivion the registration carries only the Steam identifiers
-(`steam_app_id = "22330"`, `steam_dir = "Oblivion"`); the Heroic GOG/Epic app-id
-fields are `None`, so detection is Steam-oriented. Under
-`launcher_games()` Oblivion is matched by its Steam App ID, and the standard
-Steam library scan finds the install at
-`.../steamapps/common/Oblivion/`.
+modde finds launcher-managed installs; it does not install the base game.
+Oblivion registers only Steam identifiers (`steam_app_id = "22330"`,
+`steam_dir = "Oblivion"`); its Heroic GOG/Epic app IDs are `None`.
+`launcher_games()` matches the Steam App ID, and the standard Steam library scan
+finds `.../steamapps/common/Oblivion/`.
 
 If you install through a non-default path (or via Heroic/GOG), set the game
 directory explicitly — `gameDir` in the home-manager module, or `--game-dir` on
@@ -68,10 +64,9 @@ The Gamebryo plugin places mods under the game's `Data/` folder:
 <install>/Data/
 ```
 
-That is the value returned by `mod_directory(install)` —
-`install.join("Data")`. Deployment uses modde's standard symlink-farm VFS:
-mods are staged, the winning file for each relative path is resolved by load
-order, and the staging tree is symlinked into `Data/`. See
+`mod_directory(install)` returns `install.join("Data")`. With the standard
+symlink-farm VFS, modde stages mods, picks the winner at each relative path by
+load order, and symlinks the staging tree into `Data/`. See
 [Deployment & VFS](../guides/deployment.md) for the build → materialize →
 deploy pipeline and rollback.
 
@@ -90,16 +85,13 @@ sub-packages.
 
 ## What scanning finds
 
-`modde scan --game oblivion` runs the Gamebryo scanner
-(`OBLIVION_SCANNER`), which inspects only the `Data/` directory and looks for
-plugin files:
+`modde scan --game oblivion` runs the Gamebryo scanner (`OBLIVION_SCANNER`),
+which looks for plugins only in `Data/`:
 
-- It enumerates top-level files in `Data/` and keeps those with an `.esp` or
-  `.esm` extension (case-insensitive). Sub-directories are skipped at this
-  level.
-- For each plugin it also pulls in a sibling **`.bsa`** archive that shares the
-  plugin's stem (e.g. `MyMod.esp` + `MyMod.bsa`), grouping them into one
-  discovered mod.
+- It checks only top-level files in `Data/` for `.esp` or `.esm` extensions
+  (case-insensitive).
+- It groups each plugin with a sibling **`.bsa`** of the same stem, if present
+  (e.g. `MyMod.esp` + `MyMod.bsa`), as one mod.
 - Each discovered mod is reported with `mod_id = "plugin/<filename>"`, the
   plugin filename as the display name, its `Data/`-relative file list with
   sizes, and a detection confidence of `0.85`.
@@ -236,10 +228,9 @@ See [Tools & Overlays](../guides/tools.md) for the full tool surface, and
 
 ## Linux / Proton notes and gotchas
 
-These notes cover the game's runtime on Linux and macOS, where Oblivion runs
-through Proton/Wine. On Windows the game runs natively — there is no Wine prefix,
-and saves and INI files live at their native Windows locations. modde itself runs
-natively on all three platforms.
+The prefix-specific notes below apply on Linux and macOS, where Oblivion runs
+through Proton/Wine. On Windows it runs natively, with no Wine prefix: saves and
+INI files use native Windows paths. modde runs natively on all three platforms.
 
 - **Saves live in the Proton prefix**, under `compatdata/22330/...` — not in your
   Linux home directory. If you change Proton/compat tools or wipe the prefix,

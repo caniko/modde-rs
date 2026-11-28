@@ -2,17 +2,11 @@
 
 ## Overview
 
-Mod archives are not uniform. A Skyrim mod might be loose files that drop into
-`Data/`; a Cyberpunk mod might be a REDmod package keyed off `info.json`; a
-texture pack might ship a FOMOD installer; a Wrye Bash mod might use numbered
-option folders. modde turns all of these into the same end state — files staged
-in a per-mod store directory and recorded so uninstall is exact — by running
-every install through one pipeline that first *classifies* the archive, then
-*stages* it accordingly.
-
-This guide explains that pipeline, the full set of layouts modde recognizes, when
-it auto-detects versus needs your input, and what happens when it cannot figure
-an archive out at all.
+Archives come in different layouts: loose Skyrim files for `Data/`, Cyberpunk
+REDmod packages keyed off `info.json`, texture packs with FOMOD installers, or
+Wrye Bash mods with numbered option folders. One pipeline classifies each
+archive, stages files in a per-mod store directory, and records them for exact
+removal.
 
 ## The three-stage pipeline
 
@@ -31,8 +25,8 @@ producing an `InstallPlan`. The plan carries:
   during download (it cannot be derived from the extracted tree);
 - an empty `staged_files` list, filled in by the next stage.
 
-Detection is **ordered**, and the order is deliberate so that authoritative,
-game-specific rules win before generic guesses:
+Detection is **ordered** so authoritative game-specific rules beat generic
+guesses:
 
 1. **Normalize** — if the extracted directory is a single wrapper directory with
    no files, recurse into it and record `strip_prefix`. Unwrapping stops at a
@@ -53,10 +47,9 @@ game-specific rules win before generic guesses:
 
 `installer::execute` stages files from the temporary extraction directory into
 the mod's store directory according to the plan, and returns a concrete
-`StagedFile` manifest. Execution is deliberately dumb: it copies (or renames,
-when the source and destination share a filesystem) files, records each one's
-store-relative path, its original archive path, and its size — and does **not**
-touch the database.
+`StagedFile` manifest. It copies files (or renames them on the same filesystem)
+and records each file's store-relative path, original archive path, and size.
+It does **not** touch the database.
 
 Two variants can stop here and ask for input: a `Fomod` with no config and a
 `Bain` with no selection both return `RequiresUserInput`, which the GUI routes to
@@ -64,10 +57,9 @@ a wizard. An `Unknown` method returns `UnknownMethod`.
 
 ### 3. Record
 
-The caller wires the returned `Vec<StagedFile>` into the database
-(`ModdeDb::record_install`), persisting the method and the file manifest. Because
-the manifest is exact, [`modde mod remove`](../reference/cli.md) unlinks
-precisely the files this mod staged — no orphans, no collateral damage.
+The caller passes the returned `Vec<StagedFile>` to `ModdeDb::record_install`,
+which persists the method and manifest in the database. [`modde mod remove`](../reference/cli.md)
+uses that manifest to unlink all and only the files this mod staged.
 
 The mod's row also carries an `InstallStatus`:
 
@@ -120,10 +112,9 @@ Everything else (`BareExtract`, `StripContentRoot`, `DirectoryMod`,
 `DirectoryModFromXml`, `MultiRootOverlay`, `SingleFileSet`, `REDmod`,
 `DllOverlay`, `UserConfigOverlay`) is `is_ready()` the moment analysis finishes.
 
-A note on **wrapper stripping**: any of the above can be wrapped in a versioned
-directory. The analyzer's normalize step records a `strip_prefix` so execution
-recurses into the inner directory automatically — you never have to repack an
-archive just because the author zipped it with a `ModName-1.0/` top folder.
+**Wrapper stripping** works with any of these layouts. The analyzer records a
+`strip_prefix` during normalization so execution uses the inner directory.
+There's no need to repack an archive with a `ModName-1.0/` wrapper.
 
 ## Unknown archives and the dossier system
 
@@ -170,9 +161,9 @@ detection verdict, then lays out exactly how to extend support:
 modde mod diagnose <mod_id>
 ```
 
-`mod diagnose` locates the dossier for an unknown-install mod and prints its path
-followed by the inline `PROMPT.md` to stdout. It is read-only — it mutates
-nothing — so it is safe to pipe straight into an agent or paste into a chat:
+`mod diagnose` finds the unknown install's dossier and writes the dossier path
+to stdout, followed by the contents of `PROMPT.md`. It's read-only, so you can
+pipe the output to an agent or paste it into a chat:
 
 ```bash
 modde mod diagnose skyrimspecialedition_12345_67890 | claude

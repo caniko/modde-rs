@@ -28,10 +28,10 @@ for the exact revisions, receipts and remaining gates.
 
 ## Owned games and provider coverage
 
-Ownership and installation are separate. An owned, uninstalled game has
-**Install via Steam** or **Install via GOG/Epic**, rather than Play. Installation
-is handed to Steam or Heroic. Library rescans while idle, or use **Refresh** after
-installation completes.
+Ownership and installation are separate. For owned but uninstalled games,
+**Install via Steam** or **Install via GOG/Epic** replaces Play and hands off
+installation to Steam or Heroic. Library rescans while idle; you can also select
+**Refresh** after installation.
 
 | Provider        | Ownership source                                      | Local installation source                                                |
 | --------------- | ----------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -50,11 +50,11 @@ modde library list
 modde library list --json
 ```
 
-The key is sent only to Steam and is not saved in library preferences. Account
-visibility and Steam's API determine which games the response includes. A
-private/unavailable or incomplete response does not replace the previous cache.
-The account ID and last successful sync time are retained. Refresh rescans disk;
-it does not implicitly perform an account sync.
+modde sends the key only to Steam and doesn't save it in library preferences.
+Account visibility and Steam's API determine which games Steam returns.
+A private/unavailable or incomplete response does not replace the previous
+cache. modde keeps the account ID and last successful sync time. Refresh rescans
+disk; it does not implicitly sync the account.
 
 For GOG/Epic, sign in and refresh the library in Heroic, then refresh modde.
 Native and Linux Flatpak Heroic config locations are scanned. Provider notices
@@ -72,10 +72,10 @@ does not have Wine's argument convention. Direct launches clear ambient
 terminal's previous Proton session cannot choose this game's save destination.
 
 On Linux, an isolated subreaper waits for the command and its descendants,
-including orphaned children after a launcher forks and exits. If available in the
-same host namespaces, a systemd user service also tracks the session cgroup with
-`ExitType=cgroup`. Inside an existing container or a different namespace, the
-observer stays in the caller's namespaces.
+including children orphaned when a launcher forks and exits. A systemd user
+service, if available in the same host namespaces, also tracks the session
+cgroup with `ExitType=cgroup`. Inside an existing container or a different
+namespace, the observer stays in the caller's namespaces.
 
 Sandboxed launches also use a namespace-init reaper, so bubblewrap does not kill
 an orphaned game when its first launcher exits. It waits for all descendants and
@@ -142,9 +142,9 @@ for saves. An explicit `WINEPREFIX` may name the container root only when
 `STEAM_COMPAT_DATA_PATH` identifies that same container and its `pfx` resolves
 to the configured physical prefix.
 
-The GUI invokes the companion `modde` CLI to share the same preparation and
-capture pipeline. Packaged installs include both binaries. `MODDE_BIN` can point
-to a companion CLI for a custom GUI build.
+The GUI runs the companion `modde` CLI for preparation and capture. Packaged
+installs include both binaries. For custom GUI builds, `MODDE_BIN` can point
+to a companion CLI.
 
 `--config-dir` selects modde's base configuration directory, while `--data-dir`
 selects its data directory. Generated hooks and GUI launches pass both to the
@@ -154,12 +154,12 @@ desktop audio credentials also use the desktop user's configuration root.
 
 ## Profiles, exact installations and saves
 
-Installation IDs are persisted with their known paths and store associations.
-Rediscovering a configured local copy through Steam or Heroic retains its ID,
+modde records installation IDs with known paths and store associations.
+Rediscovering a configured local copy through Steam or Heroic keeps its ID,
 launch settings, sandbox permissions and save bindings. Known symlink aliases
-resolve to one copy. Existing IDs are retained during migration; conflicting
-saved identities produce an error instead of silently choosing defaults.
-Catalogue refresh can persist this identity metadata in `library.json`.
+resolve to one copy. Migration preserves existing IDs. Conflicting saved
+identities produce an error rather than silently selecting defaults. Catalogue
+refresh can save this metadata in `library.json`.
 
 Path aliases record their resolved targets. Retargeting a known symlink is
 rejected instead of transferring the old installation's configuration to the
@@ -180,8 +180,8 @@ afterward and review the target's launch settings. Merely refreshing never
 authorizes a transfer.
 
 Two physical copies keep separate commands and save state. Moving a copy to an
-unrelated path is not an automatic migration of its settings or vault. A store URI cannot select
-between two copies of the same store app; use a direct executable in that case.
+unrelated path does not migrate its settings or vault automatically. A store URI
+cannot distinguish two copies of the same store app; use a direct executable.
 
 The shared CLI/GUI session pipeline:
 
@@ -206,13 +206,12 @@ The shared CLI/GUI session pipeline:
    the launch journal; analysis failures retain the receipt. A separate completion
    worker can finish the exact observed session if the initiating CLI disappears.
 
-The unique existing installation can retain its legacy active slot and complete
-save-vault history through a persisted binding. Duplicate installations are not
-assigned that history by guessing. They need independent save directories,
-resolved from their prefixes or configured explicitly, and their own adoption.
-Changing a bound save destination creates a new save scope.
-Historical vaults are retained. Adoption that has already established a scoped
-vault is not later redirected to a legacy vault.
+A sole existing installation can keep its legacy active slot and full save-vault
+history through a persisted binding. modde does not guess which duplicate gets
+that history. Each needs its own save directory (inferred from its prefix or
+configured explicitly) and adoption. Changing a bound save destination creates
+a new save scope. modde keeps historical vaults and never redirects an adoption
+from an established scoped vault to a legacy vault.
 
 Save fingerprints classify each enabled mod's stored source contents before
 deployment merges files. Cosmetic-only content can be excluded without depending
@@ -276,13 +275,12 @@ modde library hook INSTALLATION_ID
 
 For **profile-managed Heroic saves**, disable automatic cloud-save synchronization
 for this game and restart Heroic before Play or save experiments. The matching
-game configuration must explicitly contain `"autoSyncSaves": false`; a missing
-value is not accepted as proof that sync is disabled. Hook setup reports this
-requirement but does not change the cloud-save setting. Modde checks it before
-dispatch and when the hook is invoked directly. Heroic downloads saves before the
-wrapper and uploads after it returns, outside modde's save transition and bisect
-source restoration. The disk check cannot verify Heroic's in-memory settings,
-which is why the restart matters.
+game configuration must contain `"autoSyncSaves": false`; a missing value doesn't
+count. Hook setup reports the requirement without changing the setting. Modde
+checks it before dispatch and on direct hook invocation. Heroic downloads saves
+before the wrapper and uploads after it returns, outside modde's save transition
+and bisect source restoration. The disk check cannot verify Heroic's in-memory
+settings, so restart Heroic.
 
 The store command's environment supplies the effective Wine/Proton prefix and
 runtime tunings. A native command without a Wine environment does not reuse an
@@ -298,14 +296,13 @@ An environment `WINEPREFIX` override must match the store's runner-facing prefix
 use the `prefix` field for physical save discovery rather than overriding the
 store's container path with its `pfx` child.
 
-The generated hook is installation-specific and preserves the supplied argument
-vector. It pins the CLI executable and modde configuration/data paths; regenerate
-it after relocating or removing that CLI installation. These paths are recorded
-as absolute paths even when configuration was supplied relative to the caller.
-When present, Steam/Heroic game and store identifiers are checked against the
-hook's installation. Set `store_hook: true`
-only when the hook has actually been installed. The setup action records this
-setting, but it cannot verify that Steam's Launch Options were pasted correctly.
+The installation-specific hook preserves the argument vector and checks any
+Steam/Heroic game and store identifiers against the installation. It pins the
+CLI executable and modde configuration/data paths as absolute paths, even if
+supplied relative to the caller. Regenerate it after moving or removing that
+CLI installation.
+Set `store_hook: true` only after installing the hook. Setup records this setting
+but cannot verify what you pasted into Steam's Launch Options.
 
 Play first journals **Waiting for store wrapper**, then releases its mutation
 lease before opening the store URI. The wrapper claims that installation's
@@ -350,8 +347,8 @@ retain the latest 50 by default (`MODDE_LOG_KEEP_LAUNCHES` changes this); pendin
 sessions, pending completion receipts, unfinished attempts and performance/bisect
 bundles are protected. Runtime caches, save vaults and journals are not pruned.
 
-An unfinished session survives GUI restarts and blocks profile, deployment and
-save mutations. Inspect the journal and process evidence with:
+Unfinished sessions survive GUI restarts and block profile, deployment and save
+changes. Inspect the journal and process evidence with:
 
 ```sh
 modde library status
@@ -433,11 +430,11 @@ its owning data directory; finish/recovery must use that same `--data-dir`.
 Old `<modde_data>/pending-session.json` markers are recognized when that data
 directory is opened and conservatively treated as possibly launched sessions.
 Each observed launch records `run-*/evidence.json`, `observer.lock` and
-`completion.log` beside the journal. Its inherited-environment request is removed
-as soon as the observer consumes it. Post-capture continuation uses
-`pending-completion.json` in that same sessions directory and also blocks new
-launches and mutations until completed or explicitly skipped. GUI launch output is stored under
-`<modde_data>/logs/`; the UI reads only a bounded tail.
+`completion.log` beside the journal. modde removes the inherited-environment
+request as soon as the observer consumes it. Post-capture continuation uses
+`pending-completion.json` in the same sessions directory and blocks new launches
+and mutations until it finishes or you explicitly skip it. GUI launch output is
+stored under `<modde_data>/logs/`; the GUI reads only a bounded tail.
 
 ## Manager instances
 
@@ -447,10 +444,11 @@ observer with its selected runner, prefix, tunings and DLL overrides. Launch
 settings can add arguments, wrappers, environment and sandbox permissions;
 manager retains ownership of executable, runner, prefix and game profile.
 
-Runner discovery includes
-`$XDG_DATA_HOME/modde/runners/wine/wine-*/bin/wine`, legacy Lutris directories,
-and explicit `system` Wine selection. A `.modde-library-session.json` marker in
-the instance root blocks manager mutation after an interrupted Library bridge.
+modde looks for runners at
+`$XDG_DATA_HOME/modde/runners/wine/wine-*/bin/wine` and in legacy Lutris
+directories. It also supports explicit `system` Wine selection. A
+`.modde-library-session.json` marker in the instance root blocks manager
+mutation after an interrupted Library bridge.
 Finish or recover the Library session to clear it. Manager save/addon policies
 remain manager-owned; these entries do not acquire a modde game-plugin save vault.
 
@@ -460,7 +458,7 @@ Sandboxing is **off by default** and saved per installation. Enable it in Launch
 settings for a direct executable, a store command hook or a manager game launch.
 The native Linux Nix package supplies `bwrap` and systemd command-line tools;
 other packages require bubblewrap installed on PATH and working user namespaces.
-An enabled sandbox fails with an actionable error if setup fails. It never
+If sandbox setup fails, the launch fails with an actionable error. modde never
 silently retries without isolation.
 
 The sandbox mounts the game, prefix and save directories writable, mod-store and
@@ -566,8 +564,8 @@ Then use the report-only eight-pair protocol in the qualification reference.
 
 ## Performance capture and paired sandbox runs
 
-See the [qualification record](../reference/library-qualification.md) for the
-checks that have run and the live-game evidence still required.
+The [qualification record](../reference/library-qualification.md) lists completed
+checks and outstanding live-game evidence.
 
 `modde perf run` and bisect candidates use the same installation-scoped
 preparation, supervision and save capture as Play. Configure MangoHud for the
@@ -644,9 +642,9 @@ unavailable. Missing evidence remains an unknown exit. Ingested CSV paths are sa
 as absolute paths so later grading does not depend on the caller's directory.
 
 No overhead measurements have been collected for this implementation. The
-commands and reports provide the measurement workflow, not a performance result.
-Real-game measurements will be report-only: retain paired deltas and evidence
-without assigning a negligible-overhead pass/fail verdict.
+commands and reports describe how to measure overhead; they do not establish a
+result. Future real-game measurements will be report-only: retain paired deltas
+and evidence without a negligible-overhead pass/fail verdict.
 
 ## Provider references
 

@@ -2,13 +2,13 @@
 
 ## Overview
 
-modde manages save files with a **git-backed save vault**: one git repository per game, one branch per profile. Every capture is an ordinary git commit, so you get the full power of git for free — complete history, branching, snapshots, and the ability to roll a profile's saves back to any previous point. On top of plain git, modde adds a **mod fingerprint** so it can warn you before you restore a save that was made under a different set of save-breaking mods.
+modde stores saves in a **git-backed save vault**: one repository per game, one branch per profile. Each capture is a git commit, so you can branch, browse snapshot history, and roll a profile's saves back to any previous snapshot. A **mod fingerprint** lets modde warn you before restoring a save made with a different set of save-breaking mods.
 
-The whole system is built so you can run multiple profiles of the same game side by side — a vanilla playthrough, a heavily modded one, a testbed — without their saves ever colliding, and without losing the ability to go back.
+Run a vanilla playthrough, a heavily modded one, and a testbed for the same game without mixing their saves or losing their history.
 
 ## The vault layout
 
-There is one vault per game, living under modde's data directory:
+Each game has one vault under modde's data directory:
 
 ```
 <data>/saves/<game_id>/
@@ -27,7 +27,7 @@ Key facts about the vault:
 
 ### It's plain git — go ahead and inspect it
 
-The vault is not a custom binary format. It is a normal git repository, and modde uses [`git2`](https://docs.rs/git2/) (libgit2) under the hood. You can point any git tooling at it to audit what modde has stored:
+The vault is a normal git repository, not a custom binary format. modde uses [`git2`](https://docs.rs/git2/) (libgit2), and you can inspect the vault with standard git tools:
 
 ```bash
 cd ~/.local/share/modde/saves/skyrim-se/
@@ -36,13 +36,13 @@ git log --oneline   # the snapshot history of the checked-out branch
 git show <commit>   # exactly what changed in a snapshot, including the fingerprint trailers
 ```
 
-Treat it as read-only-ish: modde owns the working tree and will force-checkout over local edits. Inspecting, logging, and diffing are safe; hand-committing into it is not recommended.
+Treat the vault as read-only for manual use: modde owns the working tree and force-checks out over local edits. Inspecting the vault, viewing logs, and diffing are safe.
 
 ## Save-breaking mods and the fingerprint
 
 A **save-breaking mod** is a mod whose presence (or absence) can make a save game incompatible — typically anything that changes the game's serialized data: script extenders and their plugins, mods that add scripts or records baked into saves, framework mods, and so on. Cosmetic mods (textures, reshades, UI tweaks) are *not* save-breaking: adding or removing them does not invalidate a save.
 
-Each game plugin classifies its own mods. modde does not hard-code a list in the save layer; instead `SaveFingerprint::compute` takes a `classify` callback so the save vault stays independent of game-specific logic — the caller resolves the game plugin and asks it whether each mod is save-breaking.
+The save vault has no hard-coded mod list. `SaveFingerprint::compute` takes a `classify` callback: the caller resolves the game plugin and asks it whether each mod is save-breaking.
 
 ### How the fingerprint is computed
 
@@ -70,7 +70,7 @@ Save-Breaking-Mods: skse, ussep, immersive_armors
 
 ## Capturing saves
 
-A capture copies the live save files into the vault working tree and commits them on the profile's branch. modde skips the commit entirely if the tree is byte-identical to the last snapshot, so repeated captures with no new saves don't clutter history.
+A capture copies live saves into the vault working tree and commits them on the profile's branch. modde skips the commit if the tree is byte-identical to the last snapshot.
 
 Saves are captured automatically in several situations:
 
@@ -94,7 +94,7 @@ The optional `-m`/`--message` text is recorded as the commit message; the finger
 modde save auto-capture --game skyrim-se
 ```
 
-This is the hook the launch wrapper calls. With no `--profile`, it captures into the game's active profile. It also runs the game plugin's save tracker to produce a descriptive commit subject (for example `capture: Lydia — Save 14 [manual]`), so history reads like a save list rather than a string of identical messages.
+The launch wrapper calls this hook. Without `--profile`, it captures into the game's active profile. It uses the game plugin's save tracker to write a descriptive commit subject such as `capture: Lydia — Save 14 [manual]`.
 
 ### Continuous watching
 
@@ -134,7 +134,7 @@ Before restoring, modde compares the snapshot's stored fingerprint against your 
 | **No fingerprint** | The snapshot predates fingerprinting (no trailer). Restore at your own risk. |
 | **Mismatch** | The save-breaking mods differ. modde lists which mods were **added** to your current profile and which were **removed** since the snapshot. |
 
-A mismatch is a warning, not a hard block: you may legitimately want to restore an older save and then re-add the mods. But restoring a save under a *different* set of save-breaking mods is the classic recipe for corrupted or broken saves, so read the diff before you proceed. modde also nudges you toward `modde save history` to find a snapshot whose fingerprint matches your current setup.
+A mismatch warns but doesn't block restoration: you might want to restore an older save and then re-add the mods. Restoring under a different set of save-breaking mods can corrupt or break saves, so read the diff before proceeding. modde suggests `modde save history` to find a snapshot with a matching fingerprint.
 
 ## Adopting existing saves
 
@@ -146,7 +146,7 @@ modde save adopt --game skyrim-se --profile my-skyrim
 
 This ensures the profile's branch exists and captures every existing save in the game's save directory as the initial snapshot. If no profile is active for that game yet, the adopted profile is also made **active**, so that the next profile switch can safely park those saves rather than treating them as orphaned.
 
-This adoption flow is also what protects you during a normal profile switch. If modde finds saves in the game directory but no profile is active, it refuses to overwrite them and tells you to adopt first — see the `AdoptionRequired` path in [Playing a Game](playing.md).
+During a normal profile switch, if modde finds saves in the game directory but no profile is active, it won't overwrite them. It tells you to adopt them first; see the `AdoptionRequired` path in [Playing a Game](playing.md).
 
 ## Steam Cloud handling
 
@@ -156,7 +156,7 @@ changing its cloud setting. Preserving cloud metadata below does not coordinate
 Steam's external writes with profile switching. Heroic likewise needs explicit
 `autoSyncSaves: false` and a restart; see the [playing guide](playing.md).
 
-modde does **not** treat the live save directory as disposable. Many games sync their save folder through Steam Cloud, which drops a `steam_autocloud.vdf` marker file there. Blowing that directory away on every profile switch would fight Steam Cloud and risk re-downloading stale saves.
+Many games sync their save folder through Steam Cloud, which places a `steam_autocloud.vdf` marker there. Deleting the folder on every profile switch would interfere with Steam Cloud and risk re-downloading stale saves.
 
 Instead, during a profile switch modde:
 
@@ -178,7 +178,7 @@ Save management is wired into the profile system so switching profiles swaps sav
 3. **Ensure** the new profile's branch exists (creating it if needed).
 4. **Deploy** the new profile's saves from its vault branch to the live save directory root.
 
-This is what makes `modde play <profile>` and `modde profile switch` feel seamless: your saves follow your profile.
+With `modde play <profile>` and `modde profile switch`, your saves follow your profile.
 
 ### Forking a profile branches its saves
 
@@ -188,11 +188,11 @@ When you fork a profile, modde also forks its save vault branch:
 modde profile fork <source> <new-name> --game skyrim-se
 ```
 
-Under the hood, `fork_saves` looks up the source profile's branch tip and creates a new branch pointing at that same commit. The fork therefore **starts with a complete copy of the source profile's save history** and then diverges — new captures on the fork land on the fork's branch, new captures on the source land on the source's branch, and neither disturbs the other. This is the git-native answer to "I want to try a risky change but keep my main playthrough safe."
+`fork_saves` creates a new branch at the source profile's branch tip. The fork **starts with the source profile's full save history**, but each profile captures new saves on its own branch, leaving the other untouched. Use a fork to try risky changes without affecting your main playthrough.
 
 ## Cross-profile save loading — be careful
 
-The whole point of per-profile branches is that **a save made under one profile belongs to that profile's mod set**. modde does not stop you from manually pointing one profile at another profile's save (for instance, by restoring a commit from a different branch or hand-copying files), but doing so is exactly the situation the fingerprint exists to warn about.
+**A save belongs to the mod set that created it.** modde cannot prevent a manual cross-profile restore or file copy (such as restoring a commit from another branch or copying files by hand). The fingerprint is there to warn about mismatches.
 
 Loading a save into a profile whose enabled save-breaking mods differ from the ones the save was made with can corrupt the save or crash the game — missing scripts, dangling records, version mismatches. If you must move a save across profiles:
 

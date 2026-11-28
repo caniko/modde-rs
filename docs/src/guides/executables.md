@@ -2,14 +2,14 @@
 
 ## Overview
 
-modde manages **named executable launch targets** — the modding tools you run *against* a game install, such as xEdit, BodySlide, Nemesis, FNIS, the Creation Kit, or LOOT. Each target stores a name, an executable path, default arguments, a working directory, environment variables, optional Wine DLL overrides, and an output mod. When you run a target, modde snapshots the mod directory, runs the tool, and **captures any new files** the tool wrote into an output mod so they survive future deploys.
+Save modding tools such as xEdit, BodySlide, Nemesis, FNIS, the Creation Kit, or LOOT as **named executable launch targets** for a game install. Each target stores a name, executable path, default arguments, working directory, environment variables, optional Wine DLL overrides, and an output mod. modde snapshots the mod directory before running the tool, captures files newly written to the game's mod directory, and moves them into the output mod so they survive future deploys.
 
-This feature is shipped end to end and user-reachable from both the CLI and the GUI, so it is marked **Done** in the [capability matrix](../reference/parity.md). It is distinct from [Tools & Overlays](tools.md), which manages the fixed set of six gaming overlays (MangoHud, OptiScaler, Proton, …).
-It is also distinct from [Patcher pipelines](patcher-pipelines.md): executables
+Executables are marked **Done** in the [capability matrix](../reference/parity.md): they work in both the CLI and GUI. [Tools & Overlays](tools.md) instead manages a fixed set of six gaming overlays (MangoHud, OptiScaler, Proton, …).
+Named executables also differ from [Patcher pipelines](patcher-pipelines.md): executables
 are user-invoked tools with overwrite capture, while patcher stages are
 profile-scoped deployment steps that run automatically during `modde deploy`.
 
-Configurations are stored in modde's database (the `executable_configs` table), keyed uniquely by `(game_id, name)`. Saving a target with an existing name overwrites it, so **add doubles as edit**.
+modde stores targets in the `executable_configs` database table, keyed by `(game_id, name)`. Saving an existing name for the same game overwrites that target, so **add doubles as edit**.
 
 ## Two equivalent command surfaces
 
@@ -22,7 +22,7 @@ The same storage is exposed through two CLI namespaces. `modde exec ...` is a th
 | `modde exec remove` | `modde tool remove-executable` | Delete a target |
 | `modde exec run` | `modde tool run-executable` | Run a saved target with overwrite capture |
 
-There is also a one-shot form, `modde tool run <executable> [-- args]`, which runs an arbitrary executable with overwrite capture **without** saving a configuration.
+Use `modde tool run <executable> [-- args]` to run any executable with overwrite capture **without** saving a configuration.
 
 ## Fields
 
@@ -55,7 +55,7 @@ The equivalent short form:
 modde exec add xEdit /games/skyrim/SSEEdit.exe --game skyrim-se -- -quickautoclean
 ```
 
-Both store the same row. The arguments after `--` are saved as the tool's defaults; when you later run the target you can append more arguments after another `--` and they are concatenated onto the saved defaults.
+Both store the same row. The arguments after `--` become the tool's defaults. When you run the target, add arguments after another `--` to append them to those defaults.
 
 ## Listing and removing
 
@@ -101,11 +101,11 @@ Add '__overwrite__' to your profile mod list to include these files in future de
 
 ### What lands in the output mod
 
-Only files that are **new** relative to the pre-run snapshot of the mod directory are captured. Files the tool modified in place that already existed in the deployed tree are not moved (they belong to whichever mod owns them). The captured files are *moved* (renamed, or copied-then-removed across filesystems) into the output mod, so they leave the deployed tree and become a first-class mod you can enable, disable, and order like any other. The default `__overwrite__` mod mirrors Mod Organizer 2's "Overwrite" pseudo-mod; you can target a different mod with `--output-mod` to keep, say, BodySlide output separate from xEdit output.
+modde captures only files that are **new** since the pre-run snapshot. Existing files modified in place stay in the deployed tree with their owning mod. modde moves new files into the output mod (renaming them or copying then removing them across filesystems). You can enable, disable, and order that mod like any other. The default `__overwrite__` mod works like Mod Organizer 2's "Overwrite" pseudo-mod. Use `--output-mod` to separate BodySlide output from xEdit output, for example.
 
 ## The GUI Executables view
 
-The graphical UI ships an **Executables** view that manages the same database rows. It lists each configured target with its name, executable path, and a metadata line summarising args, working directory, Wine DLL overrides, and output mod. Per row you get **Run**, **Edit**, and **Remove** buttons (Run and Remove are disabled while that target is already running). A **Refresh** button reloads the list, and an **Add executable** button opens an editor form with fields for name, executable path (with a **Browse** picker), arguments, output mod, working directory (with a **Browse** picker), `WINEDLLOVERRIDES`, and `KEY=VALUE` env lines. Saving an existing name updates it in place (the button reads "Save / update").
+The **Executables** view manages the same database rows. Each row shows the target name, executable path, and a summary of its arguments, working directory, Wine DLL overrides, and output mod. Each has **Run**, **Edit**, and **Remove** buttons; Run and Remove are disabled while that target runs. **Refresh** reloads the list. **Add executable** opens a form for name, arguments, output mod, executable path (**Browse**), working directory (**Browse**), `WINEDLLOVERRIDES`, and `KEY=VALUE` env lines. "Save / update" updates an existing name in place.
 
 ## Worked examples (Proton)
 

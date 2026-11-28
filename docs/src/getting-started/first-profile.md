@@ -1,11 +1,9 @@
 # Your first profile
 
-This walkthrough takes you from a fresh modde install to a deployed, playable
-Skyrim Special Edition profile with a couple of mods, all from the command line.
-The commands are identical on Linux, macOS, and Windows, and every one uses the
-`skyrim-se` game id. If you use Nix and prefer the declarative home-manager
-workflow, see the [Quick Start](quick-start.md); this page is the imperative
-tour for newcomers.
+Set up a playable Skyrim Special Edition profile with two mods from the command
+line. The commands are the same on Linux, macOS, and Windows, using `skyrim-se`
+as the game id. For the declarative Nix home-manager workflow, see the
+[Quick Start](quick-start.md).
 
 By the end you will have:
 
@@ -19,18 +17,17 @@ By the end you will have:
 
 ## 0. Before you start
 
-modde never installs the base game. Install **Skyrim Special Edition** through
-Steam or Heroic first and launch it once so the launcher writes its files. modde
-will detect that install in the next step.
+Install **Skyrim Special Edition** through Steam or Heroic and launch it once
+so the launcher writes its files. In the next step, modde detects the install.
+modde never installs the base game.
 
 You also need a [Nexus Mods](https://www.nexusmods.com/) account. Downloading
 mod files over CDN links requires a Nexus **Premium** subscription.
 
 ## 1. Install modde
 
-Install modde however suits your platform — a native package manager, a direct
-download, Cargo, or, if you use Nix, the flake. Every channel ships both the
-`modde` CLI and the `modde-ui` desktop app. A few examples:
+Install via your platform's package manager, direct download, Cargo, or the Nix
+flake. Every channel ships the `modde` CLI and `modde-ui` desktop app. Examples:
 
 ```bash
 # Arch Linux (AUR)
@@ -53,10 +50,9 @@ winget install Caniko.Modde
 cargo install modde
 ```
 
-If you use Nix, modde is also a flake — `nix run github:caniko/modde-rs -- detect`
-to try it without installing, or `nix profile install github:caniko/modde-rs`
-to add both binaries to your profile. The home-manager module additionally lets
-you declare your profiles as code.
+With Nix, try modde without installing via `nix run github:caniko/modde-rs -- detect`
+or install both binaries with `nix profile install github:caniko/modde-rs`.
+The home-manager module lets you declare profiles as code.
 
 See [Installation](installation.md) for the full channel list, the exact
 commands, the macOS Gatekeeper quarantine-clear step, the Windows Authenticode
@@ -71,9 +67,9 @@ Save your Nexus API key to the system keyring once:
 modde nexus auth
 ```
 
-This prompts for your key and stores it securely in your OS keyring (the
-secret-service on Linux, Keychain on macOS, the Credential Manager on Windows).
-Confirm it worked — and check whether you have Premium — with:
+modde prompts for the key and stores it in your OS keyring: secret-service on
+Linux, Keychain on macOS, or Credential Manager on Windows. Verify the key and
+check your Premium status with:
 
 ```bash
 modde nexus status
@@ -114,14 +110,13 @@ modde profile list --game skyrim-se
 modde profile active --game skyrim-se
 ```
 
-Profiles are cheap. Later you can fork `first-run` to experiment without risking
-your working setup — see [Profile management](../guides/profiles.md).
+Profiles are cheap to create. Fork `first-run` to experiment without risking
+your working setup. See [Profile management](../guides/profiles.md).
 
 ## 5. Add your first mod (a plain Nexus mod)
 
-Install a single mod straight from its Nexus page URL into the profile. modde
-fetches the file list, picks the latest main file, downloads it over CDN
-(Premium required), extracts it, and adds it to the profile:
+Give modde a Nexus page URL. It fetches the file list, downloads the latest
+main file over CDN (Premium required), extracts it, and adds it to the profile:
 
 ```bash
 modde install mod \
@@ -157,15 +152,14 @@ modde install mod \
   --fomod-config my-choices.toml
 ```
 
-Your selections are saved to the profile and replayed on future deployments, so
-the result is deterministic. The [FOMOD guide](../guides/fomod.md) covers
-generating, inspecting, and applying configs in depth.
+modde saves your selections in the profile and replays them on future deployments
+for deterministic results. See the [FOMOD guide](../guides/fomod.md) for generating,
+inspecting, and applying configs.
 
 ## 7. Analyze conflicts
 
-Two mods that both ship the same file will collide; only one can win. modde
-resolves collisions by **load order priority** — the mod later in the list wins.
-Before deploying, see what overlaps:
+When two mods ship the same file, **load order priority** decides the winner:
+the mod later in the list. Check for overlaps before deploying:
 
 ```bash
 modde collisions --profile first-run
@@ -179,8 +173,8 @@ The report groups conflicts by severity:
 | Major    | Likely visible problems  |
 | Cosmetic | Minor visual differences |
 
-By default cosmetic conflicts are hidden; add `--all` to see them. To get
-ready-to-run commands that hide files which never win anyway:
+Add `--all` to show cosmetic conflicts, which are hidden by default. To print
+ready-to-run commands that hide files that never win:
 
 ```bash
 modde collisions --profile first-run --all --suggest-hides
@@ -219,15 +213,14 @@ What each phase does — Build, Materialize, Deploy — is detailed in the
 
 ## 9. Play
 
-Launch the modded game. `modde play` switches to the profile (swapping saves),
-deploys, launches through the detected launcher, and auto-captures saves when
-the game exits:
+`modde play` switches to the profile (swapping saves), deploys the mods, launches
+through the detected launcher, and auto-captures saves on exit:
 
 ```bash
 modde play first-run --game skyrim-se
 ```
 
-A note on launchers:
+Save capture depends on the launcher:
 
 - **Heroic / direct launch** — modde waits for the game to exit, then captures
   saves automatically.
@@ -254,7 +247,7 @@ If you launched through Steam and the wrapper has not captured yet:
 modde save auto-capture --game skyrim-se
 ```
 
-Browse the history and restore an earlier snapshot when you want:
+Browse the history or restore an earlier snapshot:
 
 ```bash
 modde save history --game skyrim-se --profile first-run
@@ -268,7 +261,7 @@ covered in [Save management](../guides/saves.md).
 
 ## Where to go next
 
-You now have a complete, reproducible modded profile. Branch out from here:
+With a reproducible profile deployed, you can:
 
 - [Profile management](../guides/profiles.md) — fork `first-run`, lock load order,
   and use the experiment stack to try changes non-destructively

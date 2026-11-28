@@ -1,17 +1,14 @@
 # CLI Reference
 
-This is the exhaustive reference for the `modde` command-line interface. Every
-top-level command group, every subcommand, every flag, and the environment
-variables modde reads are documented here. The binary is invoked as `modde`
-(installed via the [Nix flake](../getting-started/installation.md)); the GUI is
-the same binary under `modde gui`.
+This reference covers every `modde` command group, subcommand, flag, and
+environment variable. The [Nix flake](../getting-started/installation.md)
+installs `modde`; run `modde gui` to open the GUI from the same binary.
 
-Run `modde --help` or `modde <command> --help` at any time for the
-clap-generated usage of a specific command.
+Run `modde --help` or `modde <command> --help` for clap-generated usage.
 
 ## Global flags
 
-These flags are accepted on every command (clap `global = true`).
+Every command accepts these flags (clap `global = true`).
 
 | Flag                | Environment          | Description                                                                          |
 | ------------------- | -------------------- | ------------------------------------------------------------------------------------ |
@@ -20,9 +17,8 @@ These flags are accepted on every command (clap `global = true`).
 | `--debug-panic`     | —                    | **Feature-gated, hidden.** Panic after startup to smoke-test the `remote-telemetry` crash-capture path. Only compiled in with `--features remote-telemetry` |
 
 `--data-dir` overrides the active instance (see [`modde instance`](#modde-instance))
-for that one command only — it does not change the persisted active instance. The
-release builds shipped through the flake do **not** enable `heap-profile` or
-`remote-telemetry`, so `--heap-profile` returns an explanatory error and
+for this command only; it does not change which instance is saved as active. Flake releases omit
+`heap-profile` and `remote-telemetry`, so `--heap-profile` returns an explanatory error and
 `--debug-panic` is absent unless you build those features yourself.
 
 ## Environment variables
@@ -52,8 +48,7 @@ override above.
 
 ### Nexus API key resolution order
 
-When a command needs a Nexus key, modde resolves it in this order and uses the
-first source that yields a non-empty value:
+Commands that need a Nexus key use the first non-empty value in this order:
 
 1. The modde-owned config file (written by [`modde nexus auth`](#nexus-auth)).
 2. `NEXUS_API_KEY`.
@@ -134,8 +129,7 @@ present in the current process.
 
 ### `config test`
 
-Open the resolved database, run a trivial probe query, and print `OK` on
-success.
+Open the resolved database, run a probe query, and print `OK` on success.
 
 ```bash
 modde config test
@@ -197,7 +191,7 @@ modde profile active --game <id>
 
 ### `profile try`
 
-Push a profile onto the experiment stack. Can be stacked multiple times.
+Push a profile onto the experiment stack. You can push multiple times.
 
 ```bash
 modde profile try <name> --game <id>
@@ -284,10 +278,10 @@ modde profile dedup <name> [--game <id>] [--manifest <path>] [--apply]
 | `--manifest` | Path to a `.wabbajack` file as the authoritative reference    |
 | `--apply`    | Actually delete leaked rows (without this flag, dry-run only) |
 
-Without `--manifest`, this runs the layer-1 heuristic: it lists filesystem-scanner
-rows (`cet/*`, `reds/*`, `tweak/*`, `archive/*`, `redmod/*`) on a locked profile as
-read-only "suspects". With `--manifest`, the manifest's install directives classify
-each suspect as LEAKED (safe to delete) or GENUINE (a user addition to keep), and
+Without `--manifest`, the layer-1 heuristic lists filesystem-scanner rows
+(`cet/*`, `reds/*`, `tweak/*`, `archive/*`, `redmod/*`) on a locked profile as
+read-only "suspects". With `--manifest`, install directives classify each suspect
+as LEAKED (safe to delete) or GENUINE (a user addition to keep), and
 `--apply` deletes the LEAKED rows.
 
 ---
@@ -310,10 +304,9 @@ modde lock import <path> --profile <name> --game <id> [--dry-run] [--apply]
 ### `lock export`
 
 Export one profile to a portable JSON lockfile (default output: `modde.lock`).
-Export is strict: if required provenance (source archive hashes, staged file
-manifests) is missing, it fails and prints what is missing and how to
-regenerate it. `--allow-incomplete` emits a diagnostic lock instead, explicitly
-marked `reproducible = false`.
+By default, export fails if required provenance (source archive hashes, staged
+file manifests) is missing and explains what's missing and how to regenerate it.
+With `--allow-incomplete`, it instead emits a diagnostic lock marked `reproducible = false`.
 
 ### `lock keygen` / `lock sign`
 
@@ -444,8 +437,7 @@ Install mods from various sources.
 
 ### `install wabbajack`
 
-Install from a Wabbajack modlist. This is the largest single command in the CLI;
-the defaults below match a normal full install.
+Install a Wabbajack modlist. The defaults below match a normal full install.
 
 ```bash
 modde install wabbajack <path> [--profile <name>] [--game-dir <path>] [flags...]
@@ -515,9 +507,9 @@ Manage individual mods.
 
 ### `mod remove`
 
-Remove an installed mod from a profile and unlink its staged files. Removal uses
-the V8 `installed_mod_files` manifest, so it is precise — no orphaned files, no
-collateral damage.
+Remove an installed mod from a profile. The V8 `installed_mod_files` manifest
+lets modde unlink exactly its staged files without leaving orphans or deleting
+unrelated files.
 
 ```bash
 modde mod remove <mod_id> [--profile <name>]
@@ -563,8 +555,8 @@ modde wabbajack search [query] [--game <id>] [--source official|authored|both] [
 
 ### `wabbajack download`
 
-Download a `.wabbajack` file by URL, machine URL, or title. Authored-files URLs
-are downloaded through modde's chunk-aware downloader when required.
+Download a `.wabbajack` file by URL, machine URL, or title. modde uses its
+chunk-aware downloader for authored-files URLs when required.
 
 ```bash
 modde wabbajack download <url-or-machine-url> [--output <dir>]
@@ -599,9 +591,8 @@ have the exact archive in an old Wabbajack cache.
 modde wabbajack import-archive <path.wabbajack> <archive-path>...
 ```
 
-The command hashes each archive and imports only files whose Wabbajack hash is
-referenced by the manifest. Matching by filename is intentionally refused — only
-exact hash matches are accepted.
+The command hashes each archive and imports only exact Wabbajack hash matches
+from the manifest. Filenames don't count as matches.
 
 ### `wabbajack acquire-missing`
 
@@ -791,17 +782,17 @@ modde game import-profile <path> --for <game-id> [--force]
 
 ## `modde exec`
 
-Manage named launch targets (`xEdit`, `BodySlide`, `FNIS`, etc.). This is a thin
-alias for the executable subset of [`modde tool`](#modde-tool) — the underlying
-storage is shared, so `modde exec list` and `modde tool list-executables` print
-the same rows. Executable management is **Done** end to end (named executables
+Manage named launch targets (`xEdit`, `BodySlide`, `FNIS`, etc.). This aliases
+the executable commands in [`modde tool`](#modde-tool) and shares their storage:
+`modde exec list` and `modde tool list-executables` print the same rows.
+Executable management is **Done** end to end (named executables
 with args, working dir, env, Wine DLL overrides, a configurable output mod, and
 overwrite capture). See the [executables guide](../guides/executables.md).
 
 ### `exec add`
 
-Save (or update) a named launch target. Re-running with the same name overwrites
-the existing entry, so `add` doubles as `edit`.
+Save a named launch target. Running `add` with the same name overwrites the
+entry, so it doubles as `edit`.
 
 ```bash
 modde exec add <name> <executable> --game <id> [flags...] [-- <args>...]
@@ -1007,7 +998,7 @@ modde save watch --game <id> [--profile <name>] [--interval <secs>]
 
 ## `modde update`
 
-Check for, and apply, updates. With no flags, `update check` checks for a new
+Check for and apply updates. With no flags, `update check` looks for a new
 **modde** release; with `--mods`, `--profile`, or `--game`, it checks tracked
 profile mods on Nexus instead.
 
@@ -1024,8 +1015,7 @@ modde update check [--profile <name>] [--game <id>] [--period <period>] [--mods]
 | `--period`  | `1w`    | Time window: `1d`, `1w`, or `1m`                                     |
 | `--mods`    | —       | Check Nexus-tracked profile mods instead of modde itself            |
 
-If none of `--mods`, `--profile`, or `--game` is given, this performs the product
-(modde) update check.
+Without `--mods`, `--profile`, or `--game`, check for a modde release instead.
 
 ### `update apply`
 
@@ -1083,9 +1073,9 @@ modde loot validate --game <id>
 
 ## `modde tool`
 
-External tool, executable, and overlay management. This command exposes both the
-overlay/patch surface (MangoHud, vkBasalt, GameMode, ReShade, OptiScaler, Proton)
-and the full named-executable surface (the same storage `modde exec` aliases).
+Manage external tools with overlay/patch support (MangoHud, vkBasalt, GameMode,
+ReShade, OptiScaler, Proton) and all named executables, which share storage
+with `modde exec`.
 
 ### `tool run`
 
@@ -1317,8 +1307,7 @@ modde tool releases <tool_id> --game <id>
 
 ### `tool install-release`
 
-Install a specific release asset for a release-backed tool, downloading it from
-GitHub.
+Download and install a specific GitHub release asset for a release-backed tool.
 
 ```bash
 modde tool install-release <tool_id> --game <id> --tag <tag> --asset <asset>
@@ -1460,8 +1449,8 @@ modde doctor crash [log-path] --game <id> [--profile <name>] [--format auto|cras
 modde doctor explain <log-path> --game <id> [--profile <name>] [--provider local|remote] [--json]
 ```
 
-When `log-path` is omitted, `doctor crash` auto-discovers the newest crash log
-(by modification time) across the game's default crash-log directories:
+Without `log-path`, `doctor crash` finds the newest crash log by modification
+time across the game's default crash-log directories:
 
 | Game | Directories searched (under `~/Documents/My Games/`) |
 | ---- | ----------------------------------------------------- |
@@ -1508,10 +1497,10 @@ modde perf compare --baseline <run-id> --candidate <run-id>
 | `--warmup-seconds` | `30`    | Startup samples to skip when computing summary statistics     |
 | `--no-deploy`      | off     | Skip mod deployment before launch                             |
 
-If a run stays pending (for example the game was launched through a
-fire-and-forget launcher and the CSV appeared after modde returned), attach the
-MangoHud CSV manually with `perf ingest`. `perf compare` prints a side-by-side
-delta of two captured runs; run IDs come from `perf list`.
+If a run stays pending, attach the MangoHud CSV with `perf ingest`. This can
+happen when a fire-and-forget launcher starts the game and the CSV appears after
+modde returns. `perf compare` prints a side-by-side delta for two captured runs;
+get their IDs from `perf list`.
 
 ---
 

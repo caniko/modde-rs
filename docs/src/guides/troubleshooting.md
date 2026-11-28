@@ -1,12 +1,11 @@
 # Troubleshooting
 
-This page is organized as **symptom → cause → fix**. Start from the index below,
-jump to the matching section, and follow the commands. Every problem links to the
-guide that covers the underlying workflow in depth.
+Find your symptom in the index, then read its cause and fix. Each entry links to
+the guide for that workflow.
 
-If a command itself is misbehaving (wrong flags, missing subcommand), check the
-[CLI reference](../reference/cli.md) first — this page covers *runtime* and
-*environment* problems, not command syntax. For install-time and build-host
+For command-syntax problems, including wrong flags or missing subcommands, check
+the [CLI reference](../reference/cli.md) first. This page covers runtime and
+environment problems. For install-time and build-host
 problems (Nix flake errors, `openssl-sys`, Home-Manager wiring), see the
 [Installation guide's Troubleshooting section](../getting-started/installation.md#troubleshooting);
 the most common one is reproduced under [Build / `openssl-sys` failures](#build-openssl-sys-failures-build-host-issue)
@@ -45,10 +44,10 @@ below.
 
 **Symptom:** `modde detect` does not list a game you have installed.
 
-**Cause:** modde auto-detects games via Steam and Heroic (GOG, Epic, Sideload).
-A game only appears when the launcher's own metadata can be read and matched to a
-built-in or user-defined game registration. A game installed outside a supported
-launcher, or in a non-default library, may not be found automatically.
+**Cause:** A game appears only if modde can read its Steam or Heroic (GOG, Epic,
+Sideload) metadata and match it to a built-in or user-defined registration. It
+may miss games installed outside a supported launcher or in a non-default
+library.
 
 **Fix:**
 
@@ -71,9 +70,8 @@ See [Playing a game](playing.md) for how detection feeds into `modde play`, and
 
 ## Generic game not detected
 
-**Symptom:** You registered a user-defined game with `modde game add`, but modde
-cannot find its install directory, or `modde game detect` reports the wrong
-directory (or none at all).
+**Symptom:** After `modde game add`, modde can't find the install directory, or
+`modde game detect` reports the wrong directory or none at all.
 
 **Cause:** Generic (user-defined) game support is **`Partial`** — it gives you
 deployment, conflict classification, launcher integration, and executable
@@ -134,8 +132,7 @@ GameSpec schema, validation rules, and the `modde game` CLI surface.
 
 ## Wabbajack install issues
 
-**Symptom / cause / fix** for the common Wabbajack failure modes. See the
-[Wabbajack modlists guide](wabbajack.md) for the full workflow.
+See the [Wabbajack modlists guide](wabbajack.md) for the full workflow.
 
 If a Skyrim SE modlist reports that it references local game files, pass
 `--game-dir "/path/to/Skyrim Special Edition"` or set `profiles.<name>.gameDir`
@@ -143,11 +140,11 @@ in Home Manager. Lists such as Legends of the Frost need vanilla files from the
 local `Data/` directory (these are Wabbajack `GameFileSourceDownloader` entries —
 not downloads, but reads of the installed game).
 
-If Home Manager says a profile is awaiting game install, install the game with
-Steam or Heroic first. modde waits for launcher-managed game installs; it does
-not install Skyrim itself. After the game exists, set `gameDir` and rebuild Home
-Manager. (Use `installMode = "await-game"` to keep activation non-fatal until
-then — see [Deployment & VFS](deployment.md#wabbajack-profiles).)
+If Home Manager says a profile is awaiting game install, install that profile's
+game through Steam or Heroic first, not modde. Then set `gameDir` and rebuild
+Home Manager. Use `installMode = "await-game"` to keep the missing game from
+failing activation in the meantime. See
+[Deployment & VFS](deployment.md#wabbajack-profiles).
 
 If a local game file fails hash verification, verify that Skyrim SE is fully
 installed, up to date, and not modified in place. Wabbajack expects exact
@@ -176,8 +173,8 @@ If you have the exact archives locally, import them explicitly:
 modde wabbajack import-archive /path/to/list.wabbajack /path/to/archive.7z
 ```
 
-Import matches by Wabbajack hash only. A file with the same name but a different
-hash is refused.
+Import matches only by Wabbajack hash and rejects a file with a different hash
+even if its name matches.
 
 ## Nexus API authentication fails
 
@@ -214,11 +211,10 @@ declarative (sops-nix / Home-Manager) key wiring, see
 which installed mod, plugin, DLL, or asset it points at in the current modde
 profile.
 
-**Cause:** Web analyzers and MO2/Vortex integrations can parse the log, but
-they do not have modde's local install database, profile experiment stack, or
-managed file manifest. modde's crash command is a correlation tool: it maps
-evidence mentioned by the log to the active profile. It does not claim a root
-cause unless the log itself makes that explicit.
+**Cause:** Web analyzers and MO2/Vortex integrations can parse the log but lack
+modde's local install database, profile experiment stack, and managed file
+manifest. The crash command correlates log evidence with the active profile and
+claims a root cause only when the log states one explicitly.
 
 **Fix:**
 
@@ -321,11 +317,10 @@ to do.
 | `No applied files to revert for <tool>` | modde has no record of files it applied for that tool/game, so there is nothing to remove. | Nothing to revert. If you applied files *outside* modde, it will not own or remove them — modde only reverts what it recorded via `tool apply`. |
 
 **How tracking works.** `modde tool apply` records the exact relative paths it
-wrote into the database, and `modde tool revert` removes only those recorded
-files, then clears the record. This is why reverting is clean and why a manual,
-out-of-band copy of a DLL is not something `revert` will touch. If you adopted an
-*existing* OptiScaler install (rather than letting modde install it), modde
-records the working files so `revert` stays accurate — see
+writes in the database. `modde tool revert` removes only those files, then
+clears the record. `revert` leaves an untracked, manually copied DLL alone. If
+you adopt an existing OptiScaler install, modde records its working files so `revert`
+can remove them. See
 [Tools → Applying tool patches](tools.md#applying-tool-patches).
 
 ```bash
@@ -340,10 +335,9 @@ modde tool apply  reshade --game skyrim-se
 `community-dxgi`), the game **crashes on the very first launch** with the proxy
 DLL in place.
 
-**Cause:** This is a known OptiScaler quirk for some titles: the proxy DLL
-(`dxgi.dll`) initialises on first boot and the game can die before the next
-launch succeeds. It is documented in the bundled profile notes, **not** a bad
-install.
+**Cause:** On some titles the game can crash while `dxgi.dll` initialises on
+first boot. The bundled profile notes document this OptiScaler quirk; it does
+not indicate a bad install.
 
 **Fix:** **Relaunch the game.** It typically works on the second launch. Before
 assuming the install is broken:
@@ -448,7 +442,7 @@ See [Profile management → Load order locking](profiles.md#load-order-locking).
 **Cause:** the mod ships a FOMOD installer that needs your selections (texture
 resolution, compatibility patches, and so on).
 
-**Fix.** Either complete the wizard in the GUI, or apply a declarative config:
+**Fix:** Use the GUI or a config:
 
 1. Open the GUI (`modde gui`) and complete the wizard, or
 2. Generate and apply a declarative config:
@@ -466,9 +460,8 @@ passing `--fomod-config` during a Nexus install.
 
 **Symptom:** modde can't determine how to install a mod and stops.
 
-**Cause:** the archive layout doesn't match any recognized install method (single
-file set, FOMOD, or a game-specific layout). modde writes a **dossier** so you can
-investigate instead of guessing.
+**Cause:** The archive doesn't match a recognized layout (single file set,
+FOMOD, or game-specific). modde writes a **dossier** for investigation.
 
 **Fix.** The dossier lands at
 `~/.local/share/modde/unknown-installers/<slug>/` and contains the archive tree,
@@ -497,8 +490,7 @@ provides every external tool modde needs (see
 
 ## Database issues
 
-**Symptom:** modde commands error out reading state, or the database looks
-corrupted.
+**Symptom:** A modde command reports an error while reading state, or the database looks corrupted.
 
 **Cause:** the SQLite database at `~/.local/share/modde/modde.db` was interrupted
 mid-write (power loss, killed process), leaving recovery files behind.

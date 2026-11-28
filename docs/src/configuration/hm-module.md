@@ -1,15 +1,12 @@
 # Home-Manager Module
 
-If you use Nix, modde's home-manager module lets you **declare your mod profiles
-as code**. It is built directly on the flake's package output, and on every
-`home-manager switch` it runs an activation script that drives the `modde` CLI to
-install and deploy the profiles you declare. This is one powerful option for Nix
-users; it sits alongside the cross-platform
-[settings file & environment](settings-file.md), which is how everyone configures
-modde imperatively (and the only thing you need if you do not use Nix — manage
-preferences there and drive modde with the CLI). This page documents **every**
-option the module exposes, the validation assertions it enforces, the per-tool
-settings schemas, and several complete worked examples.
+With modde's home-manager module, you **declare mod profiles as code**. The
+module uses the flake's package output. On every `home-manager switch`, its
+activation script runs the `modde` CLI to install and deploy declared profiles.
+For imperative configuration with or without Nix, use the cross-platform
+[settings file & environment](settings-file.md) and the CLI.
+This reference covers every module option, validation assertions, per-tool
+settings schemas, and complete examples.
 
 The option source is [`nix/hm-module.nix`](https://github.com/caniko/modde-rs/blob/trunk/nix/hm-module.nix);
 the typed tool-settings schema is generated into
@@ -21,8 +18,8 @@ by `modde dev export-tool-schema`. To import the module, see
 
 ### `programs.modde.enable`
 
-Whether to enable the modde game mod manager. When `false`, the module adds
-nothing to your closure and runs no activation work.
+Enable the modde game mod manager. When `false`, the module adds nothing to your
+closure and does no activation work.
 
 - **Type:** `bool`
 - **Default:** `false`
@@ -38,11 +35,10 @@ to pin a specific build or substitute a patched package.
 
 ### `programs.modde.nexus.apiKeyFile`
 
-Path to a file containing your Nexus Mods API key. The activation script exports
-its path as the `NEXUS_API_KEY_FILE` environment variable, which modde resolves
-late in its [API-key lookup chain](settings-file.md#nexus-api-key-precedence) —
-making it sops-nix / agenix friendly, since the secret never enters the Nix
-store.
+Path to your Nexus Mods API key file. Activation exports the path as
+`NEXUS_API_KEY_FILE`, which modde checks late in its
+[API-key lookup chain](settings-file.md#nexus-api-key-precedence). This works with
+sops-nix or agenix because the secret stays out of the Nix store.
 
 - **Type:** `null` or `path`
 - **Default:** `null`
@@ -83,8 +79,8 @@ connection fields as `home.sessionVariables`:
 | `user`         | `MODDE_DATABASE_USER`       |
 | `passwordFile` | `MODDE_DB_PASSWORD_FILE`    |
 
-Those variables are also exported inside the activation script before it invokes
-`modde`. New terminal and graphical sessions launched after activation see
+The activation script also exports these variables before running `modde`.
+New terminal and graphical sessions launched after activation see
 `home.sessionVariables`; already-running shells keep their existing environment.
 For an immediate imperative change outside Home Manager, use
 [`modde config set-database`](../reference/cli.md#modde-config).
@@ -107,9 +103,9 @@ Each entry under `programs.modde.profiles.<name>` accepts the following options.
 
 ### `profiles.<name>.game`
 
-Game identifier string, passed to the CLI as `--game`. This is a free-form
-string in the module — modde validates it at runtime — so generic / user-defined
-games declared via `modde game add` and a GameSpec TOML work here too.
+Free-form game identifier passed to the CLI as `--game`. modde validates it at
+runtime, so user-defined games registered with `modde game add` and a GameSpec
+TOML also work.
 
 - **Type:** `str`
 - **Required:** yes
@@ -164,10 +160,9 @@ Wabbajack modlist source. **Mutually exclusive** with `nexusCollection` (see
 | `missingArchivePolicy` | enum `fail` / `omit-files` / `omit-mods` | `"fail"` | What to do when optional manual/Nexus archives are absent  |
 | `manualArchives.<key>` | `attrsOf` submodule                 | `{}`     | User-provided manual / Nexus archives (see below)              |
 
-Set **exactly one** source: either `path`, or both `url` and `hash` together. Use
-`path` when composing with `requireFile` or another fetcher that already
-materializes the `.wabbajack` file. When `url` + `hash` are used, the module
-fetches the modlist with `pkgs.fetchurl` at build time.
+Set **exactly one** source: `path` or both `url` and `hash`. Use `path` when
+`requireFile` or another fetcher already provides the `.wabbajack` file. With
+`url` + `hash`, the module fetches the modlist with `pkgs.fetchurl` at build time.
 
 `missingArchivePolicy` is forwarded to the CLI as
 `--missing-archive-policy` when the profile is installed:
@@ -192,9 +187,9 @@ inside the entry.
 | `path`     | `null`, `path`, or `str` | `null`  | Path to the exact source archive for this archive hash                        |
 | `optional` | `bool`                   | `false` | Allow activation to omit affected outputs when this archive is absent         |
 
-During activation, every entry with a non-null `path` is imported via
-`modde wabbajack import-archive` before the install runs. Required entries (those
-not marked `optional`) **must** set `path`, or the module fails an assertion.
+Before installing, activation imports every non-null `path` with
+`modde wabbajack import-archive`. Entries not marked `optional` **must** set
+`path` or the module fails an assertion.
 
 ### `profiles.<name>.nexusCollection`
 
@@ -210,10 +205,9 @@ Nexus Collection source. **Mutually exclusive** with `wabbajackList`.
 
 ### `profiles.<name>.tools.<id>`
 
-Per-tool configuration for this profile, keyed by tool ID. Every tool slot
-defaults to `null` (unconfigured). Setting a tool to an attrset opts it in to the
-activation logic — `enable = true` runs `modde tool enable`, while leaving
-`enable` at its default of `false` runs `modde tool disable` during activation.
+Profile tool settings, keyed by tool ID. An omitted tool slot defaults to `null`
+and is unconfigured. In an attrset, `enable` defaults to `false`, so omitting it
+runs `modde tool disable`; `enable = true` runs `modde tool enable`.
 
 - **Type:** `null` or per-tool submodule
 - **Default:** `null` (for each known tool ID)
@@ -314,10 +308,9 @@ setting `release` on any other tool fails an assertion.
 | `hash`  | `null` or `str`          | `null`  | Fixed-output hash for the pinned asset (paired with `url`) |
 | `path`  | `null`, `path`, or `str` | `null`  | Local / store path to an already-downloaded asset      |
 
-Provide the asset **either** by `path` **or** by `url` + `hash` (the two are
-mutually exclusive). When `url` + `hash` are set the module materializes the
-asset with `pkgs.fetchurl`; with `path` you can hand it a `requireFile` result.
-During activation the asset is installed with
+Supply exactly one asset source: `path` or `url` + `hash`. With `url` + `hash`,
+the module fetches the asset via `pkgs.fetchurl`; `path` can take a
+`requireFile` result. Activation installs the asset with
 `modde tool install-release-from-path <id> --game <game> --tag <tag> --asset <asset> <src>`.
 
 ```nix
@@ -349,9 +342,8 @@ no registered presets yet. The chosen preset is forwarded to the CLI as the
 
 ## Assertions
 
-The module evaluates a set of assertions per profile and per configured tool.
-Each is reported with a `programs.modde.profiles.<name>...` message so failures
-point straight at the offending option.
+The module checks assertions per profile and per configured tool. Failures use
+`programs.modde.profiles.<name>...` messages to identify the offending option.
 
 | Assertion                                | Rule                                                                                                        |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -390,9 +382,8 @@ key is validated to its declared type during evaluation.
 
 ### gamemode (typed)
 
-`gamemode` exposes no typed settings keys — its schema in `tool-schema.nix` is
-empty. Use `tools.gamemode.enable = true;` (and optionally `applyOnActivation`)
-to turn it on; there are no per-key settings to configure.
+`gamemode` has an empty schema in `tool-schema.nix` and no per-key settings.
+Enable it with `tools.gamemode.enable = true;` (optionally with `applyOnActivation`).
 
 ### reshade (typed)
 
@@ -477,11 +468,11 @@ tools.mangohud = {
 
 ### Wabbajack Skyrim profile with `gameDir` and `await-game`
 
-A complete Skyrim SE Wabbajack list, declared before the game is installed. With
-`installMode = "await-game"`, the first rebuild prints the next setup step and
-does nothing else; once Steam has installed the game, switch to
-`installMode = "auto"` and set `gameDir`, and the next rebuild installs and
-deploys the list. This example also pins a manual (premium-Nexus) archive.
+Declare this Skyrim SE Wabbajack list before installing the game. With
+`installMode = "await-game"`, the first rebuild only prints the next setup step.
+After Steam installs the game, set `installMode = "auto"` and `gameDir`. The next
+rebuild installs and deploys the list. The example also pins a manual
+(premium-Nexus) archive.
 
 ```nix
 { config, ... }:
@@ -531,9 +522,9 @@ programs.modde.profiles.cyberpunk-mods = {
 
 ### MangoHud + OptiScaler with real settings
 
-A Stellar Blade profile that turns on MangoHud with a real overlay layout and
-enables OptiScaler with its `community-dxgi` preset, real INI overrides, and a
-pinned release asset applied on every activation.
+This Stellar Blade profile enables MangoHud with an overlay layout and enables
+OptiScaler with the `community-dxgi` preset, INI overrides, and a pinned release
+asset applied on every activation.
 
 ```nix
 { pkgs, ... }:
@@ -584,9 +575,9 @@ pinned release asset applied on every activation.
 }
 ```
 
-With `applyOnActivation = true`, the release asset is written into the game
-directory every time home-manager switches to the profile, keeping the pin in
-sync automatically. Leave it off if you prefer to run `modde tool apply` by hand.
+With `applyOnActivation = true`, each home-manager switch to the profile writes
+the pinned release asset into the game directory. Leave it off to run
+`modde tool apply` manually.
 
 ### sops-nix `apiKeyFile`
 

@@ -1,16 +1,16 @@
 # Mount & Blade II: Bannerlord
 
-Mount & Blade II: Bannerlord (`bannerlord`) is TaleWorlds' medieval sandbox built on its in-house engine. modde models it as its own engine family (`EngineFamily::Bannerlord`) because its mod layout — a flat `Modules/` directory where each module carries a `SubModule.xml` manifest — does not match any of the Bethesda, Unreal, REDengine, or SMAPI families.
+Mount & Blade II: Bannerlord (`bannerlord`) is TaleWorlds' medieval sandbox, built on its in-house engine. Its flat `Modules/` directory and per-module `SubModule.xml` manifests differ from Bethesda, Unreal, REDengine, and SMAPI layouts, so modde uses `EngineFamily::Bannerlord`.
 
 ## Overall status
 
-Bannerlord ships as a **`Partial`** title in [the supported-games matrix](supported-games.md). What that means in practice:
+Bannerlord is **`Partial`** in [the supported-games matrix](supported-games.md):
 
 - **Scanner** — Yes. modde discovers installed modules under `Modules/` and parses each `SubModule.xml` for identity and dependencies.
 - **Conflict detection** — Yes, via the generic policy classifier plus Bannerlord-specific save-breaking and cosmetic classification.
 - **Save tracking** — `Done`. The git-backed save vault, fingerprinting, and capture/restore all work against the Bannerlord save directory.
 
-The `Partial` label reflects what is *not* yet built rather than broken behavior: there is no Bannerlord-aware load-order manager (the game's own Launcher / Mod Options screen still owns load order), and the mod information dialog only surfaces a Nexus-metadata side panel, not a file-tree / dependency-graph inspector. Deployment, scanning, conflict classification, save management, and launcher integration are all functional.
+The `Partial` rating reflects missing features: modde has no Bannerlord-aware load-order manager; the game's Launcher / Mod Options screen controls order. The mod information dialog has only a Nexus-metadata side panel, not a file tree or dependency graph. Deployment, scanning, conflict classification, save management, and launcher integration work.
 
 | Capability | Status | Notes |
 | ---------- | ------ | ----- |
@@ -25,9 +25,9 @@ The `Partial` label reflects what is *not* yet built rather than broken behavior
 
 ## How modde detects the install
 
-Bannerlord is registered with a Steam app id of **`261550`** and a default Steam library directory name of **`Mount & Blade II Bannerlord`**. When modde walks your Steam libraries, it matches by app id first and falls back to the directory name. No Heroic (GOG/Epic) ids are registered, because Bannerlord is a Steam title; if you run it from a non-Steam source you can still point modde at the install explicitly with `--game-dir` (see the [worked example](#worked-example)).
+modde searches Steam libraries for app id **`261550`** first, then falls back to the default directory name **`Mount & Blade II Bannerlord`**. Bannerlord is a Steam title with no registered Heroic (GOG/Epic) ids. For a non-Steam install, pass `--game-dir` (see the [worked example](#worked-example)).
 
-On Linux, Steam runs Bannerlord through Proton. The mod directory and save directory modde uses are *host-side* paths — modde reads and writes `Modules/` directly in the real game install and the save directory under your real `$HOME/Documents`, so you do not generally need to reach inside the Proton prefix to manage mods. The game's Windows-side view of those paths is provided by Proton's drive mapping. The Windows executable lives under `bin/Win64_Shipping_Client/` relative to the install root; modde records that as the game's executable directory so tools and launch integrations can find it.
+On Linux, Steam runs Bannerlord through Proton. modde reads and writes the host paths directly: `Modules/` in the game install and the save directory under `$HOME/Documents`. Proton maps those paths into Windows, so you usually don't need to enter the prefix to manage mods. modde records `bin/Win64_Shipping_Client/` relative to the install root as the Windows executable directory for tools and launch integrations.
 
 ## Mod directory and deploy strategy
 
@@ -37,7 +37,7 @@ modde deploys mods with its standard **symlink-farm VFS**: mods are staged in `~
 
 ### Archive analysis (what modde does when you install a mod)
 
-When you install a Bannerlord mod archive, modde inspects the extracted contents and picks a layout strategy:
+modde chooses the install layout from the extracted archive:
 
 - **Module-root archives** — if the archive extracts to a directory that already contains a `SubModule.xml` at its top level, modde treats the whole archive as a single module. It uses the module's own `Id.value` attribute (from `SubModule.xml`) as the mod id when one is present.
 - **`Modules/`-prefixed archives** — if the archive instead contains a top-level `Modules/` directory, modde strips that prefix and deploys its contents into the game's `Modules/` directory, so a mod packaged as `Modules/CoolMod/...` lands at `Modules/CoolMod/...`.
@@ -52,11 +52,11 @@ The same two shapes are recognized as a "bare layout" (a loose, already-extracte
 2. Records every file under the module directory, relative to the install root, as the module's footprint.
 3. Emits a discovered mod with id `module/<id>`, the parsed display name, and a high confidence score (0.95). Modules with no files are skipped.
 
-A directory without a `SubModule.xml` is not reported — modde only counts a subfolder as a Bannerlord module when that manifest is present. See [Mod Scanning](../guides/scanning.md) for importing scan results into a profile and for Wabbajack-manifest matching.
+The scanner skips directories without `SubModule.xml`. See [Mod Scanning](../guides/scanning.md) for importing results into a profile and matching Wabbajack manifests.
 
 ### Dependency checking
 
-Beyond identity, `SubModule.xml` parsing collects every `<DependedModule Id="...">` entry. modde can then cross-reference the declared dependencies of all discovered modules against the set of module ids that are actually present and report **missing dependencies** as `(module_id, missing_dependency_id)` pairs. This catches the classic Bannerlord failure mode where a mod silently refuses to load because a required module (for example `Bannerlord.Harmony` or `Bannerlord.UIExtenderEx`) is not installed. modde does not reorder modules to satisfy dependencies — load order remains the in-game Launcher's job — it only surfaces what is missing.
+modde reads every `<DependedModule Id="...">` entry in `SubModule.xml`, compares declared dependencies with discovered module ids, and reports **missing dependencies** as `(module_id, missing_dependency_id)` pairs. A mod may silently fail to load if a required module such as `Bannerlord.Harmony` or `Bannerlord.UIExtenderEx` is missing. modde reports what's missing; only the in-game Launcher controls runtime order.
 
 ## Conflict classification
 
@@ -115,7 +115,7 @@ Install a single mod from Nexus with `modde install mod <url> --profile <name>`;
 
 ## Gaming tools, Proton, and overlays
 
-Bannerlord registers **no OptiScaler profile**, so the bundled DLSS/FSR upscaling workflow that ships for titles like Stellar Blade is not pre-configured here. The general tool integrations still apply: you can enable MangoHud, vkBasalt, GameMode, ReShade, and per-game Proton settings through `modde tool ...`, exactly as documented in [Tools & Overlays](../guides/tools.md).
+Bannerlord registers **no OptiScaler profile**, so it lacks the preconfigured DLSS/FSR workflow that titles like Stellar Blade ship. Use `modde tool ...` for MangoHud, vkBasalt, GameMode, ReShade, and per-game Proton settings; see [Tools & Overlays](../guides/tools.md).
 
 The most relevant tool for a Linux Bannerlord install is the **`proton`** integration, which stores per-game launch settings (Proton version mode, prefix override, extra environment variables, and DLL overrides) without installing Steam or the game itself:
 
@@ -131,7 +131,7 @@ modde's **executable management** is fully shipped and is useful for Bannerlord'
 
 ## Linux / Proton notes and known gotchas
 
-These notes cover the game's runtime on Linux and macOS, where Bannerlord runs through Proton/Wine. On Windows the game runs natively — there is no Wine prefix, and `Modules/` and the save directory live at their native Windows locations. modde itself runs natively on all three platforms.
+Bannerlord runs through Proton/Wine on Linux and macOS. On Windows it runs natively without a Wine prefix and keeps `Modules/` and saves at their native Windows locations. modde runs natively on all three platforms.
 
 - **Run the game once before modding.** Let Steam/Proton create the prefix and let Bannerlord generate `~/Documents/Mount and Blade II Bannerlord/` (Proton maps this from the prefix's `drive_c/users/steamuser/Documents`, but on a typical setup it surfaces at your real `$HOME/Documents`). modde's save tracker reads the `Game Saves/Native/` directory there.
 - **Modules live host-side.** Because modde links into the real `Modules/` directory under the install root, you usually do not touch the Proton prefix to add or remove mods — but the game still needs to be launched through the same Proton runner you configured.

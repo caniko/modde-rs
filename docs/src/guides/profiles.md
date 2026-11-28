@@ -2,16 +2,20 @@
 
 ## What a profile is
 
-A **profile** is the central organizing concept in modde. Concretely, one profile is a per-game bundle of four things:
+A **profile** groups four things for one game:
 
 1. **An ordered mod set** — the list of `EnabledMod` entries (each with an `enabled` toggle, version, Nexus metadata, category, tags, notes, and an optional per-mod lock). Position in the list *is* the install priority: later mods win file conflicts. See [Conflicts & priority](conflicts.md).
 2. **A load order** — the mod ordering above, plus an independent **plugin order** (`.esp`/`.esm`/`.esl`) for engines that distinguish the two, plus declarative `load_order_rules` (`load_after` / `load_before` / `incompatible`).
 3. **Save assignments** — a branch in the game's git-backed save vault, swapped automatically whenever the active profile changes. See [Save management](saves.md).
 4. **Deployment state** — the `overrides` directory and the per-mod file manifest that records exactly what was staged, so deployment and uninstall are precise. See [Deployment](deployment.md).
 
-Profiles are stored in modde's SQLite database (`modde.db`), one row per profile, scoped by `(name, game_id)` — the pair is unique, so you can have a `default` profile for Skyrim *and* a `default` profile for Fallout 4 without collision. A profile also carries **provenance** (`ProfileSource`: `Manual`, `NexusCollection`, or `Wabbajack`) and an optional **load order lock** (covered below).
+modde stores one row per profile in its SQLite database (`modde.db`). The
+`(name, game_id)` pair is unique, so Skyrim's `default` and Fallout 4's
+`default` don't collide. Each profile records **provenance** (`ProfileSource`:
+`Manual`, `NexusCollection`, or `Wabbajack`) and an optional **load order lock**.
 
-Where profiles, the database, saves, and the rest of modde's state live on disk is documented separately in [Data, instances & backups](data-management.md).
+See [Data, instances & backups](data-management.md) for where modde stores
+profiles, the database, saves, and other state.
 
 ## Creating profiles
 
@@ -50,9 +54,9 @@ to the default `installMode = "auto"`. The full option set lives in the
 modde profile create my-skyrim --game skyrim-se
 ```
 
-Profile names are validated before they touch the database: they cannot be empty,
-cannot exceed 255 characters, and cannot contain filesystem-unsafe characters
-(`/ \ NUL : * ? " < > |`) because the name doubles as an on-disk directory under
+Before writing to the database, modde rejects empty names, names over 255
+characters, and names with filesystem-unsafe characters (`/ \ NUL : * ? " < > |`).
+The name doubles as a directory under
 `<modde_data>/profiles/<name>/`.
 
 ## Listing, inspecting, and switching
@@ -71,10 +75,9 @@ modde profile active --game skyrim-se
 modde profile switch my-skyrim --game skyrim-se
 ```
 
-`profile list` shows the profile name, game, mod count, and source type for each
-row. `profile active` additionally reports the **experiment depth** (see
-[Experiment stack](#experiment-stack) below) so you can tell whether you are
-sitting on a `try`/rollback chain.
+`profile list` shows each profile's name, game, mod count, and source type.
+`profile active` also reports **experiment depth**: whether you're on a
+`try`/rollback chain and how deep it goes. See [Experiment stack](#experiment-stack).
 
 ### What switching actually does
 
@@ -99,13 +102,11 @@ forked save branch — under a new name. The source profile is never modified.
 modde profile fork my-skyrim my-skyrim-experimental --game skyrim-se
 ```
 
-By default a fork is a **faithful copy**: if the source carried a profile-level
-load order lock (for example because it was installed from a Wabbajack list), the
-fork inherits that lock *and* every per-mod pin. This is what you want when you
-are duplicating a known-good setup to keep as a backup.
+A fork is a faithful copy by default. If the source has a profile-level load
+order lock (for example, from a Wabbajack list), the fork inherits that lock
+and every per-mod pin. Use this to keep a known-good setup as a backup.
 
-To create a freely editable copy that you intend to *diverge* from, pass
-`--unlock`:
+Pass `--unlock` to make a freely editable copy:
 
 ```bash
 modde profile fork my-skyrim my-skyrim-custom --game skyrim-se --unlock
@@ -134,21 +135,18 @@ authoritative source, recording *why* in a structured `LockReason`:
 | Nexus Collection | `NexusCollection` | `slug` + `version` |
 | TOML import (`modde import`) | `TomlImport` | `source_path` at import time |
 
-TOML import is *preserve-before-overwrite*: if the imported TOML file already
-carried a lock (for example, you previously exported a Wabbajack-installed
-profile), modde honors that original provenance and only stamps a fresh
-`TomlImport` lock when the profile arrives unlocked. Round-tripping an
-already-locked profile through TOML never destroys its origin.
+If the imported TOML carries a lock (for example, one exported from a Wabbajack
+profile), modde preserves that lock and its original provenance; otherwise it
+adds a `TomlImport` lock. Exporting and reimporting a locked profile
+through TOML preserves its origin.
 
-Note that provenance (`ProfileSource`) and locking (`LoadOrderLock`) are now
-*separate*: the source field is metadata only, while all reorder-blocking
-business logic is driven by the lock. Forking with `--unlock` clears the lock but
-leaves the provenance intact.
+Provenance (`ProfileSource`) is metadata only; the lock (`LoadOrderLock`)
+controls reorder enforcement. Forking with `--unlock` clears the lock but keeps
+provenance.
 
 ### Manual locks
 
-You can lock any profile by hand — useful once you have hand-tuned a load order
-and want to stop yourself from nudging it later:
+Lock any profile manually to protect a hand-tuned load order:
 
 ```bash
 # Lock a profile with an explanatory note
@@ -185,10 +183,8 @@ profile.
 
 ### The reorder enforcement model (`ReorderError`)
 
-Every attempt to move a mod one step up or down — whether triggered from the UI's
-mod list or a CLI path — funnels through one shared function so all callers refuse
-identically. The checks short-circuit in this precedence order, and on refusal the
-profile is left completely untouched:
+One function handles every one-step move in the UI and CLI. It refuses the
+move at the first matching condition below and leaves the profile untouched:
 
 | Order | Condition | Refusal (`ReorderError`) |
 | ----- | --------- | ------------------------ |
@@ -198,11 +194,9 @@ profile is left completely untouched:
 | 4 | The move would run off the top/bottom of the list | `AtBoundary` |
 | 5 | The swap partner (the neighbor one step over) is pinned | `AdjacentPinned { neighbor_id, reason }` |
 
-The fifth case is the subtle one: moving mod **A** past a *pinned* neighbor **B**
-would shift **B**, which violates B's pin contract — so the move is refused even
-though **A** itself is unpinned. Each variant carries enough structure (the
-offending id, the `LockReason`) for the UI or CLI to explain *why* without
-string-matching an error message.
+Moving unpinned mod **A** past pinned neighbor **B** would shift **B**, so
+modde refuses the move. Structured fields such as the offending id and
+`LockReason` let the UI or CLI explain the refusal without matching error text.
 
 ## Portable `modde.lock` exports
 
@@ -252,8 +246,8 @@ modde profile commit --game skyrim-se
 
 ### How depth works — a worked example
 
-The **experiment depth** is simply the number of entries on the stack. `profile
-active` reports it so you always know how deep you are. Start with profile **A**
+The **experiment depth** is the number of entries on the stack. `profile
+active` reports it. Start with profile **A**
 active and depth `0`:
 
 | Command | Stack (bottom → top) | Active | Depth |
@@ -347,9 +341,8 @@ modde profile delete my-skyrim
 modde profile delete my-skyrim --game skyrim-se
 ```
 
-Deleting a profile is a **cascade**: the database foreign keys are declared
-`ON DELETE CASCADE`, so removing the profile row also removes every dependent
-record in one shot — its `profile_mods`, `load_order_rules`, assigned `saves`
+Deleting a profile row removes all dependent records via `ON DELETE CASCADE`:
+its `profile_mods`, `load_order_rules`, assigned `saves`
 rows, `hidden_files`, `plugin_order`, `mod_categories`, `installed_mod_files`
 manifest, and any `experiment_stack` / `active_profiles` entries that pointed at
 it.

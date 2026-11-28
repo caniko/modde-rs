@@ -1,8 +1,6 @@
 # FAQ
 
-Short answers to the questions that come up most. Each links to the deep-dive
-page that backs the claim, so you can verify anything that matters to you. For
-the conservative, test-coupled accounting of what is `Done` vs `Partial`, see the
+For the conservative, test-backed `Done`/`Partial` ratings, see the
 [MO2 parity & capability audit](reference/parity.md).
 
 ## What is modde, and who is it for?
@@ -13,21 +11,19 @@ farm, resolves conflicts, manages Bethesda plugin order, installs FOMOD and
 Wabbajack lists, talks to Nexus, and keeps git-backed save vaults — with both a
 CLI and a GUI.
 
-It is for players who want a real Mod Organizer 2 / Vortex workflow on their own
-OS, scriptable from the command line, with git-backed save history. If you use
-Nix, you also get an optional declarative, reproducible path via the
-home-manager module.
+It's for players who want a Mod Organizer 2 / Vortex workflow on their own OS,
+with command-line scripting and git-backed save history. For Nix users, the
+optional home-manager module adds a declarative, reproducible workflow.
 
 ## How is it different from Mod Organizer 2 / Vortex?
 
-modde is not a clone. It runs natively on Linux, macOS, and Windows, and ships
-things MO2/Vortex never had: git-backed save vaults with history, declarative
-FOMOD, native Wabbajack on Linux, and — for Nix users — declarative home-manager
-profiles. MO2 is still ahead on a few fronts (the rich mod-information dialog, a
-fully interactive download queue, a complete merged-VFS browser). The full,
-intentionally conservative side-by-side — including what is `Done`, `Partial`, and
-not yet shipped — lives in the
-[MO2 parity & capability audit](reference/parity.md).
+modde isn't a clone. It runs natively on Linux, macOS, and Windows and adds
+features MO2/Vortex never had: git-backed save history, declarative FOMOD,
+native Wabbajack on Linux, and declarative home-manager profiles for Nix users.
+MO2 still leads on the mod-information dialog, fully interactive download queue,
+and complete merged-VFS browser. The
+[MO2 parity & capability audit](reference/parity.md) compares them side by side
+with conservative, test-backed `Done`, `Partial`, and not-yet-shipped ratings.
 
 ## Do I need NixOS to run modde?
 
@@ -48,12 +44,12 @@ live.
 
 ## Do I need Nexus Premium?
 
-Only for **automated CDN downloads**. A free Nexus account and API key give you
-browse, search, update checks, metadata, endorsements, and `nxm://` handling.
-Premium adds the ability to fetch files directly from the Nexus CDN without the
-manual browser step — which is what makes hands-off Wabbajack and Collection
-installs possible. Without Premium you can still install, you just confirm some
-downloads in the browser. See the [Nexus integration guide](guides/nexus.md).
+Only for **automated CDN downloads**. A free Nexus account and API key cover
+browsing, search, update checks, metadata, endorsements, and `nxm://` handling.
+With Premium, modde can fetch files directly from the Nexus CDN, making hands-off
+Wabbajack and Collection installs possible. Without Premium, you can still
+install by confirming some downloads in the browser. See the
+[Nexus integration guide](guides/nexus.md).
 
 ## Can I install Wabbajack lists on Linux without a Windows VM?
 
@@ -65,8 +61,7 @@ See the [Wabbajack guide](guides/wabbajack.md).
 
 ## How do I move my saves and profiles to another machine?
 
-modde has no cloud sync, but its on-disk layout is built for it. The reliable
-pattern is two parts:
+modde has no built-in cloud sync, but its layout supports external sync. A reliable approach is to move saves and profiles separately:
 
 - **Saves:** each game's save vault under `saves/<game_id>/` is already a git
   repository — add a remote and push it, then clone or pull on the other machine.
@@ -82,10 +77,9 @@ including what not to sync, is in
 
 ## What games are supported?
 
-15 games ship with built-in support. Depth varies by title — some are `Done`
-end-to-end, others are `Partial`. The canonical per-game table, with IDs and
-links to each game's guide, is on the
-[Supported games](games/supported-games.md) page.
+15 games have built-in support, some `Done` end-to-end and others `Partial`.
+The canonical [Supported games](games/supported-games.md) table lists game IDs
+and links to each guide.
 
 ## Is executable management supported now?
 
@@ -116,10 +110,9 @@ layout is documented in [Data, instances & backups](guides/data-management.md).
 
 ## Is there any telemetry?
 
-**Opt-in only. Normal builds send nothing.** Remote code is gated behind the
-non-default `remote-telemetry` feature; default builds do not include it. Even
-with that feature, no data is transmitted unless you explicitly configure the
-relevant endpoint and opt-in environment variables.
+**Opt-in only. Normal builds send nothing.** Default builds omit the
+`remote-telemetry` feature. Even with it enabled, modde sends nothing unless
+you explicitly configure the endpoint and opt-in environment variables.
 
 Crash telemetry and compatibility reporting are separate. Crash telemetry uses
 `MODDE_TELEMETRY_ENDPOINT` plus `MODDE_TELEMETRY_TOKEN` (legacy `RS_MODDE_TELEMETRY_*` names still work) for modde process

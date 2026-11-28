@@ -1,17 +1,16 @@
 # Fallout: New Vegas
 
-Fallout: New Vegas (`game_id` `fallout-new-vegas`) is a built-in modde title backed by
-the shared, data-driven **Gamebryo** game plugin. The same plugin code drives
-[Oblivion](oblivion.md); the per-game differences (Steam app id, save folder
-name, INI set, Nexus domain) are configuration on a single `GamebryoGame`
-record.
+modde supports Fallout: New Vegas (`game_id` `fallout-new-vegas`) and
+[Oblivion](oblivion.md) through the same built-in, data-driven **Gamebryo**
+plugin. A `GamebryoGame` record sets each game's Steam app id, save folder name,
+INI set, and Nexus domain.
 
 > **Overall status: `Partial`.** Deployment, filesystem scanning, BSA-aware
 > conflict classification, save tracking, and `plugins.txt` load-order
-> read/write all ship. What keeps New Vegas from `Done` is the absence of a
-> bespoke, end-to-end script-extender (NVSE) bootstrap workflow and the
-> deeper plugin-management UX (automatic master/ESM ordering, in-app conflict
-> resolution) that the Bethesda Creation-Engine titles get. Treat New Vegas as
+> read/write all ship. New Vegas falls short of `Done`: it lacks a dedicated
+> end-to-end script-extender (NVSE) setup and the deeper plugin-management UX
+> (automatic master/ESM ordering, in-app conflict resolution) of Bethesda
+> Creation-Engine titles. Treat New Vegas as
 > a solid deploy-and-scan target, not a full Mod-Organizer replacement. The
 > canonical status baseline is [`docs/capability-matrix.toml`](../reference/parity.md)
 > and the [supported-games table](supported-games.md).
@@ -49,11 +48,10 @@ GOG/Epic ids:
 | `heroic_gog_app_id` | _(none)_ |
 | `heroic_epic_app_id` | _(none)_ |
 
-modde locates the install by walking your Steam libraries for app `22380`,
-landing on `steamapps/common/Fallout New Vegas`. Because there is no Heroic
-binding shipped, GOG/Epic copies are not auto-detected for this title — point
-modde at the directory explicitly (`--game-dir` on the CLI, or `gameDir` in the
-home-manager module) if you run a non-Steam copy.
+modde searches your Steam libraries for app `22380` at
+`steamapps/common/Fallout New Vegas`. Without a Heroic binding, modde cannot
+auto-detect GOG/Epic copies. For a non-Steam copy, set the directory with
+`--game-dir` on the CLI or `gameDir` in the home-manager module.
 
 The numeric Nexus game id is intentionally `None` for New Vegas: the
 `newvegas` **domain** is enough for URL-based installs and update tracking, but
@@ -66,11 +64,10 @@ this title until the id is confirmed. URL installs from
 The mod directory is `<install>/Data` — the same `Data/` folder New Vegas
 itself reads plugins, meshes, textures, sound, and BSAs from.
 
-modde never copies mods on top of your game files. It uses the standard
-**symlink-farm** virtual filesystem described in
-[Deployment & VFS](../guides/deployment.md): mods are staged, the winning file
-for each relative path is resolved by load order, and the result is symlinked
-into `Data/`. This keeps the base install clean and every deploy reversible.
+The symlink farm stages mod files, picks the winner at each relative path by
+load order, and links the winning paths into `Data/` rather than copying mod
+contents there. This standard **symlink-farm** virtual filesystem keeps the base
+install clean and each deploy reversible. See [Deployment & VFS](../guides/deployment.md).
 
 When modde unpacks a downloaded archive, the Gamebryo plugin's
 `analyze_mod_archive` looks for a top-level `Data/` directory inside the
@@ -96,12 +93,11 @@ Data" mods install without manual repackaging.
   `0.85`;
 - records each file's install-relative path and on-disk size.
 
-Loose meshes/textures dropped straight into `Data/` without an accompanying
-plugin are **not** surfaced as distinct mods by this scanner — discovery is
-plugin-anchored. For matching an existing install against a Wabbajack manifest
-(including New Vegas lists, see below), combine the scan with `--manifest`; the
-scanner's per-mod footprint is the lowercased plugin filename, which is what
-manifest matching keys on. See [Mod Scanning](../guides/scanning.md) for
+The scanner does **not** report loose meshes/textures in `Data/` as distinct
+mods without a plugin. Use `--manifest` to match an existing install against a
+Wabbajack manifest (including New Vegas lists, see below). Matching uses the
+scanner's per-mod footprint: the lowercased plugin filename.
+See [Mod Scanning](../guides/scanning.md) for
 threshold, dry-run, and import flags.
 
 ## Conflict classification
@@ -117,9 +113,8 @@ relative path) comes from the BSA-aware collision policy:
 | `Config` | `.ini`, `.json`, `.xml` |
 | `Cosmetic` | `.dds`, `.png`, `.jpg`, `.tga`, `.nif` |
 
-`.bsa` is registered as the archive extension for the New Vegas collision
-classifier, so archive overlaps are reasoned about as packed content rather than
-loose files.
+The New Vegas classifier registers `.bsa` as the archive extension and compares
+overlaps as packed content rather than loose files.
 
 **Per-mod safety classification** (`classify_mod`, used to flag whether
 installing/toggling a mod can invalidate saves) uses the Gamebryo content
@@ -215,10 +210,9 @@ through the `proton` tool's override settings so the Wine prefix loads them.
 
 ## Linux / Proton notes and gotchas
 
-These notes cover the game's runtime on Linux and macOS, where New Vegas runs
-through Proton/Wine. On Windows the game runs natively — there is no Wine prefix,
-and saves and INI files live at their native Windows locations. modde itself runs
-natively on all three platforms.
+New Vegas runs through Proton/Wine on Linux and macOS. On Windows it runs
+natively, with no Wine prefix: saves and INI files use native Windows paths.
+modde runs natively on all three platforms.
 
 - **Saves live in the Proton prefix, not your home directory.** They are under
   `steamapps/compatdata/22380/pfx/...`, which is why a fresh prefix (deleting

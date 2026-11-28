@@ -3,17 +3,15 @@
 ## Overview
 
 [Wabbajack](https://www.wabbajack.org/) is a modlist installer originally built
-for Windows. A `.wabbajack` file is a recipe — not a bundle of mods — that
-records exactly which archives to download from the internet and exactly how to
-reconstruct a curated mod setup from them. modde reads that recipe and replays
-it **natively on Linux**: no Windows VM, no Wine-hosted Wabbajack client, no
-`.NET` runtime. modde parses the manifest, resolves and verifies every download,
-applies binary patches, repacks Bethesda archives, and stages the result, all in
-Rust.
+for Windows. A `.wabbajack` file specifies which archives to download and how
+to assemble them into a curated setup; it doesn't bundle the mods. modde
+installs the list **natively on Linux**, without a Windows VM, a Wine-hosted
+Wabbajack client, or a `.NET` runtime. In Rust, modde parses the manifest,
+resolves and verifies every download, applies binary patches, repacks Bethesda
+archives, and stages the result.
 
-This means a `.wabbajack` list authored on Windows installs the same way a
-NixOS user expects any other package to install: content-addressed, hash-verified,
-resumable, and reproducible.
+Even for a `.wabbajack` list authored on Windows, the install is
+content-addressed, hash-verified, resumable, and reproducible.
 
 ## How it works
 
@@ -74,10 +72,10 @@ before deployment.
 | **Manual** (`ManualDownloader` archive) | Not a directive type, but the corresponding archive must be human-fetched (see [missing archives](#missing-authored-and-manual-archives)). |
 | **`GameFileSource`**     | Archives sourced from vanilla game files (see below). The directives that consume them are ordinary `FromArchive`/`PatchedFromArchive`. |
 
-Directives that read from a single source archive are **grouped per archive** so
-each downloaded archive is opened once, all of its outputs (extractions and
-patches) are produced together, and the archive can then be released or pruned.
-This keeps memory and I/O bounded even for lists with thousands of directives.
+modde **groups directives that read from a single source archive**. It opens
+each such archive once, produces its extractions and patches together, then can
+release or prune it. This bounds memory and I/O even for lists with thousands of
+directives.
 
 Unknown / unsupported directive `$type`s parse as `Unknown` and are surfaced as
 hard blockers by [`modde wabbajack assess`](#assessing-readiness) rather than
@@ -85,10 +83,9 @@ being silently skipped.
 
 ### GameFileSource: vanilla game files
 
-Some lists reference files that ship with the base game instead of downloading
-them. Wabbajack records these as `GameFileSourceDownloader` archives that name a
-game-relative path (e.g. `Data\Skyrim.esm`). These entries are **not downloads** —
-modde reads and verifies them straight out of your installed game directory.
+Some lists reference base-game files as `GameFileSourceDownloader` archives
+with a game-relative path such as `Data\Skyrim.esm`. modde reads and verifies
+these files in the installed game directory instead of downloading them.
 
 For example, several Skyrim SE lists (including *Legends of the Frost*) carry
 `GameFileSourceDownloader` entries. Pass `--game-dir` (CLI) or set `gameDir`
@@ -153,12 +150,12 @@ modde install wabbajack /path/to/modlist.wabbajack \
   --game-dir "/home/me/.local/share/Steam/steamapps/common/Skyrim Special Edition"
 ```
 
-Wabbajack registry pages usually link through to an authored-files URL for the
-actual `.wabbajack` archive. Some authored-files CDN links now resolve through
-Wabbajack's chunked download page instead of a plain file response, so
-`pkgs.fetchurl` may 404 even when modde's chunk-aware downloader works. In that
-case, download the file with `modde wabbajack download` and use
-`wabbajackList.path`, or use a dedicated fetcher that reconstructs the chunks.
+Wabbajack registry pages usually link to an authored-files URL for the
+`.wabbajack` archive. Some CDN links serve a chunked download page instead of
+the file, so `pkgs.fetchurl` may return 404 even when modde's chunk-aware
+downloader works. If `pkgs.fetchurl` encounters a chunked download page, use
+`modde wabbajack download` and point `wabbajackList.path` at the file, or use a
+fetcher that reassembles the chunks.
 
 ### The full `modde install wabbajack` flag set
 
@@ -233,9 +230,9 @@ missing.
 
 ## Assessing readiness
 
-For large lists, do not start blind. The `modde wabbajack` subcommands inspect a
-`.wabbajack` (and your store) **without mutating anything** so you can fix
-problems before committing hours of downloading.
+Before starting a large list's archive downloads, use the `modde wabbajack`
+readiness subcommands to inspect the `.wabbajack` file and your store **without
+mutating anything**.
 
 | Command | Purpose |
 | ------- | ------- |
@@ -261,8 +258,9 @@ will tell you a partial staging is possible with
 
 ## Resumable zstd staging
 
-Wabbajack installs are long. modde stages into a versioned, **resumable** layout
-so an interrupted run picks up where it left off instead of starting over.
+modde uses a versioned, **resumable** staging layout: with a compatible staging
+layout, an interrupted install resumes where it left off instead of starting
+over.
 
 - **Layout versioning** — staging records a `staging-layout.json` describing the
   layout version and compression policy. On the next run modde compares it:
@@ -384,9 +382,8 @@ Very large lists can appear to hang during archive verification/extraction.
 
 ## Migrating an existing on-disk install
 
-If you already deployed a Wabbajack list (on Windows, or a prior run) and want
-modde to *track* it without reinstalling, scan the game directory and match it
-against the manifest instead. See [Mod scanning](scanning.md) for
+To track a list already deployed on Windows or in a prior run, scan the game
+directory against the manifest instead of reinstalling. See [Mod scanning](scanning.md) for
 `modde scan --manifest …`, threshold tuning, and duplicate pruning.
 
 ## Supported games

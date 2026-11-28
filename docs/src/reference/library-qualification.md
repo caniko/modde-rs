@@ -1,16 +1,15 @@
 # Library and sandbox qualification
 
 Owned-game launching and optional sandboxing remain **Partial**. The source
-implements saved per-installation launch configuration, profile/save transitions,
-exact-install store hooks, durable descendant observation and paired performance
-capture. Automated fixtures establish these contracts; real-game and distribution
-qualification is still required before treating modde as a qualified Lutris
-replacement. Real-game sandbox performance remains unmeasured.
+implements saved per-installation launch configuration, profile/save
+transitions, exact-install store hooks, durable descendant observation and
+paired performance capture, and automated fixtures exercise those contracts.
+Treating modde as a **qualified** Lutris replacement still requires real-game
+and distribution evidence. Real-game sandbox performance is unmeasured.
 
-The required implementation target is **native Linux**. Flatpak host-launch
-integration is a follow-up. Performance measurements are **report-only**, as
-selected by the user on 2026-10-01: retain measured deltas and evidence without a
-negligible-overhead pass/fail verdict.
+The required target is **native Linux**. Flatpak host-launch integration is a
+follow-up. On 2026-10-01 the user chose **report-only** performance measurement:
+retain deltas and evidence without a negligible-overhead pass/fail verdict.
 
 ## Current qualification, 2026-10-06
 
@@ -28,10 +27,10 @@ file hashes and the source NAR. Receipt:
 (SHA-256 `fe9dface81759c84e6b795714f55ee1c355b26f988dae509f4f8632daeb84d37`).
 
 The [Pages run](https://github.com/caniko/modde-rs/actions/runs/37394134864) failed
-before deployment while compiling Plinth. Harbor's compiler wrapper reported
+compiling Plinth before deployment: Harbor's compiler wrapper reported
 `no managed cache transport is available` and exited 75. The producer follow-up
-selects the existing Plinth cache repair and requires a successful Modde site
-build and deployment at its own candidate revision.
+picks up the existing Plinth cache repair and requires Modde's site to build and
+deploy at the follow-up's own candidate revision.
 
 [PR #2](https://github.com/caniko/modde-rs/pull/2) closed as superseded after the
 operator selected preservation. The exact capability mapping retains nine
@@ -61,14 +60,13 @@ byte-identical. The Nix production source includes this patch; native, cross and
 test derivations compile real sources with `cargoArtifacts = null`, preserving
 Harbor's rejection of unsafe dummy dependency-only builds.
 
-Native verification in an isolated SQLite home passed workspace all-feature,
-all-target compilation and warnings-denied Clippy. All-feature tests passed
-2,095 cases, with zero failures and two ignored; minimal UI tests passed 201
-cases with zero failures. `cargo audit --json` passed with zero vulnerabilities,
-including removal of RUSTSEC-2026-0253. Four unmaintained and two yanked-package
-warnings remain recorded. These are local source/dependency results; changed
-production derivations and the exact committed hosted candidate require their
-own receipts.
+Native workspace all-feature, all-target compilation and warnings-denied Clippy
+passed in an isolated SQLite home. All-feature tests passed 2,095 cases with zero
+failures and two ignored; minimal UI tests passed 201 with zero failures.
+`cargo audit --json` found zero vulnerabilities, confirming removal of
+RUSTSEC-2026-0253. Four unmaintained and two yanked-package warnings remain
+recorded. These local source/dependency results don't qualify changed production
+derivations or the exact committed hosted candidate; both need their own receipts.
 
 ### Approved Canix runtime cohort
 
@@ -102,13 +100,12 @@ output root and verified private publication. Defaults are PostgreSQL through
 `info` and retention of 50 launches. The fixture's SQLite override does not
 establish live PostgreSQL or real-game save continuity.
 
-On 2026-10-04, read-only reverification confirmed those retained artifacts and
-receipts:
+Read-only verification on 2026-10-04 reconfirmed the retained artifacts and receipts:
 `/data/scratch/tmp/opencode/modde-native-closeout-historical-verification-20261004T194904215074Z/receipt.json`
 (SHA-256 `4c272affec938bba414c72857199992683aa4a0a677a285ee664d4c0134ea81d`).
-This remains historical component evidence. A successor Canix source requires
-measured package, wrapper, defaults and dependency-context equality before
-execution evidence transfers. Equal source files alone do not establish it.
+This is historical component evidence. Transfer execution evidence to a
+successor Canix source only after measurements show equal packages, wrappers,
+defaults and dependency contexts. Matching source files alone aren't enough.
 
 Canix qualification runs locally on Atlas; its hosted Actions are
 **skipped-by-operator**. The coordinator selected
@@ -120,13 +117,14 @@ or cancelled attempts remain retained. Selection authorizes component checks,
 not production adoption or activation. Final composition, full local registry
 qualification and the production writer window remain coordinator-owned.
 
-Live game testing starts after those recovery/adoption/activation gates. At
-runtime entry, reconfirm Modde inactivity and the actual foreground marker/pause
-policy. Native direct, Steam, Heroic, Proton/UMU and manager paths need observed
-rendering, interruption recovery and save-continuity receipts. Eight alternating
-off/on measurement pairs require about 80 minutes of gameplay plus setup;
-retain paired deltas and variability without an overhead acceptance verdict.
-PR review/merge readiness remains separate from successful component CI.
+Start live game tests after recovery/adoption/activation gates. At runtime
+entry, reconfirm Modde inactivity and the actual foreground marker/pause policy.
+Retain receipts for observed rendering, interruption recovery and save
+continuity on each of these paths: native direct, Steam, Heroic, Proton/UMU and
+manager. Eight alternating off/on pairs take
+about 80 minutes of gameplay plus setup. Retain paired deltas and variability
+without an overhead verdict. Passing component CI doesn't establish PR
+review/merge readiness.
 
 ### Selected Canix binding and component acceptance
 
@@ -167,7 +165,7 @@ The separately verified configured PostgreSQL package has a different output
 
 ### Corrected online VM result
 
-The sole actual corrected `pg-online-backup-only` retry passed on 2026-10-04.
+The only executed corrected `pg-online-backup-only` retry passed on 2026-10-04.
 The reviewed v2 runner realized the selected opaque graph with normal capacity
 admission, one job/two cores and no further flake evaluation:
 
@@ -195,8 +193,8 @@ adoption, activation or actual-game continuity.
 ### Changed-hook Nomad VM and independent acceptance
 
 The user explicitly reassigned the sole changed-hook Nomad VM to the coordinator.
-That exact selected graph also passed through one opaque managed realization,
-one job/two cores, no source evaluation and no capacity override:
+The exact selected graph passed in one opaque managed realization with one
+job/two cores, no source evaluation and no capacity override:
 
 - Derivation: `/nix/store/5s94bikx9yickgh6vrk0n28ymlwc233v-vm-test-run-canix-managed-pg-nomad-recovery.drv`.
 - Output: `/nix/store/5k26h6clpais856ajachcprgwl3jk00j-vm-test-run-canix-managed-pg-nomad-recovery`.
@@ -231,12 +229,11 @@ unit derivation inputs. Evidence:
 `/data/scratch/tmp/opencode/durability-3b29-six-stage-literal-provenance-20261004T225802091632Z/receipt.json`
 (SHA-256 `d73f0b6fa9a96e91a62345c2fb5af55f97cd0bacb05129b89294e6482d59ecc4`).
 
-This closes the literal environment-projection evidence gap for `3b29…` without
-another flake evaluation or realization. Complete stage commands and contexts
-still differ: selected Canix lease-launcher output/derivation `wq42…`/`dsr3…`
-replace historical `17z…`/`b2i9…`. Literal-field equality does not transfer
-complete stage execution; the changed launcher and final composition still need
-their own qualification.
+This verifies the literal environment projection for `3b29…` without another
+flake evaluation or realization. Stage commands and contexts still differ:
+selected Canix lease-launcher output/derivation `wq42…`/`dsr3…` replace historical
+`17z…`/`b2i9…`. Matching literal fields don't transfer complete stage execution
+evidence; qualify the changed launcher and final composition separately.
 
 ### Remaining closeout and production gates
 
@@ -258,7 +255,7 @@ edits do not qualify a possible 49-record final contract. Each added or changed
 record needs an explicit owner, source-backed assertion and qualification of the
 changed scope.
 
-Evidence transfers artifact by artifact. Record one of three dispositions:
+For each artifact, record exactly one of the three dispositions below:
 
 | Disposition                         | Required evidence                                                                                                                  |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -272,12 +269,12 @@ the sole corrected online and changed-hook Nomad attempts for `3b29…` remain
 closed green. Qualification uses normal bounded admission and retains failed,
 cancelled and intermediate evidence.
 
-Production admission must bind the exact final artifacts, confirmed writer owners
-and protected workloads, UTC start/end/deadline, last-acknowledged boundary,
-acceptance criteria and the failure/deadline recovery action. Physical restore
-acceptance precedes adoption/activation; explicit writer release follows required
-post-activation verification. Modde gameplay and measurements require their own
-explicit runtime admission and cannot inherit an expired recovery window.
+Bind production admission to exact final artifacts, confirmed writer owners and
+protected workloads, UTC start/end/deadline, last-acknowledged boundary, acceptance
+criteria and the failure/deadline recovery action. Accept the physical restore
+before adoption/activation. Release writers explicitly after required
+post-activation checks. Modde gameplay and measurements require their own
+explicit runtime admission; an expired recovery window doesn't carry over.
 
 The coordinator's 2026-10-05 storage recheck leaves an Atlas Btrfs blocker
 unresolved. The operator's fresh read-only scrub reproduced 60 uncorrectable
@@ -362,13 +359,14 @@ cargo xtask library-qualify --jobs 4
 cargo xtask library-qualify --containment --jobs 4
 ```
 
-The first command checks the minimal core/games/sources/CLI builds, each of the
-nine individual CLI game features, save-recovery and installation boundaries,
-supervision/completion receipts, performance sample gates, bisect provenance and
-Library UI race guards. The second also runs real bubblewrap probes. It requires
-Linux, bubblewrap on PATH and usable user namespaces; unavailable containment
-fails the gate rather than skipping it. The development shell supplies bubblewrap
-and SQLite. SQLite is also required by manager integration tests.
+The first checks minimal core/games/sources/CLI builds, builds each of the nine
+CLI game features individually, and checks save-recovery and installation
+boundaries, supervision/completion receipts, performance sample gates, bisect
+provenance and Library UI race guards. The second adds real bubblewrap probes
+and requires Linux, bubblewrap on PATH and usable user namespaces. If
+containment is unavailable, the gate fails instead of skipping. The development
+shell supplies bubblewrap and SQLite; manager integration tests also need
+SQLite.
 
 `cargo xtask check`, used by the generated project-check CI step, runs these
 qualification gates after the workspace checks and requires real containment on
@@ -378,6 +376,13 @@ Validate that Nix gate with:
 
 ```sh
 canix cache binary build .#checks.x86_64-linux.library-regressions --include-tests --no-push --max-jobs 1 --cores 2
+```
+
+To run the isolated native containment smoke fixture directly against a built
+modde binary and `bwrap` into a fresh output directory:
+
+```sh
+python3 scripts/smoke/library-containment.py --modde /path/to/modde --bwrap /path/to/bwrap --output /fresh/evidence/directory
 ```
 
 ## Evidence from 2026-10-01
@@ -455,16 +460,16 @@ executable`; its derivation is byte-identical on trunk and the GPU branch.
 dependency edges that accept those patches. Audit warnings are not a clean
 security qualification merely because `cargo audit` returns zero.
 
-For performance, use alternating off/on pairs against one installation/profile,
-with identical settings and a repeatable scene. The proposed protocol is eight
-pairs of approximately five-minute runs and 30 seconds of warmup. Logging
-duration does not terminate the game. Capture/grading requires successful observed
-exits and at least 100 usable FPS samples and 100 measured frame-time samples
-after warmup; frame times are never invented from FPS. Report the observed
-paired deltas and variability without assigning a negligible-overhead verdict.
+Alternate off/on runs on one installation/profile with identical settings and
+a repeatable scene. The proposed protocol uses eight pairs of approximately
+five-minute runs and 30 seconds of warmup. Logging duration doesn't stop the
+game. Capture/grading requires observed successful exits and at least 100 usable
+FPS samples and 100 measured frame-time samples after warmup; it uses measured
+frame times and never derives them from FPS. Report paired deltas and
+variability without a negligible-overhead verdict.
 
 Flatpak packaging and its host-runtime bridge remain unimplemented follow-up
-work, outside the required native-Linux launch target.
+work outside the required native-Linux launch target.
 
 ## Repeatable GPU probe and deployment integration
 
@@ -475,9 +480,9 @@ not required by ordinary launches or headless CI):
 cargo run --locked -p modde-games --example qualify_gpu -- /absolute/path/to/glxinfo /absolute/path/to/report.json /dev/dri/by-path/pci-0000:03:00.0-render /absolute/path/to/vulkaninfo
 ```
 
-The optional final argument also checks that Vulkan enumerates a hardware
-device first with matching PCI IDs through both boundaries. It does not prove
-which device a real Vulkan game chooses.
+The optional final argument checks that Vulkan lists a hardware device first
+with matching PCI IDs through both boundaries. It doesn't show which device a
+real Vulkan game chooses.
 
 Fleetix's optional `gpu.render.renderNode` declares a portable 3D route. Its Pkl
 schema owns stable PCI identities and GPU vocabulary; a generated contract and
@@ -511,10 +516,10 @@ changed provenance and remain report-only.
 
 ## Publication follow-up, 2026-10-02
 
-Publication of the implementation was authorized on 2026-10-02. The changes are
-grouped into host-independent OptiScaler qualification, Rust quality cleanup,
+Publication of the implementation was authorized on 2026-10-02. The changes
+cover host-independent OptiScaler qualification, Rust quality cleanup,
 dependency requirements, launch/save/supervision/GPU evidence, Library UI, and
-Nix/Home Manager qualification commits. Implementation revision `f09ce08`
+Nix/Home Manager qualification. Implementation revision `f09ce08`
 contains the GPU-capable runtime module.
 
 The OptiScaler failure inside Nix came from a test assuming the developer's
@@ -578,7 +583,7 @@ export, protected retention and separate boundary/inner startup evidence. It
 restricts automatic raw input-device grants to controllers and requires initialized
 physical prefixes and a saved Steam Cloud-disabled assertion for managed saves.
 
-The new exact-package fixture can be run against a built native CLI:
+To reproduce this exact-package fixture against a built native CLI:
 
 ```sh
 cargo xtask library-package-qualify --binary /absolute/package/bin/modde --output /absolute/new-receipt-directory
@@ -682,7 +687,7 @@ database/operator environment overrides and uses disposable short HOME, XDG,
 runtime and temporary paths while retaining the approved Cargo/Rustup caches.
 Short paths preserve Unix-socket tests' actual path-length requirements.
 
-The repaired source is committed as
+The repair was committed as
 `8c02443c047d688448a390ea9109c1be1de41099`. All 42 native policy commands
 exited zero with unchanged bound Rust sources and all 15 foreign files preserved.
 The two no-feature manager commands have no enabled targets; the explicit `wow`

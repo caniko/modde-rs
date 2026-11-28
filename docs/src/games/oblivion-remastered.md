@@ -1,19 +1,18 @@
 # The Elder Scrolls IV: Oblivion Remastered
 
-Oblivion Remastered is a hybrid: an Unreal Engine 5 presentation layer wrapped
-around the original Gamebryo simulation. modde models that split directly — the
-plugin recognises both the UE pak `~mods` layout (`.pak` / `.ucas` / `.utoc`)
-**and** Bethesda-style `.esp` / `.esm` plugins, and its scanner walks both the
-UE pak directory and a `Data/` plugin tree. The game id is `oblivion-remastered`.
+Oblivion Remastered pairs an Unreal Engine 5 presentation layer with the
+original Gamebryo simulation. The modde plugin for game id `oblivion-remastered`
+recognises both the UE pak `~mods` layout (`.pak` / `.ucas` / `.utoc`) and
+Bethesda-style `.esp` / `.esm` plugins. It scans the UE pak directory and the
+`Data/` plugin tree.
 
 > **Overall status: `Partial`.** Deployment, scanning, conflict classification,
-> Wine DLL-override detection, and save tracking all work, and the title is
-> wired into the install pipeline (Steam/Heroic detection, Nexus, Wabbajack).
-> What keeps it short of `Done` is the same ceiling as the other UE titles: no
-> bespoke load-order editor for the ESP/ESM side, no pak-internal asset
-> conflict resolution (conflicts are classified by filename, not by archive
-> contents), and the install-method coverage is narrower than the mature
-> Creation Engine games. See [Supported games](supported-games.md) for the
+> Wine DLL-override detection, and save tracking work. The install pipeline
+> integrates Steam/Heroic detection, Nexus, and Wabbajack. Like other UE titles,
+> it falls short of `Done`: no dedicated ESP/ESM load-order editor, no
+> pak-internal asset conflict resolution (modde compares filenames, not archive
+> contents), and less complete install-method coverage than mature Creation Engine games.
+> See [Supported games](supported-games.md) for the
 > status baseline and [Parity](../reference/parity.md) for the
 > MO2/Vortex/Wabbajack comparison.
 
@@ -33,9 +32,8 @@ UE pak directory and a `Data/` plugin tree. The game id is `oblivion-remastered`
 | Save profiles | enabled |
 | Plugin system | yes (ESP/ESM are recognised alongside paks) |
 
-The plugin is its own `GamePlugin` implementation rather than a plain instance
-of the shared UE4 game type — that is what lets it carry the Bethesda plugin
-extensions, the Gamebryo-style save layout, and the blended content policy.
+Instead of the shared UE4 game type, a dedicated `GamePlugin` supports
+Bethesda plugin extensions, Gamebryo-style saves, and the blended content policy.
 
 ## Install detection
 
@@ -52,9 +50,9 @@ Steam compat data tree (on Windows these are native paths, no prefix involved):
 <steam>/steamapps/compatdata/2623190/pfx/drive_c/...
 ```
 
-If you have never launched the game, that prefix will not exist yet. modde's
-prefix-dependent lookups return "not found" in that case — launch the game once
-through Steam/Proton so Proton creates the prefix, then re-run.
+Before the first launch, the prefix does not exist and prefix-dependent
+lookups return "not found". Launch once through Steam/Proton to create the
+prefix, then re-run.
 
 ## Mod directory and deploy strategy
 
@@ -65,12 +63,11 @@ project's `Content/Paks`:
 <install>/OblivionRemastered/Content/Paks/~mods
 ```
 
-The leading tilde is load-bearing: UE's pak mounter sorts `~mods` **after** the
-shipping paks, so mod paks override base content. modde deploys mods here the
-same way it deploys for every other game — a profile's enabled mods are linked
-into the live game tree, and switching profiles re-links the set. Plugin-style
-content (`.esp` / `.esm`) belongs in the game's `Data/` tree, which the scanner
-also walks (see below).
+The leading tilde matters: UE sorts `~mods` **after** the shipping paks, so mod
+paks override base content. As with other games, modde links the active
+profile's enabled mods into the live game tree and re-links them on profile
+switch. Plugin content (`.esp` / `.esm`) belongs in the game's `Data/` tree,
+which modde also scans.
 
 ## What scanning finds
 
@@ -141,11 +138,9 @@ Saves live under the Proton prefix, in the remastered Documents tree:
 <steam>/steamapps/compatdata/2623190/pfx/drive_c/users/steamuser/Documents/My Games/Oblivion Remastered/Saves
 ```
 
-The save tracker is non-recursive over that directory and matches two
-extensions, `.ess` and `.sav`, excluding `*.bak`. Every match is filed under
-the `manual` category and labelled by its relative filename. What the tracker
-records per save is its path, category, label, and last-modified time — it does
-**not** hash individual save files.
+The tracker matches `.ess` and `.sav` in that directory without recursing and
+skips `*.bak`. It records each save's path, `manual` category, relative filename
+as its label, and last-modified time. It does **not** hash individual saves.
 
 Save *fingerprinting* happens at the vault layer, and it fingerprints your
 **mod set**, not the save bytes: modde computes a SHA-256 over the sorted list
@@ -225,10 +220,9 @@ with arguments, working dir, env, and DLL overrides, and capturing its output.
 
 ## Linux and Proton notes
 
-These notes cover the game's runtime on Linux and macOS, where Oblivion
-Remastered runs through Proton/Wine. On Windows the game runs natively — there is
-no Wine prefix or `WINEDLLOVERRIDES`, the save directory is its native Windows
-location, and proxy DLLs load directly. modde itself runs natively on all three
+Oblivion Remastered runs through Proton/Wine on Linux and macOS. On Windows it
+runs natively: no Wine prefix or `WINEDLLOVERRIDES`, saves use the native
+Windows path, and proxy DLLs load directly. modde runs natively on all three
 platforms.
 
 - **Run the game once first.** The save directory and the proxy-DLL overrides

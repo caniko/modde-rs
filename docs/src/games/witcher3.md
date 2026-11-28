@@ -1,8 +1,7 @@
 # The Witcher 3: Wild Hunt
 
-The Witcher 3: Wild Hunt is the second REDengine title modde supports (alongside
-[Cyberpunk 2077](cyberpunk2077.md)). It ships as a built-in plugin under the
-`witcher3` game id.
+The Witcher 3: Wild Hunt is modde's second REDengine title, alongside
+[Cyberpunk 2077](cyberpunk2077.md). Its built-in plugin uses the `witcher3` game id.
 
 ## Engine & overall status
 
@@ -17,13 +16,11 @@ The Witcher 3: Wild Hunt is the second REDengine title modde supports (alongside
 | Save tracking | `Done` |
 
 The status is **`Partial`**, matching the [supported games table](supported-games.md).
-Deployment, the filesystem scanner, `.ws` script-conflict classification, save
-tracking, and Wine/Proton DLL-override detection are wired up and reachable, but
-The Witcher 3 does not yet have the deeper engine integrations some Bethesda
-titles enjoy (there is no LOOT-style load-order sorter and no plugin
-validation — REDengine has no `.esp`/`.esm` plugin model). Treat it as solid for
-loose-folder mods and script mods, with the usual REDengine caveat that
-heavily-scripted modlists still benefit from manual review.
+modde deploys mods, scans the filesystem, classifies `.ws` script conflicts,
+tracks saves, and detects Wine/Proton DLL overrides. Unlike some Bethesda titles,
+The Witcher 3 has no LOOT-style sorter or plugin validation: REDengine has no
+`.esp`/`.esm` plugin model. Support is solid for loose-folder and script mods;
+heavily scripted modlists still benefit from manual review.
 
 ## Install detection
 
@@ -45,10 +42,9 @@ what modde found, and confirm the resolved path before deploying:
 modde detect
 ```
 
-Because no Heroic GOG/Epic app ids are registered for this title yet, GOG and
-Epic copies are not auto-detected. You can still point a profile at any install
-directory manually (see the worked example below) — detection only affects
-auto-discovery, not the ability to deploy into a known path.
+Without registered Heroic GOG/Epic app ids, modde cannot auto-detect GOG or Epic
+copies. Auto-detection is optional for deployment: you can point a profile
+manually at any known install directory (see the worked example below).
 
 ### Proton prefix
 
@@ -67,9 +63,8 @@ The mod directory is `mods/` directly under the game install:
 <install>/mods/
 ```
 
-REDengine loads mods from a small set of well-known top-level roots. modde
-recognises the multi-root REDkit/REDmod-style layout — `mods/`, `dlc/`, `bin/`,
-and `content/` — and chooses its deploy path accordingly:
+modde chooses the deployment layout based on REDengine's top-level
+REDkit/REDmod-style roots: `mods/`, `dlc/`, `bin/`, and `content/`.
 
 - **Multi-root overlay** — If the staged content already contains any of
   `mods/`, `dlc/`, `bin/`, or `content/` at its top level, modde symlinks those
@@ -141,10 +136,9 @@ modde collisions --profile my-witcher3
 
 ### `.ws` script conflicts
 
-The defining gotcha for Witcher 3 modding is **script merging**: many mods ship
-gameplay scripts under `content/scripts/`, and REDengine compiles only one copy
-of each script file. Two mods that both ship `r4Player.ws` will silently clobber
-each other unless their changes are merged.
+Many mods ship gameplay scripts under `content/scripts/`, but REDengine compiles
+only one copy of each script file. If two mods ship `r4Player.ws`, one silently
+overrides the other unless you merge their changes.
 
 modde detects this specifically:
 
@@ -173,10 +167,9 @@ per-file hiding.
 | Recursive | No — top-level of the save dir only |
 | Save profiles | Supported |
 
-Saves live in a git-backed vault per the [Save Management](../guides/saves.md)
-guide, with one branch per profile. For The Witcher 3 modde tracks `*.sav` files
-at the top level of the save directory and ignores the `*.png` save-thumbnail
-images that sit alongside them.
+modde stores saves in the git-backed vault described in
+[Save Management](../guides/saves.md), with one branch per profile. It tracks
+top-level `*.sav` files and ignores the accompanying `*.png` thumbnails.
 
 ### What is fingerprinted
 
@@ -219,10 +212,8 @@ reporting; modde does not repack them.
 
 ## Gaming tools that matter
 
-modde does not ship any built-in OptiScaler presets for The Witcher 3 — the
-title's OptiScaler profile list is empty — so upscaling is best handled through
-the generic `optiscaler` tool or your own pin if you want one. The tools that
-matter most here:
+The Witcher 3's OptiScaler profile list is empty. Use the generic `optiscaler`
+tool or your own pin for upscaling. Other useful tools:
 
 - **`proton`** — runner version, prefix override, `extra_env`, and DLL-override
   mode. This is where you control how the game launches under Proton.
@@ -248,10 +239,9 @@ picked up under Proton without hand-editing the prefix.
 
 ## Linux / Proton notes & gotchas
 
-These notes cover the game's runtime on Linux and macOS, where The Witcher 3 runs
-through Proton/Wine. On Windows the game runs natively — there is no Wine prefix,
-proxy DLLs load directly, and saves live at their native Windows location. modde
-itself runs natively on all three platforms.
+The Witcher 3 runs through Proton/Wine on Linux and macOS. On Windows it runs
+natively without a Wine prefix: proxy DLLs load directly and saves use the
+native Windows location. modde runs natively on all three platforms.
 
 - **Documents path.** The save directory is the Wine/Proton-mapped
   `~/Documents/The Witcher 3/gamesaves`. If your distro or home setup relocates

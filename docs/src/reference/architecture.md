@@ -1,28 +1,24 @@
 # Architecture
 
-This is the system-design reference for modde — the durable "why" and "how" behind
-the pieces that make up the application. It is meant for contributors and for anyone
-who wants to understand a subsystem before changing it. Where a behaviour is settled
-and load-bearing, the rationale lives here so it does not have to be re-derived from
-the source each time.
+This reference explains how modde's subsystems work and why they work that way,
+so contributors can change them without re-deriving settled design decisions
+from the source.
 
-Implementation history lives in `git log`; this document records the design that the
-code currently encodes. When the two disagree, the source is the truth — please file
-a fix.
+This page describes the current design; `git log` records its history. If this
+page disagrees with the source, trust the source and file a fix.
 
 ## Crate map
 
-modde is a Cargo workspace. Five crates carry the weight, layered so that the lower
-crates know nothing about the higher ones.
+modde is a Cargo workspace with five main crates. Lower layers have no knowledge
+of higher layers.
 
 **`modde-core`** is the engine. It owns the persistent data model (the SQLite database
 and the XDG path layout), the load-order resolver, the collision engine, the VFS
 symlink farm, the installer pipeline, the save vault, the Wabbajack manifest model and
 its native install/extract path, hashing, and the content-addressed mod store.
-`modde-core` deliberately contains **no game-specific knowledge** — every place that
-would otherwise hard-code a game's quirks instead takes a trait object or a callback so
-the game layer can supply the behaviour. This is what keeps the core testable in
-isolation and lets new games land without touching it.
+`modde-core` contains **no game-specific knowledge**. The game layer supplies
+such behaviour through trait objects or callbacks, so the core can be tested
+in isolation and new games don't require core changes.
 
 **`modde-games`** is the game knowledge layer. It defines the `GamePlugin`,
 `ModScanner`, and `SaveTracker` traits, the central `GAME_REGISTRY`, launcher detection
@@ -47,8 +43,7 @@ anything worth testing lives below the CLI.
 **`modde-ui`** is the egui desktop application (`modde-ui`, also reachable as
 `modde gui`). It renders the mod list, load order, conflict views, the Nexus browse
 panel, the Executables view, and the install wizard against the same core APIs the CLI
-uses. UI and CLI are two front-ends over one engine; shared flows (deploy, install) are
-factored into the core rather than duplicated.
+uses. Both front-ends share the core's deploy and install flows.
 
 ```text
         ┌────────────┐      ┌────────────┐
@@ -73,11 +68,11 @@ factored into the core rather than duplicated.
 ### The SQLite database
 
 modde's persistent state is a single SQLite database at `<modde_data>/modde.db`, opened
-in WAL mode with foreign keys enforced. Schema evolution is handled by an idempotent
-migration ladder keyed off SQLite's `user_version` pragma — each step runs only if the
-stored version is below it, and additive column changes go through an
-`add_column_if_missing` guard so re-running a migration is always safe. **The current
-schema version is 10.**
+in WAL mode with foreign keys enforced. Idempotent migrations use SQLite's
+`user_version` pragma: each step runs only if `user_version` is below that
+step's version.
+`add_column_if_missing` guards column additions so migrations can safely rerun.
+**The current schema version is 10.**
 
 The key tables:
 
@@ -99,7 +94,7 @@ The key tables:
 | `executable_configs` | MO2-style named launch targets: path, args, working dir, environment, Wine DLL overrides, and the configurable output (overwrite) mod. |
 | `tool_setting_nodes` / `tool_setting_edges` | A DAG of tool-setting history (schema V10): `game_tools` stays the current state, and every mutation also appends a node plus an edge from the previous current node, so restores can branch. |
 
-Two design choices are worth calling out because they recur:
+Two design choices recur:
 
 - **TOML/JSON-encoded columns.** Structured values that the database does not need to
   query on — `InstallMethod`, the load-order lock, FOMOD config, tool settings — are
@@ -114,12 +109,11 @@ Two design choices are worth calling out because they recur:
 
 ### XDG path layout
 
-`modde-core::paths` is the single source of truth for where things live. It is
-platform-aware (honouring `XDG_DATA_HOME` / `XDG_CONFIG_HOME` / `XDG_CACHE_HOME` on
-Linux, with the equivalent `dirs` fallbacks on macOS and Windows) and supports a data-dir
-override — either via `--data-dir` / `MODDE_DATA_DIR`, or via an active instance recorded
-in the instance registry — so portable and multi-instance setups work without touching
-the rest of the code.
+`modde-core::paths` is the single source of truth for the path layout. It honours `XDG_DATA_HOME` /
+`XDG_CONFIG_HOME` / `XDG_CACHE_HOME` on Linux and uses the equivalent `dirs`
+fallbacks on macOS and Windows. Portable and multi-instance setups can override
+the data directory with `--data-dir` / `MODDE_DATA_DIR` or an active instance
+recorded in the registry, without changes elsewhere in the code.
 
 ```text
 <data_dir>/modde/                      e.g. ~/.local/share/modde/
@@ -166,9 +160,8 @@ pub struct GameRegistration {
 }
 ```
 
-The `GamePlugin` trait is the behavioural contract. It is deliberately wide but almost
-entirely default-implemented, so a new game overrides only what is genuinely
-game-specific. The salient methods:
+The wide `GamePlugin` trait provides defaults for nearly every method, so new
+games override only game-specific behaviour. Key methods:
 
 - **Install layout.** `mod_directory` / `mod_root` (where mods deploy), `executable_dir`
   (where proxy DLLs live), `deploy` / `deploy_to_install` / `post_deploy`.
@@ -225,8 +218,8 @@ limits.
 
 ## Detection
 
-Detection answers "where is this game installed?" without asking the user. It scans the
-two launchers modde understands and caches the result.
+Detection finds installations without user input by scanning both supported
+launchers and caching the results.
 
 **Steam.** modde reads `steamapps/libraryfolders.vdf` to enumerate every library root
 (Steam supports libraries spread across drives), and the platform-specific default
@@ -246,9 +239,9 @@ against each game's known `steam_dir`. Each match records its `LauncherSource` s
 front-ends can both display provenance and launch the game (Steam via a
 `steam://rungameid/<id>` URI, Heroic via `heroic --no-gui --launch <id>`).
 
-Results flow through a process-wide detection cache so the UI can resolve many games
-without rescanning every launcher per game. `find_game_install` consults a settings
-override first, then the cache, before falling back to a fresh scan.
+A process-wide cache lets the UI resolve many games without rescanning each
+launcher for each game. `find_game_install` checks the settings override first,
+then the cache, then scans again if needed.
 
 ## VFS symlink farm
 
@@ -260,8 +253,7 @@ copied; toggling a mod or reordering load order is cheap.
 The farm uses a **typestate** to make misuse a compile error. `SymlinkFarm<S>` carries a
 zero-sized `PhantomData<S>` marker that is `Built` after construction and `Materialized`
 after it is written to disk. `build()` returns a `Built` farm; `materialize()` consumes
-it and returns a `Materialized` farm; only a `Materialized` farm exposes `deploy_to()`.
-You cannot deploy a farm you have not materialized, and the compiler enforces it.
+it and returns a `Materialized` farm. Only a `Materialized` farm exposes `deploy_to()`.
 
 ```text
 build()  ──►  SymlinkFarm<Built>
@@ -299,9 +291,9 @@ The resolver turns a profile's mod list plus its `LoadOrderRule`s into a single
 deterministic order. It is a **stable Kahn topological sort** with input-position
 tiebreaking.
 
-The mod and game identifiers it works with — `ModId` and `GameId` — are
-`#[repr(transparent)]` newtypes over `String`, generated by a macro. They are zero-cost
-at runtime but make it a type error to pass a mod ID where a game ID is expected.
+A macro generates `ModId` and `GameId` as `#[repr(transparent)]` newtypes over
+`String`. Passing a `ModId` where a `GameId` is expected is a compile-time type
+error, at no runtime cost.
 
 **Rule types.** Three rules constrain the order:
 
@@ -479,9 +471,9 @@ the [Wabbajack guide](../guides/wabbajack.md) for the operator-facing view.
 
 ## Mod scanner subsystem
 
-The scanner answers the inverse of installation: given a game directory (and optionally a
-Wabbajack manifest), *what mods are already installed?* This is what lets a profile with
-files on disk but no database rows be reconstructed.
+The scanner detects installed mods from a game directory and, optionally, a
+Wabbajack manifest. Those results let a profile be reconstructed when its files
+remain on disk but its database rows are missing.
 
 **The `ModScanner` trait.** Each game implements `ModScanner`: `scan_directories` lists
 the install-relative directories to inspect, and `scan_filesystem` returns
@@ -524,9 +516,8 @@ by the manifest, so a `nexus_*` row already deploys those files) and "genuine ad
 
 ## Release, packaging, and tooling decisions
 
-These are the enduring choices about how modde is built, released, and distributed. They
-are recorded here so a contributor knows *why* something is the way it is before changing
-it.
+Check these build, release, and distribution decisions before changing the
+tooling they govern.
 
 **Releases go through `simit`.** `cargo xtask release {patch|minor|major|prerelease}`
 delegates to `simit release` from the devShell. `simit` standardizes the semver bump,

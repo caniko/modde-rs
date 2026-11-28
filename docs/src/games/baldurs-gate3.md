@@ -1,20 +1,18 @@
 # Baldur's Gate 3
 
-Baldur's Gate 3 (`baldurs-gate3`) runs on Larian Studios' Divinity engine and is
-modelled in modde as the `Larian` engine family. Mods are distributed as `.pak`
-archives, the enabled module list lives in `modsettings.lsx`, and the writable
-game data lives inside the Steam Proton prefix rather than the install
-directory. modde ships built-in support for all of these.
+modde supports Baldur's Gate 3 (`baldurs-gate3`) under the `Larian` engine family
+(Larian Studios' Divinity engine). It handles `.pak` mods, the enabled module
+list in `modsettings.lsx`, and writable game data in the Steam Proton prefix
+rather than the install directory.
 
 ## Overall status
 
-Baldur's Gate 3 is **`Partial`**. Deployment, scanning, conflict
-classification, save tracking, and `modsettings.lsx` load-order generation are
-wired and reachable, but several BG3-specific workflows are deliberately
-conservative and there is no FOMOD-grade installer UI for the game's
-`.pak`-with-`info.json` ecosystem. Treat it as solid for `.pak`-based content
-and load order, and verify by hand for anything that touches the Script
-Extender or non-standard archive layouts.
+Baldur's Gate 3 is **`Partial`**. Deployment, scanning, conflict classification,
+save tracking, and `modsettings.lsx` generation are implemented and reachable.
+modde takes a conservative approach to BG3-specific workflows: `.pak` content
+and load order work, but there's no FOMOD-grade installer UI for
+`.pak`-with-`info.json` packages. Review anything that uses or changes the
+Script Extender, and any non-standard archive layout, by hand.
 
 | Capability | Status | Notes |
 | ---------- | ------ | ----- |
@@ -25,9 +23,8 @@ Extender or non-standard archive layouts.
 | Save tracking | `Done` | `.lsv` saves, git-backed vault |
 | Load order | `Partial` | Generates `modsettings.lsx` from deployed `.pak` files |
 
-The canonical status baseline for every game lives in
-`docs/capability-matrix.toml`; this page describes how the BG3 plugin behaves,
-not a promise beyond that matrix.
+`docs/capability-matrix.toml` defines the status of every game. This page
+describes BG3 plugin behavior without extending that baseline.
 
 ## Install detection
 
@@ -39,9 +36,9 @@ modde locates the install through its launcher IDs:
 | Steam library dir | `steamapps/common/Baldurs Gate 3` |
 | Heroic (GOG/Epic) | not registered |
 
-Only Steam is registered for BG3 today. The GOG and Epic Heroic app ids are not
-populated, so if you run a non-Steam copy you must point modde at the install
-yourself with `--game-dir` (CLI) or `gameDir` (home-manager).
+BG3 registers Steam only, with no Heroic app ids for GOG or Epic. For a
+non-Steam copy, set the install path with `--game-dir` (CLI) or `gameDir`
+(home-manager).
 
 ## Mod directory and path resolution
 
@@ -75,10 +72,10 @@ for the build → materialize → deploy pipeline.
 
 ## What scanning finds
 
-The BG3 scanner discovers **root `.pak` files inside `Mods/`**. It prefers the
-Proton-prefix data root, but if that prefix has no `Mods/` directory yet it
-falls back to scanning the install directory's `Mods/` instead, so a fresh
-prefix does not silently produce an empty scan.
+The BG3 scanner finds **root `.pak` files inside `Mods/`**. It scans the
+Proton-prefix data root's `Mods/` first and falls back to the install
+directory's `Mods/` only if the prefix directory is absent, avoiding an empty
+scan on a fresh prefix.
 
 - It looks only at the `Mods` directory (single-file `.pak` rule).
 - Each discovered mod is reported with a `pak/` mod-id prefix and a confidence
@@ -86,16 +83,15 @@ prefix does not silently produce an empty scan.
 - A mod's on-disk footprint is the lower-cased `mods/<stem>.pak` file, which is
   what conflict detection compares between mods.
 
-Scanning is shallow by design: it enumerates the `.pak` archives that BG3 itself
-loads, not the contents inside each archive. There is no MO2-style file-tree or
-per-archive INI inspection for BG3, which is part of why the title is `Partial`.
+The scanner lists the `.pak` archives BG3 loads, not their contents. BG3 is
+`Partial` in part because there's no MO2-style file tree or per-archive INI
+inspection.
 See [Scanning](../guides/scanning.md) for the general model.
 
 ## Conflict classification
 
-BG3 uses modde's `pak`-aware collision classifier. Two mods are flagged when
-they ship the same relative file path, and the severity is decided by file
-extension:
+BG3's `pak`-aware collision classifier flags mods sharing a relative file path
+and assigns severity by extension:
 
 | Severity | Extensions | Meaning |
 | -------- | ---------- | ------- |
@@ -159,13 +155,12 @@ BG3 reads its enabled module list from an LSX (Larian XML) file at
   of enabled module folders back out, which is how it reconciles against what
   the game currently has enabled.
 
-The important limitation: the generated order is the **sorted `.pak` stem
-order**, not a dependency-aware load order. For modlists whose `.pak` stems do
-not encode the intended order (BG3 mods frequently need a specific sequence and
-carry UUID/dependency metadata in their `meta.lsx`), you should review and
-adjust `modsettings.lsx` — or use BG3 Mod Manager in the prefix — after
-deploying. modde does not parse per-mod `meta.lsx` UUIDs or dependency
-declarations.
+modde generates **sorted `.pak` stem order**, not a dependency-aware load
+order. BG3 mods often need a specific sequence and carry UUID/dependency
+metadata in `meta.lsx`, but modde does not parse per-mod `meta.lsx` UUIDs or
+dependency declarations. If your `.pak` stems don't encode the intended order,
+after deploying review and adjust `modsettings.lsx`, or use BG3 Mod Manager in
+the prefix.
 
 ## Installer specifics
 
@@ -204,11 +199,10 @@ resolve into.
 
 ## Linux and Proton notes (gotchas)
 
-These notes cover the game's runtime on Linux and macOS, where Baldur's Gate 3
-runs through Proton/Wine and its writable data lives inside the compatibility
-prefix. On Windows the game runs natively — there is no Wine prefix, and `Mods/`,
-`modsettings.lsx`, and saves live at their native Windows locations. modde itself
-runs natively on all three platforms.
+Baldur's Gate 3 runs through Proton/Wine on Linux and macOS, with writable data
+in the compatibility prefix. On Windows it runs natively with no Wine prefix:
+`Mods/`, `modsettings.lsx`, and saves use native Windows paths. modde runs
+natively on all three platforms.
 
 - **The mod directory is inside the prefix, not the install.** This is the most
   common surprise: editing files under `steamapps/common/Baldurs Gate 3` does
